@@ -1,7 +1,7 @@
 import json
 
 from composey.compiler.inference import infer
-from composey.models.environment import Environment
+from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application, Service
 
 
@@ -9,7 +9,7 @@ def test_iam_least_privilege_scoping():
     """
     Ensure that IAM policies are scoped specifically to the resources they need.
     """
-    env = Environment(
+    env = AwsEnvironment(
         name="prod",
         vpc_id="vpc-123",
         public_subnets=["s-1"],

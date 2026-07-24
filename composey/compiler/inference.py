@@ -34,11 +34,11 @@ from composey.models.aws import (
     TerraformLifecycle,
     Wafv2WebAcl,
 )
-from composey.models.environment import Environment
+from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application as SemanticApp
 
 
-def infer(app: SemanticApp, env: Environment) -> AWSResources:
+def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     resources = AWSResources()
 
     # Naming convention helper: [env]-[app]-[resource]

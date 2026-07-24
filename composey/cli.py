@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 
 from .compiler import compile_to_terraform
-from .models.environment import Environment
+from .models.environment import load_environment
 
 app = typer.Typer(
     help="Docker Compose to Terraform compiler for a PaaS-like experience on AWS.",
@@ -73,10 +73,12 @@ def main(
     try:
         # 1. Load Environment
         console.print(f"[bold blue]Loading environment:[/] {env_file}")
-        env = Environment.from_yaml(str(env_file))
+        env = load_environment(str(env_file))
 
         # 2. Compile
-        console.print(f"[bold blue]Compiling:[/] {compose_file} -> {project_name}")
+        console.print(
+            f"[bold blue]Compiling:[/] {compose_file} -> {project_name} ({env.target})"
+        )
         tf_json = compile_to_terraform(str(compose_file), env, project_name)
 
         # 3. Write Output

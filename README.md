@@ -165,7 +165,10 @@ uv run composey --version
 ```
 
 ### Environment Configuration (`prod.yaml`)
+The `target` field selects the cloud to compile for and determines which of the remaining fields are valid. It currently defaults to `aws`, the only supported target.
+
 ```yaml
+target: aws
 name: prod
 vpc_id: vpc-12345678
 public_subnets:

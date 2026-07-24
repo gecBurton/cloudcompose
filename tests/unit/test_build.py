@@ -7,11 +7,11 @@ from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Build
 from composey.models.compose import Port as DockerPort
 from composey.models.compose import Service as DockerService
-from composey.models.environment import Environment
+from composey.models.environment import AwsEnvironment
 
 
 def _env():
-    return Environment(
+    return AwsEnvironment(
         name="prod",
         vpc_id="vpc-123",
         public_subnets=["subnet-1", "subnet-2"],

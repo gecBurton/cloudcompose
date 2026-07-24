@@ -6,11 +6,11 @@ from ..models.aws import (
     CLOUDFRONT_SCOPE_REGION,
     AWSResources,
 )
-from ..models.environment import Environment
+from ..models.environment import AwsEnvironment
 from ..models.terraform import TerraformManifest
 
 
-def _aws_provider(env: Environment, region: str) -> dict:
+def _aws_provider(env: AwsEnvironment, region: str) -> dict:
     """Build an AWS provider configuration for a given region."""
     provider: dict = {"region": region}
 
@@ -40,7 +40,7 @@ def _aws_provider(env: Environment, region: str) -> dict:
     return provider
 
 
-def generate(resources: AWSResources, env: Environment) -> str:
+def generate(resources: AWSResources, env: AwsEnvironment) -> str:
     # Build provider configuration
     aws_provider = _aws_provider(env, env.region)
 

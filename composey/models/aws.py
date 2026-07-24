@@ -273,6 +273,11 @@ class CloudwatchEventTarget(BaseModel):
     ecs_target: Optional[Dict[str, Any]] = None
 
 
+# Key of the `data.aws_lb` block used to resolve the shared ALB's DNS name.
+# Shared between inference (which references it) and generation (which emits it).
+ALB_DATA_SOURCE_KEY = "shared_alb"
+
+
 class CloudfrontDistribution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

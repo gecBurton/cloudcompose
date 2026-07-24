@@ -1,13 +1,13 @@
 import json
 
-from ..models.aws import AWSResources
+from ..models.aws import ALB_DATA_SOURCE_KEY, AWSResources
 from ..models.environment import Environment
 from ..models.terraform import TerraformManifest
 
 
 def generate(resources: AWSResources, env: Environment) -> str:
     # Build provider configuration
-    aws_provider = {"region": env.region}
+    aws_provider: dict = {"region": env.region}
 
     if env.aws_endpoint:
         aws_provider.update(
@@ -36,7 +36,7 @@ def generate(resources: AWSResources, env: Environment) -> str:
         "random": {"source": "hashicorp/random", "version": "~> 3.6"},
     }
     providers = {"aws": aws_provider}
-    data = None
+    data_sources: dict = {}
 
     # If any service builds from source, wire up the docker provider so it can
     # build images and push to ECR, authenticated via an ECR token data source.
@@ -45,7 +45,7 @@ def generate(resources: AWSResources, env: Environment) -> str:
             "source": "kreuzwerker/docker",
             "version": "~> 3.0",
         }
-        data = {"aws_ecr_authorization_token": {"token": {}}}
+        data_sources["aws_ecr_authorization_token"] = {"token": {}}
         providers["docker"] = {
             "registry_auth": {
                 "address": "${data.aws_ecr_authorization_token.token.proxy_endpoint}",
@@ -54,19 +54,26 @@ def generate(resources: AWSResources, env: Environment) -> str:
             }
         }
 
+    # CloudFront origins reference the shared ALB by DNS name, which the
+    # environment only supplies as an ARN. Look it up at apply time.
+    if resources.aws_cloudfront_distribution and env.alb_arn:
+        data_sources["aws_lb"] = {ALB_DATA_SOURCE_KEY: {"arn": env.alb_arn}}
+
     manifest = TerraformManifest(
         terraform={"required_providers": required_providers},
         provider=providers,
-        data=data,
+        data=data_sources or None,
         resource=resources,
     )
 
     # Use model_dump to get a dict, then sort keys for determinism
-    data = manifest.model_dump(exclude_none=True, by_alias=True)
+    manifest_dict = manifest.model_dump(exclude_none=True, by_alias=True)
 
     # Cleanup: Remove empty resource type dictionaries
     # Terraform JSON fails if a resource type block (like "aws_s3_bucket") is empty.
-    if "resource" in data:
-        data["resource"] = {k: v for k, v in data["resource"].items() if v}
+    if "resource" in manifest_dict:
+        manifest_dict["resource"] = {
+            k: v for k, v in manifest_dict["resource"].items() if v
+        }
 
-    return json.dumps(data, indent=2, sort_keys=True)
+    return json.dumps(manifest_dict, indent=2, sort_keys=True)

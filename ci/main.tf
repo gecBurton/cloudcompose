@@ -63,3 +63,68 @@ resource "aws_iam_role_policy_attachment" "admin" {
   role       = aws_iam_role.acceptance.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
+
+data "aws_caller_identity" "current" {}
+
+# Remote state for the acceptance runs themselves.
+#
+# Terraform state on a CI runner is ephemeral: if a run is cancelled, the runner
+# dies, or the job times out, the state file is lost along with it and the VPC,
+# NAT gateway and ALB it created can no longer be reached by `terraform destroy`.
+# They then bill indefinitely until someone deletes them by hand. Keeping state
+# here means any leaked run stays destroyable from anywhere.
+resource "aws_s3_bucket" "state" {
+  bucket = "${var.role_name}-state-${data.aws_caller_identity.current.account_id}"
+
+  # State for throwaway acceptance environments; nothing here is worth keeping
+  # once the role itself is torn down.
+  force_destroy = true
+}
+
+# Recover from a corrupted or half-written state object.
+resource "aws_s3_bucket_versioning" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Expire old run state so the bucket does not accumulate objects forever.
+resource "aws_s3_bucket_lifecycle_configuration" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    id     = "expire-old-run-state"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    expiration {
+      days = 90
+    }
+  }
+}

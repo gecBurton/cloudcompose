@@ -8,9 +8,10 @@ from composey.models.semantic import Application, Service
 ALB_ARN = "arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123"
 
 
-def _env() -> Environment:
+def _env(region: str = "us-east-1") -> Environment:
     return Environment(
         name="prod",
+        region=region,
         vpc_id="vpc-123",
         public_subnets=["subnet-1"],
         private_subnets=["subnet-2"],
@@ -44,3 +45,30 @@ def test_no_alb_data_source_without_cdn():
     manifest = json.loads(generate(infer(_app(cdn_enabled=False), env), env))
 
     assert "aws_lb" not in manifest.get("data", {})
+
+
+def test_cloudfront_waf_is_created_in_us_east_1_from_another_region():
+    # A CLOUDFRONT-scoped web ACL only exists in us-east-1, so deploying an
+    # application elsewhere must still create the ACL through an aliased
+    # us-east-1 provider rather than the environment's own region.
+    env = _env(region="eu-west-2")
+    manifest = json.loads(generate(infer(_app(cdn_enabled=True), env), env))
+
+    assert manifest["provider"]["aws"] == [
+        {"region": "eu-west-2"},
+        {"region": "us-east-1", "alias": "us_east_1"},
+    ]
+
+    waf = manifest["resource"]["aws_wafv2_web_acl"]["web_waf"]
+    assert waf["scope"] == "CLOUDFRONT"
+    assert waf["provider"] == "aws.us_east_1"
+
+    # Everything else stays in the environment's region on the default provider.
+    assert "provider" not in manifest["resource"]["aws_ecs_service"]["web_service"]
+
+
+def test_no_aliased_provider_without_cdn():
+    env = _env(region="eu-west-2")
+    manifest = json.loads(generate(infer(_app(cdn_enabled=False), env), env))
+
+    assert manifest["provider"]["aws"] == {"region": "eu-west-2"}

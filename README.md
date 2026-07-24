@@ -90,7 +90,7 @@ services:
 For public-facing services, you can enable a global edge presence with built-in security.
 
 - `cdn`: Set to `true` to provision an **AWS CloudFront Distribution** in front of your ALB.
-- **Automatic WAF**: Enabling `cdn` automatically attaches an **AWS WAFv2 Web ACL** with the "Core Rule Set" managed rules enabled.
+- **Automatic WAF**: Enabling `cdn` automatically attaches an **AWS WAFv2 Web ACL** with the "Core Rule Set" managed rules enabled. AWS only hosts CloudFront-scoped Web ACLs in `us-east-1`, so the compiler emits an aliased `us-east-1` provider for it; the rest of the stack stays in the environment's region.
 
 ### ⏰ Scheduled Tasks (Cron)
 Turn any container into a serverless scheduled job.

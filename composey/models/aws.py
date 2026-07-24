@@ -277,6 +277,13 @@ class CloudwatchEventTarget(BaseModel):
 # Shared between inference (which references it) and generation (which emits it).
 ALB_DATA_SOURCE_KEY = "shared_alb"
 
+# AWS requires WAFv2 web ACLs scoped to CLOUDFRONT to live in us-east-1,
+# regardless of where the rest of the application is deployed. They are
+# therefore created through a dedicated aliased provider.
+CLOUDFRONT_SCOPE_REGION = "us-east-1"
+CLOUDFRONT_PROVIDER_ALIAS = "us_east_1"
+CLOUDFRONT_PROVIDER_REF = f"aws.{CLOUDFRONT_PROVIDER_ALIAS}"
+
 
 class CloudfrontDistribution(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -301,6 +308,8 @@ class Wafv2WebAcl(BaseModel):
     visibility_config: Dict[str, Any]
     rule: Optional[List[Dict[str, Any]]] = None
     tags: Optional[Dict[str, str]] = None
+    # Terraform meta-argument selecting a non-default provider configuration.
+    provider: Optional[str] = None
 
 
 class AWSResources(BaseModel):

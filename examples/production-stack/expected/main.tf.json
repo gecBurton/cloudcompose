@@ -1,4 +1,11 @@
 {
+  "data": {
+    "aws_lb": {
+      "shared_alb": {
+        "arn": "arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123"
+      }
+    }
+  },
   "provider": {
     "aws": {
       "region": "us-east-1"
@@ -79,7 +86,7 @@
                 "TLSv1.2"
               ]
             },
-            "domain_name": "${split(\"/\", \"arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123\")[2]}",
+            "domain_name": "${data.aws_lb.shared_alb.dns_name}",
             "origin_id": "ALB"
           }
         ],

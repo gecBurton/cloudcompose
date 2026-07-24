@@ -2,6 +2,7 @@ import json
 import re
 
 from composey.models.aws import (
+    ALB_DATA_SOURCE_KEY,
     AppAutoscalingPolicy,
     AppAutoscalingTarget,
     AWSResources,
@@ -533,18 +534,14 @@ def infer(app: SemanticApp, env: Environment) -> AWSResources:
                 )
 
                 cdn_key = f"{service.name}_cdn"
-                # For an ALB origin, we need the DNS name of the ALB.
-                # In this simple model, we assume the environment provides an alb_dns_name
-                # or we use a placeholder that the user can fill.
-                # Since we don't have alb_dns_name in Environment model yet, we'll use a placeholder interpolation
-                # or assume the user has a custom domain.
-                # For now, let's assume we can use the ALB ARN to find the DNS name via a data source
-                # (but let's keep it simple for this prototype).
+                # A CloudFront origin needs the ALB's DNS name, which cannot be
+                # derived from its ARN. The generator emits a matching
+                # data.aws_lb block so the name is resolved at apply time.
                 resources.aws_cloudfront_distribution[cdn_key] = CloudfrontDistribution(
                     comment=f"CDN for {service.name}",
                     origin=[
                         {
-                            "domain_name": f'${{split("/", "{env.alb_arn}")[2]}}',  # Rough hack to get DNS-ish name
+                            "domain_name": f"${{data.aws_lb.{ALB_DATA_SOURCE_KEY}.dns_name}}",
                             "origin_id": "ALB",
                             "custom_origin_config": {
                                 "http_port": 80,

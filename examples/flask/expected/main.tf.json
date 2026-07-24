@@ -173,21 +173,6 @@
         "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"logs:CreateLogStream\", \"logs:PutLogEvents\"], \"Resource\": [\"${aws_cloudwatch_log_group.backend_lg.arn}:*\"]}]}",
         "role": "${aws_iam_role.backend_exec_role.name}"
       },
-      "backend_package_json_policy": {
-        "name": "prod-flask-backend-package_json-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:*\"], \"Resource\": [\"${aws_s3_bucket.backend_package_json_bucket.arn}\", \"${aws_s3_bucket.backend_package_json_bucket.arn}/*\"]}]}",
-        "role": "${aws_iam_role.backend_task_role.name}"
-      },
-      "backend_package_lock_json_policy": {
-        "name": "prod-flask-backend-package_lock_json-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:*\"], \"Resource\": [\"${aws_s3_bucket.backend_package_lock_json_bucket.arn}\", \"${aws_s3_bucket.backend_package_lock_json_bucket.arn}/*\"]}]}",
-        "role": "${aws_iam_role.backend_task_role.name}"
-      },
-      "backend_src_policy": {
-        "name": "prod-flask-backend-src-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:*\"], \"Resource\": [\"${aws_s3_bucket.backend_src_bucket.arn}\", \"${aws_s3_bucket.backend_src_bucket.arn}/*\"]}]}",
-        "role": "${aws_iam_role.backend_task_role.name}"
-      },
       "backend_to_db_rds_secret": {
         "name": "prod-flask-backend-db-rds-secret",
         "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"secretsmanager:GetSecretValue\"], \"Resource\": [\"${aws_secretsmanager_secret.db_db_secret.arn}\"]}]}",
@@ -202,11 +187,6 @@
         "name": "prod-flask-frontend-exec-log-policy",
         "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"logs:CreateLogStream\", \"logs:PutLogEvents\"], \"Resource\": [\"${aws_cloudwatch_log_group.frontend_lg.arn}:*\"]}]}",
         "role": "${aws_iam_role.frontend_exec_role.name}"
-      },
-      "frontend_src_policy": {
-        "name": "prod-flask-frontend-src-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:*\"], \"Resource\": [\"${aws_s3_bucket.frontend_src_bucket.arn}\", \"${aws_s3_bucket.frontend_src_bucket.arn}/*\"]}]}",
-        "role": "${aws_iam_role.frontend_task_role.name}"
       }
     },
     "aws_lb_listener_rule": {
@@ -247,22 +227,6 @@
     "aws_s3_bucket": {
       "backend_back_notused_bucket": {
         "bucket": "prod-flask-backend-back-notused",
-        "force_destroy": true
-      },
-      "backend_package_json_bucket": {
-        "bucket": "prod-flask-backend-package-json",
-        "force_destroy": true
-      },
-      "backend_package_lock_json_bucket": {
-        "bucket": "prod-flask-backend-package-lock-json",
-        "force_destroy": true
-      },
-      "backend_src_bucket": {
-        "bucket": "prod-flask-backend-src",
-        "force_destroy": true
-      },
-      "frontend_src_bucket": {
-        "bucket": "prod-flask-frontend-src",
         "force_destroy": true
       }
     },

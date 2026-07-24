@@ -22,7 +22,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 - [x] **Container**: Standard ECS Fargate task deployment.
 - [x] **Public HTTP**: Automatic ALB ingress routing for services on port 80/443.
 - [x] **Secrets**: Automatic mapping of Compose `secrets` to AWS Secrets Manager.
-- [x] **Storage**: Automatic mapping of `volumes` to AWS S3 Buckets.
+- [x] **Storage**: Automatic mapping of *named* `volumes` to AWS S3 Buckets. Bind mounts and anonymous volumes are local-development concerns and are ignored.
 - [x] **Managed Object Storage**: Automatically infers AWS S3 from `minio` images.
 - [x] **Managed Databases**: Automatically infers AWS RDS (Postgres/MySQL/MariaDB) from library images.
 - [x] **Managed Caching**: Automatically infers AWS ElastiCache (Redis) from library images.

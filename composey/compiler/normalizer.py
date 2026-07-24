@@ -1,6 +1,7 @@
-import os
+from typing import Optional, Union
 
 from ..models.compose import Application as DockerApplication
+from ..models.compose import VolumeDefinition
 from ..models.semantic import (
     Application as SemanticApplication,
 )
@@ -10,6 +11,32 @@ from ..models.semantic import (
 from ..models.semantic import (
     Service as SemanticService,
 )
+
+# Prefixes that mark a short-form volume source as a host path rather than a
+# named volume, matching how Compose itself disambiguates the two.
+_BIND_SOURCE_PREFIXES = ("/", "./", "../", "~")
+
+
+def _named_volume_source(volume: Union[str, VolumeDefinition]) -> Optional[str]:
+    """
+    Return the named volume a mount refers to, or None if it isn't one.
+
+    Only named volumes describe storage that outlives the container. Bind
+    mounts inject host paths for local development and anonymous volumes are
+    scratch space, so neither has a meaning in a deployed environment.
+    """
+    if isinstance(volume, VolumeDefinition):
+        return volume.source if volume.type == "volume" else None
+
+    # Short form: "source:target[:mode]". A single field is an anonymous volume.
+    parts = volume.split(":")
+    if len(parts) < 2:
+        return None
+
+    source = parts[0]
+    if source.startswith(_BIND_SOURCE_PREFIXES):
+        return None
+    return source
 
 
 def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
@@ -36,23 +63,12 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 else:
                     secret_names.append(s.source)
 
-        # Resolve volumes to names
+        # Resolve named volumes to storage names
         storage_names = []
-        if docker_service.volumes:
-            for v in docker_service.volumes:
-                source = None
-                if isinstance(v, str):
-                    # handle simple string format source:target
-                    source = v.split(":")[0]
-                elif v.source:
-                    source = v.source
-
-                if source:
-                    # If it's an absolute path, only use the filename/basename
-                    # This prevents local workstation paths from leaking into TF
-                    if os.path.isabs(source):
-                        source = os.path.basename(source)
-                    storage_names.append(source)
+        for v in docker_service.volumes or []:
+            source = _named_volume_source(v)
+            if source:
+                storage_names.append(source)
 
         # Infer capability from image name
         capability = "container"

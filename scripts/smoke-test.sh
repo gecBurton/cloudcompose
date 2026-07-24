@@ -10,14 +10,17 @@
 # Usage:
 #   scripts/smoke-test.sh
 #   PROFILE=personal COMPOSE=examples/hello/compose.yml scripts/smoke-test.sh
+#   PROFILE= scripts/smoke-test.sh        # empty PROFILE: use ambient creds (CI)
 #   KEEP=1 scripts/smoke-test.sh          # skip teardown to inspect resources
 #
-# Requires: aws-vault, terraform, uv (composey), curl.
+# Requires: terraform, uv (composey), curl. Locally also aws-vault (PROFILE names
+# the profile); in CI set PROFILE= (empty) to run terraform with ambient AWS
+# credentials (e.g. an OIDC-assumed role).
 #
 set -euo pipefail
 
 # --- Config (override via environment) --------------------------------------
-PROFILE="${PROFILE:-personal}"                       # aws-vault profile
+PROFILE="${PROFILE-personal}"                        # aws-vault profile; empty = ambient creds
 NAME="${NAME:-smoke}"                                 # environment name
 COMPOSE="${COMPOSE:-examples/hello/compose.yml}"      # app to deploy
 PROJECT="${PROJECT:-hello}"                            # composey project name
@@ -33,7 +36,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP_DIR="$ROOT/bootstrap"
 BUILD_DIR="$ROOT/build/$PROJECT"
 
-TF="aws-vault exec $PROFILE -- terraform"
+# With a profile, wrap terraform in aws-vault (local); without one, run it
+# directly against the ambient AWS credentials (CI / OIDC-assumed role).
+if [[ -n "$PROFILE" ]]; then
+  TF="aws-vault exec $PROFILE -- terraform"
+else
+  TF="terraform"
+fi
 
 log()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\n\033[1;31mFAIL:\033[0m %s\n' "$*" >&2; exit 1; }

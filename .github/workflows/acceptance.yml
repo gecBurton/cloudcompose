@@ -1,0 +1,73 @@
+name: AWS Acceptance
+
+# On-demand real-AWS smoke test: deploys an example end to end, asserts it, and
+# always tears it down. Runs in CI (stable networking) rather than on a laptop.
+# Requires the repo Actions variable AWS_ACCEPTANCE_ROLE_ARN (see ci/README.md).
+on:
+  workflow_dispatch:
+    inputs:
+      example:
+        description: Example to smoke test
+        type: choice
+        default: hello
+        options:
+          - hello
+          - minio-s3
+          - build-webapp
+          - doctor
+
+permissions:
+  id-token: write   # required for OIDC federation to AWS
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ACCEPTANCE_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+          terraform_wrapper: false   # let the script call the real terraform binary
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Set up Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-v2
+
+      - name: Smoke test ${{ inputs.example }}
+        env:
+          PROFILE: ""                      # empty -> use ambient OIDC credentials
+          NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
+        run: |
+          case "${{ inputs.example }}" in
+            hello)
+              export COMPOSE=examples/hello/compose.yml PROJECT=hello \
+                     EXPECT="Server name" ;;
+            minio-s3)
+              export COMPOSE=examples/minio-s3/compose.yml PROJECT=minios3 \
+                     EXPECT="Server name" ;;
+            build-webapp)
+              export COMPOSE=examples/build-webapp/compose.yml PROJECT=buildweb \
+                     EXPECT="hello from a composey-built image" ;;
+            doctor)
+              export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
+                     HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
+          esac
+          scripts/smoke-test.sh

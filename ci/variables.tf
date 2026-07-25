@@ -6,8 +6,34 @@ variable "region" {
 
 variable "github_repo" {
   type        = string
-  description = "owner/repo allowed to assume the role via OIDC."
+  description = "owner/repo allowed to assume the role via OIDC. Documentation only; the trust is enforced by github_subject_patterns."
   default     = "gecBurton/composey"
+}
+
+variable "github_subject_patterns" {
+  type        = list(string)
+  description = <<-EOT
+    Patterns matched (OR-ed) against the OIDC token's `sub` claim.
+
+    This repository issues ID-qualified subjects, embedding the numeric owner
+    and repository IDs: `repo:owner@1234/repo@5678:ref:refs/heads/main`. The
+    plain `repo:owner/repo:*` form therefore never matches on its own, which
+    presents as `Not authorized to perform sts:AssumeRoleWithWebIdentity`.
+    Both forms are listed so the trust survives that setting being toggled.
+
+    The ID-qualified form is the stronger of the two: the IDs are immutable, so
+    it keeps pointing at this exact repository even if it is renamed, and it
+    cannot be claimed by someone who registers the old name. Keep the patterns
+    fully qualified — a wildcard in the owner or repo segment would let an
+    unrelated repository with a similar name assume this role.
+
+    If a run fails to assume the role, the workflow's "Debug OIDC claims" step
+    prints the `sub` that GitHub actually sent; match it here.
+  EOT
+  default = [
+    "repo:gecBurton@8233643/composey@1305607063:*",
+    "repo:gecBurton/composey:*",
+  ]
 }
 
 variable "role_name" {

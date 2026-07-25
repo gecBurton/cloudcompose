@@ -37,7 +37,8 @@ Composey provides a PaaS-like deployment experience where application engineers 
 - [x] **Golden Testing**: Regression protection via example snapshots.
 - [x] **Terraform Validation**: CI verification using `terraform validate`.
 - [x] **Cloud Fidelity**: Integration testing via `LocalStack`.
-- [ ] **Acceptance Testing**: Automated nightly runs in a real AWS sandbox. *(Pending)*
+- [x] **Acceptance Testing**: On-demand runs in a real AWS account, deploying an example end to end and asserting every managed substitution before tearing it down. Verified for `hello` and `doctor` (S3 + RDS + ElastiCache).
+- [ ] **Scheduled Acceptance**: Nightly runs rather than on-demand. *(Pending)*
 
 ---
 

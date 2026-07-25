@@ -46,17 +46,6 @@ Repo → **Actions → AWS Acceptance → Run workflow** → choose an example
 (`hello`, `minio-s3`, `build-webapp`, or `doctor`). The job assumes the role,
 deploys the example, asserts it, and tears everything down — pass or fail.
 
-## If a run cannot assume the role
-
-AWS reports only `Not authorized to perform sts:AssumeRoleWithWebIdentity`,
-never which condition failed. The workflow's **Debug OIDC claims** step prints
-the `sub` GitHub actually sent; compare it with `github_subject_patterns` in
-`variables.tf` and add the observed form if it differs.
-
-This repository issues *ID-qualified* subjects — `repo:owner@1234/repo@5678:...`
-rather than `repo:owner/repo:...` — so a trust policy written only against the
-plain form is rejected even though everything else is correct.
-
 ## Recovering a leaked run
 
 The smoke test tears everything down via a shell trap, and the workflow bounds

@@ -3,6 +3,7 @@ locals {
   # drop the optional ones that are unset rather than writing nulls.
   environment = merge(
     {
+      target          = "aws"
       name            = var.name
       region          = var.region
       vpc_id          = aws_vpc.this.id

@@ -2,14 +2,14 @@ import json
 
 from composey.compiler.generator import generate
 from composey.compiler.inference import infer
-from composey.models.environment import Environment
+from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application, Service
 
 ALB_ARN = "arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123"
 
 
-def _env(region: str = "us-east-1") -> Environment:
-    return Environment(
+def _env(region: str = "us-east-1") -> AwsEnvironment:
+    return AwsEnvironment(
         name="prod",
         region=region,
         vpc_id="vpc-123",

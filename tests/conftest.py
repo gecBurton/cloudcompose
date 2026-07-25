@@ -8,13 +8,13 @@ import time
 import pytest
 import requests
 
-from composey.models.environment import Environment
+from composey.models.environment import AwsEnvironment
 
 
 # Standard Mock Environment
 @pytest.fixture(scope="session")
 def mock_prod_env():
-    return Environment(
+    return AwsEnvironment(
         name="prod",
         vpc_id="vpc-123",
         public_subnets=["subnet-1", "subnet-2"],
@@ -31,7 +31,7 @@ LS_ENDPOINT = "http://localhost:4566"
 
 @pytest.fixture(scope="session")
 def mock_localstack_env():
-    return Environment(
+    return AwsEnvironment(
         name="local",
         vpc_id="vpc-123",
         public_subnets=["subnet-1", "subnet-2"],

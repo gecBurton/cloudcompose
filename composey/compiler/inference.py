@@ -3,6 +3,7 @@ import re
 
 from composey.models.aws import (
     ALB_DATA_SOURCE_KEY,
+    CLOUDFRONT_PROVIDER_REF,
     AppAutoscalingPolicy,
     AppAutoscalingTarget,
     AWSResources,
@@ -508,6 +509,8 @@ def infer(app: SemanticApp, env: Environment) -> AWSResources:
                 resources.aws_wafv2_web_acl[waf_key] = Wafv2WebAcl(
                     name=get_name(f"{service.name}-waf"),
                     scope="CLOUDFRONT",
+                    # CLOUDFRONT-scoped ACLs only exist in us-east-1.
+                    provider=CLOUDFRONT_PROVIDER_REF,
                     visibility_config={
                         "cloudwatch_metrics_enabled": True,
                         "metric_name": f"{service.name}WAF",

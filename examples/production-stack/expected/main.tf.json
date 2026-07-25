@@ -7,9 +7,15 @@
     }
   },
   "provider": {
-    "aws": {
-      "region": "us-east-1"
-    }
+    "aws": [
+      {
+        "region": "us-east-1"
+      },
+      {
+        "alias": "us_east_1",
+        "region": "us-east-1"
+      }
+    ]
   },
   "resource": {
     "aws_appautoscaling_policy": {
@@ -386,6 +392,7 @@
           "allow": {}
         },
         "name": "prod-production-stack-web-waf",
+        "provider": "aws.us_east_1",
         "rule": [
           {
             "name": "AWS-AWSManagedRulesCommonRuleSet",

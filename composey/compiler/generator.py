@@ -1,16 +1,21 @@
 import json
 
-from ..models.aws import ALB_DATA_SOURCE_KEY, AWSResources
+from ..models.aws import (
+    ALB_DATA_SOURCE_KEY,
+    CLOUDFRONT_PROVIDER_ALIAS,
+    CLOUDFRONT_SCOPE_REGION,
+    AWSResources,
+)
 from ..models.environment import Environment
 from ..models.terraform import TerraformManifest
 
 
-def generate(resources: AWSResources, env: Environment) -> str:
-    # Build provider configuration
-    aws_provider: dict = {"region": env.region}
+def _aws_provider(env: Environment, region: str) -> dict:
+    """Build an AWS provider configuration for a given region."""
+    provider: dict = {"region": region}
 
     if env.aws_endpoint:
-        aws_provider.update(
+        provider.update(
             {
                 "access_key": "test",
                 "secret_key": "test",
@@ -27,9 +32,17 @@ def generate(resources: AWSResources, env: Environment) -> str:
                     "elasticloadbalancing": env.aws_endpoint,
                     "cloudwatch": env.aws_endpoint,
                     "logs": env.aws_endpoint,
+                    "wafv2": env.aws_endpoint,
                 },
             }
         )
+
+    return provider
+
+
+def generate(resources: AWSResources, env: Environment) -> str:
+    # Build provider configuration
+    aws_provider = _aws_provider(env, env.region)
 
     required_providers = {
         "aws": {"source": "hashicorp/aws", "version": "~> 5.0"},
@@ -58,6 +71,13 @@ def generate(resources: AWSResources, env: Environment) -> str:
     # environment only supplies as an ARN. Look it up at apply time.
     if resources.aws_cloudfront_distribution and env.alb_arn:
         data_sources["aws_lb"] = {ALB_DATA_SOURCE_KEY: {"arn": env.alb_arn}}
+
+    # CLOUDFRONT-scoped WAF web ACLs can only be created in us-east-1, so they
+    # are pinned to an aliased provider rather than the environment's region.
+    if any(acl.scope == "CLOUDFRONT" for acl in resources.aws_wafv2_web_acl.values()):
+        edge_provider = _aws_provider(env, CLOUDFRONT_SCOPE_REGION)
+        edge_provider["alias"] = CLOUDFRONT_PROVIDER_ALIAS
+        providers["aws"] = [aws_provider, edge_provider]
 
     manifest = TerraformManifest(
         terraform={"required_providers": required_providers},

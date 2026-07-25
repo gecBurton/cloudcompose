@@ -36,8 +36,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # TEMPORARY: prints the OIDC token's claims (never the token itself) so the
-      # role trust policy can be matched against what GitHub actually sends.
+      # Prints the OIDC token's claims — never the token itself — so a trust
+      # policy mismatch can be diagnosed from the log. AWS only ever reports
+      # "Not authorized", never which claim failed to match, so without this the
+      # `sub` GitHub actually sends is invisible. None of these claims are secret.
       - name: Debug OIDC claims
         run: |
           token="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \

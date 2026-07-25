@@ -38,7 +38,8 @@ locals {
 }
 
 # The role GitHub Actions in this repo may assume via OIDC. The trust is scoped
-# to the repo; tighten `sub` to a branch/environment for extra safety if desired.
+# to the repo by matching the token's `sub` claim; tighten the patterns to a
+# branch or environment for extra safety if desired.
 resource "aws_iam_role" "acceptance" {
   name = var.role_name
 
@@ -50,7 +51,8 @@ resource "aws_iam_role" "acceptance" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = { "${local.oidc_host}:aud" = "sts.amazonaws.com" }
-        StringLike   = { "${local.oidc_host}:sub" = "repo:${var.github_repo}:*" }
+        # A list is OR-ed: any one pattern matching is enough.
+        StringLike = { "${local.oidc_host}:sub" = var.github_subject_patterns }
       }
     }]
   })

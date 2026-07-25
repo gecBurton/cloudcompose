@@ -34,6 +34,12 @@ Five things did not survive. They are listed worst-first.
 
 ### 1. `Relationship` has no Azure enforcement point
 
+> **Superseded in part by the [GCP spike](../gcp/README.md).** GCP *does* have a
+> per-pair enforcement point (`roles/run.invoker` per calling service account),
+> so two of three clouds enforce this and Azure is the outlier. `Relationship`
+> should keep its place in the model; only the absoluteness of the docstring
+> needs qualifying. The finding below still stands for Azure specifically.
+
 `semantic.py` calls `Relationship` "the single source of truth for network
 security and service discovery". That is an AWS statement. The AWS backend turns
 each `depends_on` edge into a security group rule; `production-stack` produces

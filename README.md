@@ -75,6 +75,7 @@ Composey supports the **`x-composey`** extension to allow engineers to specify t
 - `min_scale`: Minimum number of instances (Default: 1).
 - `max_scale`: Maximum number of instances (Default: 1). If > 1, creates AWS AppAutoScaling policies for CPU (70%) and Memory (80%).
 - `cpu` / `memory`: Explicit Fargate unit overrides.
+- `startup_grace_period`: Seconds a newly started instance is given to become healthy before health checks are enforced. (The older ECS-flavoured name `health_check_grace_period` is still accepted.)
 
 **Example:**
 ```yaml
@@ -96,8 +97,11 @@ For public-facing services, you can enable a global edge presence with built-in 
 ### ⏰ Scheduled Tasks (Cron)
 Turn any container into a serverless scheduled job.
 
-- `schedule`: An AWS EventBridge compatible schedule expression (e.g., `cron(0 2 * * ? *)` or `rate(1 hour)`).
+- `schedule`: Either a standard 5-field cron expression (`"0 2 * * *"`) or an interval (`"every 6 hours"`, `"every 30 minutes"`).
 - **Behavior**: Services with a `schedule` do not run as persistent ECS services. They are triggered as standalone tasks.
+
+> [!NOTE]
+> The schedule is deliberately written in a cloud-neutral form; the compiler renders whatever dialect the target needs (AWS EventBridge wants a six-field cron with a `?` placeholder). AWS's own `cron(...)` and `rate(...)` spellings are still accepted for compatibility, but the neutral form is canonical.
 
 **Example:**
 ```yaml
@@ -106,7 +110,7 @@ services:
     image: my-utils
     command: ["python", "cleanup.py"]
     x-composey:
-      schedule: "rate(24 hours)"
+      schedule: "every 24 hours"
 ```
 
 ### 🗄 Managed Databases (RDS)
@@ -181,7 +185,10 @@ private_subnets:
 ecs_cluster_arn: arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster
 alb_arn: arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123
 alb_listener_arn: arn:aws:lb:us-east-1:123456789012:listener/app/shared-alb/123/456
+log_retention_days: 7
 ```
+
+Log retention is a platform policy rather than an application choice, so it lives here rather than in the compose file.
 
 ### Running Tests
 The test suite includes unit tests, snapshot comparisons, and local cloud deployment verification via LocalStack.

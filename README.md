@@ -127,10 +127,25 @@ If a service uses a `redis` image, Composey will:
 ### 📦 Managed Object Storage (S3)
 If a service uses a `minio` image, Composey will:
 1.  **Substitute Infrastructure**: Provision an **AWS S3 Bucket** instead of a container.
-2.  **Smart Host Injection**: 
-    *   Variables containing `BUCKET` or `NAME` are updated to the **S3 Bucket ID**.
-    *   Variables containing `ENDPOINT` or `URL` are updated to the **S3 Bucket Domain Name**.
+2.  **Host Injection**: See [Connection Wiring](#-connection-wiring) below. A variable holding just `blobs` becomes the **bucket ID**; a URL such as `http://blobs:9000` becomes the **bucket domain**.
 3.  **Automated Permissions**: Any service that `depends_on` the Minio service is automatically granted full IAM permissions (`s3:*`) to the generated bucket.
+
+### 🔌 Connection Wiring
+When a service is substituted for a managed one, every client that referred to it by its Compose name is pointed at the real thing. Resolution is driven by the **values** your Compose file already carries, never by variable names:
+
+| In `compose.yml` | Becomes |
+| --- | --- |
+| `DB_HOST: db` | the database endpoint |
+| `BUCKET_NAME: blobs` | the bucket ID |
+| `REDIS_URL: redis://cache:6379` | `redis://<endpoint>:6379` |
+| `DATABASE_URL: postgres://u@db:5432/app` | `postgres://u@<endpoint>:5432/app` |
+| `S3_ENDPOINT: http://blobs:9000` | `http://<bucket-domain>` |
+| anything not naming a service | unchanged |
+
+The scheme, user info and path are preserved; the port comes from the managed service, since the port a container listened on locally rarely survives substitution.
+
+> [!NOTE]
+> Composey deliberately preserves the *shape* your Compose file already uses, because that shape is what works locally. If a variable needs a URL, write a URL — `REDIS_URL: redis://cache` — rather than a bare service name.
 
 ---
 

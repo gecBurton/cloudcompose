@@ -88,6 +88,43 @@ class Service(BaseModel):
     )
 
 
+class Connection(BaseModel):
+    """
+    How a client reaches one managed service.
+
+    The attribute *vocabulary* is cloud-neutral; the values are target-specific
+    expressions supplied by a backend. This exists so that wiring a client to a
+    managed service is a structured substitution rather than guesswork about
+    what a variable's name implies.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = Field(description="Address the service is reached on")
+    port: Optional[int] = Field(
+        default=None,
+        description="Port the service is reached on. None means the scheme's "
+        "default applies and no port should be written.",
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Identifier of the thing being addressed, where that "
+        "differs from the host: a bucket, container or database name.",
+    )
+    addressed_by: Literal["host", "name"] = Field(
+        default="host",
+        description="Which attribute a bare reference to the service resolves "
+        "to. A database is addressed by host; a bucket by name.",
+    )
+
+    @property
+    def bare_reference(self) -> str:
+        """The value a variable holding only the service's name resolves to."""
+        if self.addressed_by == "name" and self.name is not None:
+            return self.name
+        return self.host
+
+
 class Relationship(BaseModel):
     """
     Directed connectivity: client -> server.

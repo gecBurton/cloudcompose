@@ -20,9 +20,19 @@ permissions:
   id-token: write   # required for OIDC federation to AWS
   contents: read
 
+# Never run two acceptance jobs at once: they share the bootstrap environment
+# name space and would tear down each other's resources. Queue instead of
+# cancelling — cancelling a run mid-apply is exactly what strands resources.
+concurrency:
+  group: aws-acceptance
+  cancel-in-progress: false
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    # Bound the blast radius of a hang. Without this a stuck poll would sit on
+    # GitHub's 6 hour default while a NAT gateway and ALB bill by the hour.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +65,10 @@ jobs:
         env:
           PROFILE: ""                      # empty -> use ambient OIDC credentials
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
+          # Keeps Terraform state off the ephemeral runner so a cancelled or
+          # timed-out run can still be destroyed afterwards.
+          STATE_BUCKET: ${{ vars.AWS_ACCEPTANCE_STATE_BUCKET }}
+          STATE_REGION: eu-west-2
         run: |
           case "${{ inputs.example }}" in
             hello)

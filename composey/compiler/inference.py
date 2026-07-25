@@ -1,5 +1,5 @@
 import json
-import re
+from typing import Optional
 
 from composey.models.aws import (
     ALB_DATA_SOURCE_KEY,
@@ -36,7 +36,10 @@ from composey.models.aws import (
 )
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application as SemanticApp
-from composey.models.semantic import CronSchedule, Schedule
+from composey.models.semantic import Connection, CronSchedule, Schedule
+from composey.models.semantic import Service as SemanticService
+
+from .connections import default_port, resolve_environment
 
 
 def _eventbridge_expression(schedule: Schedule) -> str:
@@ -66,6 +69,55 @@ def _eventbridge_expression(schedule: Schedule) -> str:
         )
 
     return f"cron({minute} {hour} {day_of_month} {month} {day_of_week} *)"
+
+
+# Ports the managed services listen on once substituted. Held here rather than
+# rediscovered at each use, so environment wiring and security group rules
+# cannot disagree about how a client reaches a service.
+_DATABASE_PORTS = {"postgres": 5432, "mysql": 3306, "mariadb": 3306}
+_CACHE_PORT = 6379
+
+
+def _database_engine(image: str) -> str:
+    lowered = image.lower()
+    if "mysql" in lowered:
+        return "mysql"
+    if "mariadb" in lowered:
+        return "mariadb"
+    return "postgres"
+
+
+def _connection_for(service: SemanticService) -> Optional[Connection]:
+    """
+    Describe how a client reaches this service once AWS has replaced it.
+
+    Returns None for anything composey runs as a container, which clients reach
+    without the compiler rewriting anything.
+    """
+    if service.capability == "database":
+        return Connection(
+            host=f"${{aws_db_instance.{service.name}_db.address}}",
+            port=_DATABASE_PORTS[_database_engine(service.image)],
+        )
+
+    if service.capability == "cache":
+        return Connection(
+            host=f"${{aws_elasticache_cluster.{service.name}_cache.cache_nodes[0].address}}",
+            port=_CACHE_PORT,
+        )
+
+    if service.capability == "object-storage":
+        return Connection(
+            # A bucket is addressed by name, not by host: a variable holding
+            # just "blobs" wants the bucket id, while a URL wants the domain.
+            host=f"${{aws_s3_bucket.{service.name}_bucket.bucket_domain_name}}",
+            name=f"${{aws_s3_bucket.{service.name}_bucket.id}}",
+            addressed_by="name",
+            # S3 is reached over the scheme's default port.
+            port=None,
+        )
+
+    return None
 
 
 def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
@@ -726,6 +778,14 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 },
             )
 
+    # How each substituted service is reached, built once and shared by
+    # environment wiring and security group rules.
+    connections = {
+        service.name: connection
+        for service in app.services
+        if (connection := _connection_for(service)) is not None
+    }
+
     # 3. Dynamic Link Injection (Service Discovery)
     # If a service depends on a managed capability, inject the connection details
     for service in app.services:
@@ -751,12 +811,8 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 continue
 
             # Server is a managed service (DB, Cache, or S3)
-            address = ""
-            bucket_id = ""
             if server.capability == "database":
-                db_key = f"{server.name}_db"
                 db_secret_key = f"{server.name}_db_secret"
-                address = f"${{aws_db_instance.{db_key}.address}}"
 
                 # Inject credentials from the RDS secret
                 container["secrets"].extend(
@@ -793,17 +849,8 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                     ),
                 )
 
-            elif server.capability == "cache":
-                cache_key = f"{server.name}_cache"
-                address = (
-                    f"${{aws_elasticache_cluster.{cache_key}.cache_nodes[0].address}}"
-                )
-                port = 6379  # Default Redis port
-
             elif server.capability == "object-storage":
                 bucket_key = f"{server.name}_bucket"
-                address = f"${{aws_s3_bucket.{bucket_key}.bucket_domain_name}}"
-                bucket_id = f"${{aws_s3_bucket.{bucket_key}.id}}"
 
                 # Also grant IAM permissions to the client service
                 policy_key = f"{service.name}_to_{server.name}_s3_policy"
@@ -827,65 +874,11 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                     ),
                 )
 
-            # Replace any env vars that contain the local name
-            for env_var in container["environment"]:
-                val = env_var["value"]
-                name = env_var["name"].upper()
-
-                # Choose best replacement based on variable intent
-                replacement = address
-                if server.capability == "cache":
-                    # Smart matching for Redis URLs
-                    if (
-                        val.startswith("redis://")
-                        or val.startswith("rediss://")
-                        or "_URL" in name
-                        or "BROKER" in name
-                    ):
-                        # Construct a full redis URL if it looks like one was intended
-                        prefix = "redis://"
-                        if val.startswith("rediss://"):
-                            prefix = "rediss://"
-                        replacement = f"{prefix}{address}:{port}"
-
-                elif server.capability == "object-storage":
-                    # Smart matching for bucket variables
-                    # Tighten check to avoid matching USERNAME/HOSTNAME
-                    if (
-                        name.endswith("_BUCKET")
-                        or name.endswith("_NAME")
-                        or name == "BUCKET"
-                        or name == "NAME"
-                    ):
-                        replacement = bucket_id
-                    elif any(k in name for k in ["ENDPOINT", "URL", "HOST"]):
-                        # Keep protocol if present
-                        if val.startswith("https://"):
-                            replacement = f"https://{address}"
-                        else:
-                            replacement = f"http://{address}"
-
-                if (
-                    val == server.name
-                    or val.startswith(f"redis://{server.name}")
-                    or val.startswith(f"rediss://{server.name}")
-                ):
-                    env_var["value"] = replacement
-                elif (
-                    f"://{server.name}:" in val
-                    or f"://{server.name}/" in val
-                    or val.endswith(f"://{server.name}")
-                ):
-                    pattern = re.compile(rf"://{re.escape(server.name)}(:\d+)?")
-                    # If it's a URL-like string, we use the address-based replacement
-                    url_replacement = (
-                        f"https://{address}"
-                        if val.startswith("https")
-                        else f"http://{address}"
-                    )
-                    env_var["value"] = pattern.sub(
-                        f"://{url_replacement.split('://')[-1]}", val
-                    )
+        # Point every reference to a managed service at the real thing. Driven
+        # by the values the compose file already carries, not by variable names.
+        container["environment"] = resolve_environment(
+            container["environment"], connections
+        )
 
         task_def.container_definitions = json.dumps(container_defs)
 
@@ -899,22 +892,10 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
 
         rule_key = f"{rel.client}_to_{rel.server}_rule"
 
-        # Determine port based on capability if not explicitly provided
-        default_port = 80
-        if server_service:
-            if server_service.capability == "database":
-                default_port = (
-                    3306
-                    if "mysql" in server_service.image.lower()
-                    or "mariadb" in server_service.image.lower()
-                    else 5432
-                )
-            elif server_service.capability == "cache":
-                default_port = 6379
-            elif server_service.port:
-                default_port = server_service.port
-
-        port = rel.port or default_port
+        # A managed service is reached on the port its connection declares; a
+        # plain container on whatever port it exposes.
+        fallback = (server_service.port or 80) if server_service else 80
+        port = rel.port or default_port(connections.get(rel.server), fallback)
 
         resources.aws_security_group_rule[rule_key] = SecurityGroupRule(
             type="ingress",

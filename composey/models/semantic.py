@@ -1,8 +1,35 @@
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
 Capability = Literal["container", "database", "cache", "object-storage"]
+
+
+class CronSchedule(BaseModel):
+    """A recurring time, as a standard 5-field cron expression."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["cron"] = "cron"
+    expression: str = Field(
+        description="Standard 5-field cron: minute hour day-of-month month day-of-week"
+    )
+
+
+class RateSchedule(BaseModel):
+    """A fixed interval between runs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["rate"] = "rate"
+    value: int = Field(gt=0, description="How many units between runs")
+    unit: Literal["minutes", "hours", "days"] = Field(description="The interval unit")
+
+
+# Kept cloud-neutral deliberately: the compose file must not have to carry a
+# provider's scheduling dialect. Each backend renders its own (EventBridge
+# wants a 6-field cron with a '?' placeholder, Azure wants standard 5-field).
+Schedule = Annotated[Union[CronSchedule, RateSchedule], Field(discriminator="kind")]
 
 
 class Service(BaseModel):
@@ -35,14 +62,15 @@ class Service(BaseModel):
     command: Optional[list[str]] = Field(
         default=None, description="Container command override (exec form)"
     )
-    health_check_grace_period: Optional[int] = Field(
+    startup_grace_period: Optional[int] = Field(
         default=None,
-        description="Seconds ECS ignores ALB health checks after a task starts",
+        description="Seconds a newly started instance is given to become healthy "
+        "before health checks are enforced against it",
     )
     min_scale: int = Field(default=1, description="Minimum number of instances")
     max_scale: int = Field(default=1, description="Maximum number of instances")
-    schedule: Optional[str] = Field(
-        default=None, description="Cron expression for scheduled tasks"
+    schedule: Optional[Schedule] = Field(
+        default=None, description="When to run this service, if it is a scheduled task"
     )
     cdn_enabled: bool = Field(
         default=False, description="Whether to enable CDN for this service"

@@ -1,3 +1,4 @@
+import re
 from typing import Optional, Union
 
 from ..models.compose import Application as DockerApplication
@@ -6,11 +7,54 @@ from ..models.semantic import (
     Application as SemanticApplication,
 )
 from ..models.semantic import (
+    CronSchedule,
+    RateSchedule,
     Relationship,
+    Schedule,
 )
 from ..models.semantic import (
     Service as SemanticService,
 )
+
+# "every 30 minutes", "every hour", and the AWS "rate(1 hour)" spelling.
+_RATE = re.compile(
+    r"^(?:rate\(\s*|every\s+)(?:(\d+)\s+)?(minute|hour|day)s?\s*\)?$", re.IGNORECASE
+)
+_CRON_WRAPPER = re.compile(r"^cron\(\s*(.*?)\s*\)$", re.IGNORECASE)
+
+
+def _parse_schedule(raw: str) -> Schedule:
+    """
+    Parse a schedule into the cloud-neutral model.
+
+    The canonical spellings are a standard 5-field cron expression
+    ("0 2 * * *") or an interval ("every 1 hour"). AWS's own `cron(...)` and
+    `rate(...)` forms are also accepted, since they predate this model, but the
+    provider dialect is not what gets stored — each backend renders its own.
+    """
+    text = raw.strip()
+
+    rate = _RATE.match(text)
+    if rate:
+        value = int(rate.group(1)) if rate.group(1) else 1
+        return RateSchedule(value=value, unit=f"{rate.group(2).lower()}s")
+
+    wrapped = _CRON_WRAPPER.match(text)
+    fields = (wrapped.group(1) if wrapped else text).split()
+
+    # EventBridge cron carries a sixth year field that standard cron lacks.
+    if len(fields) == 6:
+        fields = fields[:5]
+    if len(fields) != 5:
+        raise ValueError(
+            f"schedule {raw!r} is not a 5-field cron expression or an interval "
+            f'like "every 1 hour"'
+        )
+
+    # '?' is an AWS placeholder meaning "no value here"; standard cron uses '*'.
+    fields = ["*" if f == "?" else f for f in fields]
+    return CronSchedule(expression=" ".join(fields))
+
 
 # Prefixes that mark a short-form volume source as a host path rather than a
 # named volume, matching how Compose itself disambiguates the two.
@@ -112,7 +156,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         max_scale = 1
         schedule = None
         cdn_enabled = False
-        health_check_grace_period = None
+        startup_grace_period = None
 
         x_composey = docker_service.x_composey
         if "size" in x_composey:
@@ -126,11 +170,16 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         if "max_scale" in x_composey:
             max_scale = int(x_composey["max_scale"])
         if "schedule" in x_composey:
-            schedule = x_composey["schedule"]
+            schedule = _parse_schedule(str(x_composey["schedule"]))
         if "cdn" in x_composey:
             cdn_enabled = bool(x_composey["cdn"])
-        if "health_check_grace_period" in x_composey:
-            health_check_grace_period = int(x_composey["health_check_grace_period"])
+        if "startup_grace_period" in x_composey:
+            startup_grace_period = int(x_composey["startup_grace_period"])
+        elif "health_check_grace_period" in x_composey:
+            # Deprecated ECS-flavoured spelling of startup_grace_period. Accepted
+            # so existing compose files keep working rather than having the key
+            # silently ignored.
+            startup_grace_period = int(x_composey["health_check_grace_period"])
 
         semantic_services.append(
             SemanticService(
@@ -143,7 +192,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 port=primary_port,
                 build_context=build_context,
                 command=command,
-                health_check_grace_period=health_check_grace_period,
+                startup_grace_period=startup_grace_period,
                 min_scale=min_scale,
                 max_scale=max_scale,
                 schedule=schedule,

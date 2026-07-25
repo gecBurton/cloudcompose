@@ -2,7 +2,7 @@ import json
 
 from composey.compiler.inference import infer
 from composey.models.environment import AwsEnvironment
-from composey.models.semantic import Application, Service
+from composey.models.semantic import Application, RateSchedule, Service
 
 
 def test_iam_least_privilege_scoping():
@@ -21,7 +21,11 @@ def test_iam_least_privilege_scoping():
     app = Application(
         name="myapp",
         services=[
-            Service(name="job", image="img", schedule="rate(1 minute)"),
+            Service(
+                name="job",
+                image="img",
+                schedule=RateSchedule(value=1, unit="minutes"),
+            ),
             Service(name="api", image="img", storage=["data-bucket"]),
         ],
     )

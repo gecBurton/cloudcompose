@@ -36,6 +36,36 @@ from composey.models.aws import (
 )
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application as SemanticApp
+from composey.models.semantic import CronSchedule, Schedule
+
+
+def _eventbridge_expression(schedule: Schedule) -> str:
+    """
+    Render a cloud-neutral schedule as an EventBridge schedule expression.
+
+    EventBridge cron takes six fields rather than the standard five (it adds a
+    year), and requires exactly one of day-of-month and day-of-week to be the
+    '?' placeholder rather than '*'.
+    """
+    if not isinstance(schedule, CronSchedule):
+        # rate(1 hour) is singular, rate(2 hours) is plural.
+        unit = schedule.unit if schedule.value != 1 else schedule.unit.rstrip("s")
+        return f"rate({schedule.value} {unit})"
+
+    minute, hour, day_of_month, month, day_of_week = schedule.expression.split()
+
+    if day_of_week == "*":
+        day_of_week = "?"
+    elif day_of_month == "*":
+        day_of_month = "?"
+    else:
+        raise ValueError(
+            f"schedule {schedule.expression!r} constrains both day-of-month and "
+            f"day-of-week, which EventBridge cannot express: it requires one of "
+            f"them to be unset."
+        )
+
+    return f"cron({minute} {hour} {day_of_month} {month} {day_of_week} *)"
 
 
 def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
@@ -202,7 +232,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
         log_group_key = f"{service.name}_lg"
         resources.aws_cloudwatch_log_group[log_group_key] = CloudWatchLogGroup(
             name=f"/ecs/{get_name(service.name)}",
-            retention_in_days=7,
+            retention_in_days=env.log_retention_days,
             tags=tags,
         )
 
@@ -448,7 +478,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             name=get_name(service.name),
             cluster=env.ecs_cluster_arn,
             task_definition=f"${{aws_ecs_task_definition.{task_def_key}.arn}}",
-            health_check_grace_period_seconds=service.health_check_grace_period,
+            health_check_grace_period_seconds=service.startup_grace_period,
             network_configuration={
                 "subnets": env.private_subnets,
                 "security_groups": [f"${{aws_security_group.{app_sg_key}.id}}"],
@@ -584,7 +614,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             rule_key = f"{service.name}_rule"
             resources.aws_cloudwatch_event_rule[rule_key] = CloudwatchEventRule(
                 name=get_name(f"{service.name}-rule"),
-                schedule_expression=service.schedule,
+                schedule_expression=_eventbridge_expression(service.schedule),
                 description=f"Schedule for {service.name}",
                 tags=tags,
             )

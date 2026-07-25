@@ -18,6 +18,13 @@ class BaseEnvironment(BaseModel):
     target: str = Field(description="The cloud the application is deployed to")
     name: str = Field(description="Environment name (e.g., production, staging)")
     region: str = Field(description="The region to deploy into")
+    log_retention_days: int = Field(
+        default=7,
+        gt=0,
+        description="How long application logs are kept. A platform policy, not an "
+        "application choice. Ignored by targets whose log store belongs to the "
+        "environment rather than to the compiled application.",
+    )
     tags: Optional[Dict[str, str]] = Field(
         default=None, description="Default tags for all resources"
     )

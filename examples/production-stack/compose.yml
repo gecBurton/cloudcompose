@@ -26,4 +26,4 @@ services:
     image: busybox
     command: ["echo", "cleaning up..."]
     x-composey:
-      schedule: "cron(0 2 * * ? *)"
+      schedule: "0 2 * * *"

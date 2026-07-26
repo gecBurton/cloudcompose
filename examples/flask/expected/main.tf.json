@@ -39,7 +39,7 @@
         "skip_final_snapshot": true,
         "username": "composey",
         "vpc_security_group_ids": [
-          "${aws_security_group.app_sg.id}"
+          "${aws_security_group.private_sg.id}"
         ]
       }
     },
@@ -80,7 +80,9 @@
         "network_configuration": {
           "assign_public_ip": false,
           "security_groups": [
-            "${aws_security_group.app_sg.id}"
+            "${aws_security_group.private_sg.id}",
+            "${aws_security_group.public_sg.id}",
+            "${aws_security_group.backend_ingress_sg.id}"
           ],
           "subnets": [
             "subnet-3",
@@ -98,7 +100,7 @@
         "network_configuration": {
           "assign_public_ip": false,
           "security_groups": [
-            "${aws_security_group.app_sg.id}"
+            "${aws_security_group.public_sg.id}"
           ],
           "subnets": [
             "subnet-3",
@@ -258,9 +260,19 @@
       }
     },
     "aws_security_group": {
-      "app_sg": {
-        "description": "Security group for flask in prod",
-        "name": "prod-flask-sg",
+      "backend_ingress_sg": {
+        "description": "Load balancer ingress to backend",
+        "name": "prod-flask-backend-ingress",
+        "vpc_id": "vpc-123"
+      },
+      "private_sg": {
+        "description": "Network private of flask in prod",
+        "name": "prod-flask-private",
+        "vpc_id": "vpc-123"
+      },
+      "public_sg": {
+        "description": "Network public of flask in prod",
+        "name": "prod-flask-public",
         "vpc_id": "vpc-123"
       }
     },
@@ -272,37 +284,48 @@
         "description": "Allow ALB to talk to backend",
         "from_port": 80,
         "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
+        "security_group_id": "${aws_security_group.backend_ingress_sg.id}",
         "to_port": 80,
         "type": "ingress"
       },
-      "app_egress_rule": {
+      "private_sg_egress_rule": {
         "cidr_blocks": [
           "0.0.0.0/0"
         ],
-        "description": "Allow all outbound for flask in prod",
+        "description": "Allow all outbound from network private",
         "from_port": 0,
         "protocol": "-1",
-        "security_group_id": "${aws_security_group.app_sg.id}",
+        "security_group_id": "${aws_security_group.private_sg.id}",
         "to_port": 0,
         "type": "egress"
       },
-      "backend_to_db_rule": {
-        "description": "Allow backend to talk to db",
-        "from_port": 3306,
-        "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
-        "source_security_group_id": "${aws_security_group.app_sg.id}",
-        "to_port": 3306,
+      "private_sg_internal_rule": {
+        "description": "Allow traffic within network private",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.private_sg.id}",
+        "source_security_group_id": "${aws_security_group.private_sg.id}",
+        "to_port": 0,
         "type": "ingress"
       },
-      "frontend_to_backend_rule": {
-        "description": "Allow frontend to talk to backend",
-        "from_port": 80,
-        "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
-        "source_security_group_id": "${aws_security_group.app_sg.id}",
-        "to_port": 80,
+      "public_sg_egress_rule": {
+        "cidr_blocks": [
+          "0.0.0.0/0"
+        ],
+        "description": "Allow all outbound from network public",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.public_sg.id}",
+        "to_port": 0,
+        "type": "egress"
+      },
+      "public_sg_internal_rule": {
+        "description": "Allow traffic within network public",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.public_sg.id}",
+        "source_security_group_id": "${aws_security_group.public_sg.id}",
+        "to_port": 0,
         "type": "ingress"
       }
     },

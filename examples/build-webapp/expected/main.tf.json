@@ -46,7 +46,8 @@
         "network_configuration": {
           "assign_public_ip": false,
           "security_groups": [
-            "${aws_security_group.app_sg.id}"
+            "${aws_security_group.public_sg.id}",
+            "${aws_security_group.web_ingress_sg.id}"
           ],
           "subnets": [
             "subnet-3",
@@ -128,9 +129,14 @@
       }
     },
     "aws_security_group": {
-      "app_sg": {
-        "description": "Security group for build-webapp in prod",
-        "name": "prod-build-webapp-sg",
+      "public_sg": {
+        "description": "Network public of build-webapp in prod",
+        "name": "prod-build-webapp-public",
+        "vpc_id": "vpc-123"
+      },
+      "web_ingress_sg": {
+        "description": "Load balancer ingress to web",
+        "name": "prod-build-webapp-web-ingress",
         "vpc_id": "vpc-123"
       }
     },
@@ -142,20 +148,29 @@
         "description": "Allow ALB to talk to web",
         "from_port": 80,
         "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
+        "security_group_id": "${aws_security_group.web_ingress_sg.id}",
         "to_port": 80,
         "type": "ingress"
       },
-      "app_egress_rule": {
+      "public_sg_egress_rule": {
         "cidr_blocks": [
           "0.0.0.0/0"
         ],
-        "description": "Allow all outbound for build-webapp in prod",
+        "description": "Allow all outbound from network public",
         "from_port": 0,
         "protocol": "-1",
-        "security_group_id": "${aws_security_group.app_sg.id}",
+        "security_group_id": "${aws_security_group.public_sg.id}",
         "to_port": 0,
         "type": "egress"
+      },
+      "public_sg_internal_rule": {
+        "description": "Allow traffic within network public",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.public_sg.id}",
+        "source_security_group_id": "${aws_security_group.public_sg.id}",
+        "to_port": 0,
+        "type": "ingress"
       }
     },
     "docker_image": {

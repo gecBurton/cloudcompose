@@ -33,7 +33,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 
 ### Quality & Guarantees
 - [x] **Determinism**: Byte-identical output for equivalent inputs (canonical JSON/sorting).
-- [x] **Isolation**: Full application-level network and identity isolation.
+- [x] **Isolation**: Network isolation from Compose `networks:` — services can reach each other exactly when they share one. Per-service IAM identities.
 - [x] **Golden Testing**: Regression protection via example snapshots.
 - [x] **Terraform Validation**: CI verification using `terraform validate`.
 - [x] **Cloud Fidelity**: Integration testing via `LocalStack`.
@@ -199,6 +199,30 @@ If a service uses a `minio` image, Composey will:
 1.  **Substitute Infrastructure**: Provision an **AWS S3 Bucket** instead of a container.
 2.  **Host Injection**: See [Connection Wiring](#-connection-wiring) below. A variable holding just `blobs` becomes the **bucket ID**; a URL such as `http://blobs:9000` becomes the **bucket domain**.
 3.  **Automated Permissions**: Any service that `depends_on` the Minio service is automatically granted full IAM permissions (`s3:*`) to the generated bucket.
+
+### 🕸 Networks
+Composey maps each Compose network to a security group. Two services can reach each other exactly when they share a network, and services on disjoint networks cannot — the same rule Docker enforces on your machine, so the topology you tested locally is the one that gets deployed.
+
+```yaml
+services:
+  proxy:
+    networks: [frontnet]
+  backend:
+    networks: [frontnet, backnet]
+  db:
+    image: postgres:16
+    networks: [backnet]          # proxy has no path to the database
+networks:
+  frontnet:
+  backnet:
+```
+
+A file that declares no networks gets Compose's implicit `default`, which puts every service in one group — everything can reach everything, exactly as it does locally.
+
+> [!NOTE]
+> Connectivity is **not** derived from `depends_on`. That describes startup order and constrains nothing under Compose, so rules built from it were guesses about intent that was never stated. `depends_on` still determines which services receive another's endpoint and credentials.
+
+Each publicly reachable service also gets a small group of its own carrying the load balancer rule, so exposing one service does not open a port on everything sharing its network. AWS attaches at most five security groups to a task, so a service may join at most five networks — four if it is public.
 
 ### 🔌 Connection Wiring
 When a service is substituted for a managed one, every client that referred to it by its Compose name is pointed at the real thing. Resolution is driven by the **values** your Compose file already carries, never by variable names:

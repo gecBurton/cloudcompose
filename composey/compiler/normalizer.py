@@ -140,6 +140,53 @@ def _named_volume_source(volume: Union[str, VolumeDefinition]) -> Optional[str]:
     return source
 
 
+# One security group per network, and AWS attaches at most five to a task's
+# network interface before the quota has to be raised.
+MAX_NETWORKS_PER_SERVICE = 5
+
+DEFAULT_NETWORK = "default"
+
+
+def _networks_for(name: str, service: DockerService, reserved: int = 0) -> list[str]:
+    """
+    The networks a service is attached to.
+
+    Compose already answers who may talk to whom: services sharing a network can
+    reach each other, and services on disjoint networks cannot. Unlike
+    depends_on, which describes startup order and constrains nothing, this is
+    enforced locally — so a compose file that works on a laptop has already
+    tested the topology being compiled here.
+    """
+    networks = sorted(service.networks or {}) or [DEFAULT_NETWORK]
+
+    # A publicly reachable service also gets a dedicated group for the load
+    # balancer, which counts against the same quota.
+    if len(networks) + reserved > MAX_NETWORKS_PER_SERVICE:
+        raise ValueError(
+            f"service {name!r} joins {len(networks)} networks "
+            f"({', '.join(networks)}); at most "
+            f"{MAX_NETWORKS_PER_SERVICE - reserved} are supported here, because "
+            f"each becomes a security group and AWS attaches no more than "
+            f"{MAX_NETWORKS_PER_SERVICE} to one network interface"
+        )
+
+    return networks
+
+
+def _reject_unsupported_networks(app: DockerApplication) -> None:
+    """External networks name infrastructure composey does not own."""
+    external = sorted(
+        name
+        for name, definition in app.networks.items()
+        if definition is not None and definition.external
+    )
+    if external:
+        raise ValueError(
+            f"networks {', '.join(external)} are declared external; composey "
+            f"cannot map a network it does not create to a security group"
+        )
+
+
 def _settings_for(name: str, service: DockerService) -> XComposey:
     """Validate a service's x-composey block, naming the service if it is wrong."""
     try:
@@ -154,9 +201,12 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
     semantic_services = []
     relationships = []
 
+    _reject_unsupported_networks(app)
+
     for s_name, docker_service in app.services.items():
         settings = _settings_for(s_name, docker_service)
         ingress = settings.exposure
+        networks = _networks_for(s_name, docker_service, reserved=1 if ingress else 0)
 
         # Handle services without ports safely
         primary_port = docker_service.ports[0].target if docker_service.ports else None
@@ -216,6 +266,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 schedule=schedule,
                 cdn_enabled=settings.cdn,
                 ingress=ingress,
+                networks=networks,
                 env=docker_service.environment,
                 secrets=secret_names,
                 storage=storage_names,

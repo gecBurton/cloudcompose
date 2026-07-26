@@ -35,7 +35,7 @@
         "skip_final_snapshot": true,
         "username": "composey",
         "vpc_security_group_ids": [
-          "${aws_security_group.app_sg.id}"
+          "${aws_security_group.private_sg.id}"
         ]
       }
     },
@@ -72,7 +72,9 @@
         "network_configuration": {
           "assign_public_ip": false,
           "security_groups": [
-            "${aws_security_group.app_sg.id}"
+            "${aws_security_group.private_sg.id}",
+            "${aws_security_group.public_sg.id}",
+            "${aws_security_group.doctor_ingress_sg.id}"
           ],
           "subnets": [
             "subnet-3",
@@ -103,7 +105,7 @@
         "node_type": "cache.t3.micro",
         "num_cache_nodes": 1,
         "security_group_ids": [
-          "${aws_security_group.app_sg.id}"
+          "${aws_security_group.private_sg.id}"
         ],
         "subnet_group_name": "${aws_elasticache_subnet_group.cache_sng.name}"
       }
@@ -204,9 +206,19 @@
       }
     },
     "aws_security_group": {
-      "app_sg": {
-        "description": "Security group for doctor in prod",
-        "name": "prod-doctor-sg",
+      "doctor_ingress_sg": {
+        "description": "Load balancer ingress to doctor",
+        "name": "prod-doctor-doctor-ingress",
+        "vpc_id": "vpc-123"
+      },
+      "private_sg": {
+        "description": "Network private of doctor in prod",
+        "name": "prod-doctor-private",
+        "vpc_id": "vpc-123"
+      },
+      "public_sg": {
+        "description": "Network public of doctor in prod",
+        "name": "prod-doctor-public",
         "vpc_id": "vpc-123"
       }
     },
@@ -218,37 +230,48 @@
         "description": "Allow ALB to talk to doctor",
         "from_port": 80,
         "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
+        "security_group_id": "${aws_security_group.doctor_ingress_sg.id}",
         "to_port": 80,
         "type": "ingress"
       },
-      "app_egress_rule": {
+      "private_sg_egress_rule": {
         "cidr_blocks": [
           "0.0.0.0/0"
         ],
-        "description": "Allow all outbound for doctor in prod",
+        "description": "Allow all outbound from network private",
         "from_port": 0,
         "protocol": "-1",
-        "security_group_id": "${aws_security_group.app_sg.id}",
+        "security_group_id": "${aws_security_group.private_sg.id}",
         "to_port": 0,
         "type": "egress"
       },
-      "doctor_to_cache_rule": {
-        "description": "Allow doctor to talk to cache",
-        "from_port": 6379,
-        "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
-        "source_security_group_id": "${aws_security_group.app_sg.id}",
-        "to_port": 6379,
+      "private_sg_internal_rule": {
+        "description": "Allow traffic within network private",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.private_sg.id}",
+        "source_security_group_id": "${aws_security_group.private_sg.id}",
+        "to_port": 0,
         "type": "ingress"
       },
-      "doctor_to_db_rule": {
-        "description": "Allow doctor to talk to db",
-        "from_port": 5432,
-        "protocol": "tcp",
-        "security_group_id": "${aws_security_group.app_sg.id}",
-        "source_security_group_id": "${aws_security_group.app_sg.id}",
-        "to_port": 5432,
+      "public_sg_egress_rule": {
+        "cidr_blocks": [
+          "0.0.0.0/0"
+        ],
+        "description": "Allow all outbound from network public",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.public_sg.id}",
+        "to_port": 0,
+        "type": "egress"
+      },
+      "public_sg_internal_rule": {
+        "description": "Allow traffic within network public",
+        "from_port": 0,
+        "protocol": "-1",
+        "security_group_id": "${aws_security_group.public_sg.id}",
+        "source_security_group_id": "${aws_security_group.public_sg.id}",
+        "to_port": 0,
         "type": "ingress"
       }
     },

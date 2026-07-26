@@ -116,6 +116,11 @@ class Service(BaseModel):
         "internal: reachable by other services in the application, but not "
         "exposed.",
     )
+    networks: list[str] = Field(
+        default_factory=list,
+        description="Networks this service is attached to. Two services can "
+        "reach each other exactly when they share one, as in Compose.",
+    )
     env: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )

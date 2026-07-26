@@ -124,6 +124,11 @@ class Service(BaseModel):
         description="environment", default_factory=dict
     )
     depends_on: dict[str, Dependency] = Field(default_factory=dict)
+    networks: Optional[dict[str, Optional[dict]]] = Field(
+        default=None,
+        description="Networks this service joins. `docker compose config` always "
+        "resolves this, materialising `default` when the file declares none.",
+    )
     secrets: Optional[list[Union[str, SecretDefinition]]] = Field(default=None)
     volumes: Optional[list[Union[str, VolumeDefinition]]] = Field(default=None)
 
@@ -132,7 +137,15 @@ class Service(BaseModel):
         return (self.model_extra or {}).get("x-composey") or {}
 
 
+class NetworkDefinition(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: Optional[str] = None
+    external: bool = False
+
+
 class Application(BaseModel):
     model_config = {"extra": "ignore"}
 
     services: dict[str, Service]
+    networks: dict[str, Optional[NetworkDefinition]] = Field(default_factory=dict)

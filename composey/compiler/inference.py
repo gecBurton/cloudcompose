@@ -40,7 +40,7 @@ from composey.models.semantic import Application as SemanticApp
 from composey.models.semantic import Connection, CronSchedule, Schedule
 from composey.models.semantic import Service as SemanticService
 
-from .connections import default_port, resolve_environment
+from .connections import resolve_environment
 
 
 def _eventbridge_expression(schedule: Schedule) -> str:
@@ -157,6 +157,11 @@ def _path_patterns(path: str) -> list[str]:
     return [trimmed, f"{trimmed}/*"]
 
 
+def _safe(name: str) -> str:
+    """A Terraform-safe identifier fragment."""
+    return "".join(c if c.isalnum() else "_" for c in name).strip("_")
+
+
 def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     resources = AWSResources()
 
@@ -167,27 +172,52 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     # Helper for tags
     tags = env.tags if env.tags else None
 
-    # 1. Create a shared Security Group for the whole application
-    app_sg_key = "app_sg"
-    resources.aws_security_group[app_sg_key] = SecurityGroup(
-        name=get_name("sg"),
-        vpc_id=env.vpc_id,
-        description=f"Security group for {app.name} in {env.name}",
-        tags=tags,
-    )
+    # 1. One security group per compose network. Services sharing a network can
+    # reach each other and services on disjoint networks cannot, which is what
+    # Compose already enforces locally.
+    networks = sorted({n for service in app.services for n in service.networks})
 
-    # Declaring an aws_security_group with no inline egress makes Terraform strip
-    # AWS's default allow-all egress, leaving tasks with no outbound access (they
-    # can't pull images or write logs). Add an explicit allow-all egress rule.
-    resources.aws_security_group_rule["app_egress_rule"] = SecurityGroupRule(
-        type="egress",
-        from_port=0,
-        to_port=0,
-        protocol="-1",
-        security_group_id=f"${{aws_security_group.{app_sg_key}.id}}",
-        cidr_blocks=["0.0.0.0/0"],
-        description=f"Allow all outbound for {app.name} in {env.name}",
-    )
+    def sg_key(network: str) -> str:
+        return f"{_safe(network)}_sg"
+
+    def sg_ids(service_networks: list[str]) -> list[str]:
+        return [
+            f"${{aws_security_group.{sg_key(n)}.id}}" for n in sorted(service_networks)
+        ]
+
+    for network in networks:
+        key = sg_key(network)
+        resources.aws_security_group[key] = SecurityGroup(
+            name=get_name(network),
+            vpc_id=env.vpc_id,
+            description=f"Network {network} of {app.name} in {env.name}",
+            tags=tags,
+        )
+
+        # Members of a network reach each other on any port, as they do under
+        # Compose. Ports are not part of what a compose network states.
+        resources.aws_security_group_rule[f"{key}_internal_rule"] = SecurityGroupRule(
+            type="ingress",
+            from_port=0,
+            to_port=0,
+            protocol="-1",
+            security_group_id=f"${{aws_security_group.{key}.id}}",
+            source_security_group_id=f"${{aws_security_group.{key}.id}}",
+            description=f"Allow traffic within network {network}",
+        )
+
+        # Declaring an aws_security_group with no inline egress makes Terraform
+        # strip AWS's default allow-all egress, leaving tasks with no outbound
+        # access (they can't pull images or write logs).
+        resources.aws_security_group_rule[f"{key}_egress_rule"] = SecurityGroupRule(
+            type="egress",
+            from_port=0,
+            to_port=0,
+            protocol="-1",
+            security_group_id=f"${{aws_security_group.{key}.id}}",
+            cidr_blocks=["0.0.0.0/0"],
+            description=f"Allow all outbound from network {network}",
+        )
 
     priorities = _listener_priorities(app)
 
@@ -268,7 +298,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 ),
                 allocated_storage=20,
                 db_subnet_group_name=f"${{aws_db_subnet_group.{sng_key}.name}}",
-                vpc_security_group_ids=[f"${{aws_security_group.{app_sg_key}.id}}"],
+                vpc_security_group_ids=sg_ids(service.networks),
                 skip_final_snapshot=True,
                 publicly_accessible=False,
                 username=db_username,
@@ -300,7 +330,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 node_type=cache_node_types.get(service.size, cache_node_types["small"]),
                 num_cache_nodes=1,
                 subnet_group_name=f"${{aws_elasticache_subnet_group.{sng_key}.name}}",
-                security_group_ids=[f"${{aws_security_group.{app_sg_key}.id}}"],
+                security_group_ids=sg_ids(service.networks),
                 tags=tags,
             )
             continue
@@ -581,7 +611,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             health_check_grace_period_seconds=service.startup_grace_period,
             network_configuration={
                 "subnets": env.private_subnets,
-                "security_groups": [f"${{aws_security_group.{app_sg_key}.id}}"],
+                "security_groups": sg_ids(service.networks),
                 "assign_public_ip": False,
             },
             tags=tags,
@@ -631,16 +661,31 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 }
             ]
 
-            alb_ingress_rule_key = f"alb_to_{service.name}_rule"
-            resources.aws_security_group_rule[alb_ingress_rule_key] = SecurityGroupRule(
-                type="ingress",
-                from_port=ingress_port,
-                to_port=ingress_port,
-                protocol="tcp",
-                security_group_id=f"${{aws_security_group.{app_sg_key}.id}}",
-                cidr_blocks=["0.0.0.0/0"],
-                description=f"Allow ALB to talk to {service.name}",
+            # A dedicated group, attached to this service alone. Putting the
+            # rule on a network group instead would open the port for every
+            # other service on that network.
+            ingress_sg_key = f"{_safe(service.name)}_ingress_sg"
+            resources.aws_security_group[ingress_sg_key] = SecurityGroup(
+                name=get_name(f"{service.name}-ingress"),
+                vpc_id=env.vpc_id,
+                description=f"Load balancer ingress to {service.name}",
+                tags=tags,
             )
+            resources.aws_security_group_rule[f"alb_to_{service.name}_rule"] = (
+                SecurityGroupRule(
+                    type="ingress",
+                    from_port=ingress_port,
+                    to_port=ingress_port,
+                    protocol="tcp",
+                    security_group_id=f"${{aws_security_group.{ingress_sg_key}.id}}",
+                    source_security_group_id=env.alb_security_group_id,
+                    description=f"Allow the load balancer to reach {service.name}",
+                )
+            )
+            ecs_service.network_configuration["security_groups"] = [
+                *ecs_service.network_configuration["security_groups"],
+                f"${{aws_security_group.{ingress_sg_key}.id}}",
+            ]
 
             # 4b. Handle CloudFront CDN
             if service.cdn_enabled:
@@ -791,9 +836,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                         "launch_type": "FARGATE",
                         "network_configuration": {
                             "subnets": env.private_subnets,
-                            "security_groups": [
-                                f"${{aws_security_group.{app_sg_key}.id}}"
-                            ],
+                            "security_groups": sg_ids(service.networks),
                             "assign_public_ip": False,
                         },
                     },
@@ -939,29 +982,9 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
 
         task_def.container_definitions = json.dumps(container_defs)
 
-    # 4. Infer Security Group Rules from Relationships
-    for rel in app.relationships:
-        server_service = next((s for s in app.services if s.name == rel.server), None)
-
-        # Skip SG rules for object storage (S3 is not in VPC SG)
-        if server_service and server_service.capability == "object-storage":
-            continue
-
-        rule_key = f"{rel.client}_to_{rel.server}_rule"
-
-        # A managed service is reached on the port its connection declares; a
-        # plain container on whatever port it exposes.
-        fallback = (server_service.port or 80) if server_service else 80
-        port = rel.port or default_port(connections.get(rel.server), fallback)
-
-        resources.aws_security_group_rule[rule_key] = SecurityGroupRule(
-            type="ingress",
-            from_port=port,
-            to_port=port,
-            protocol="tcp",
-            security_group_id=f"${{aws_security_group.{app_sg_key}.id}}",
-            source_security_group_id=f"${{aws_security_group.{app_sg_key}.id}}",
-            description=f"Allow {rel.client} to talk to {rel.server}",
-        )
+    # Connectivity is not derived from relationships. depends_on describes
+    # startup order and constrains nothing under Compose, so rules built from it
+    # were guesses; network membership above is the compose file's own answer.
+    # Relationships still say who gets whose endpoint and credentials.
 
     return resources

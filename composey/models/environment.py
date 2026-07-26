@@ -1,7 +1,7 @@
 from typing import Dict, List, Literal, Optional, Type
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BaseEnvironment(BaseModel):
@@ -52,6 +52,29 @@ class AwsEnvironment(BaseEnvironment):
     alb_listener_arn: Optional[str] = Field(
         default=None, description="The ARN of the HTTPS/HTTP listener on the ALB"
     )
+    alb_security_group_id: Optional[str] = Field(
+        default=None,
+        description="Security group of the shared load balancer. Tasks accept "
+        "traffic from it and from nothing else.",
+    )
+
+    @model_validator(mode="after")
+    def _load_balancer_is_fully_described(self) -> "AwsEnvironment":
+        """
+        A load balancer without its security group cannot be pointed at safely.
+
+        Tasks have to accept the balancer's traffic somehow, and the only
+        alternative to naming its group is opening the port to everything that
+        can route to the subnet — every other application in the VPC included.
+        """
+        if self.alb_arn and not self.alb_security_group_id:
+            raise ValueError(
+                "alb_security_group_id is required alongside alb_arn: without it "
+                "tasks would have to accept traffic from anywhere in the VPC "
+                "rather than from the load balancer alone"
+            )
+        return self
+
     aws_endpoint: Optional[str] = Field(
         default=None,
         description="Optional custom endpoint for AWS services (e.g., for LocalStack)",

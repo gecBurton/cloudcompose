@@ -92,7 +92,7 @@ services:
 Composey infers what a service is from its image, and which service is public from its published port. Neither guess can ever be complete, so both are overridable:
 
 - `capability`: one of `container`, `database`, `cache`, `object-storage`. Use it when a private or vendored image cannot be recognised — or to *stop* an image being substituted.
-- `ingress`: how a service is reached from outside — `path`, `port`, `health_path`, optional `priority`. Any number of services may have one, as long as their paths differ. `public: true` is shorthand for `ingress: {}`.
+- `ingress`: how a service is reached from outside — `path`, `port`, `health_path`, optional `priority`. Any number of services may have one, as long as their paths differ. Write `ingress: {}` to take every default.
 
 ```yaml
 services:
@@ -119,6 +119,8 @@ services:
 ```
 
 **Exposure is only ever declared.** Publishing a port does not make a service reachable — composey previously inferred this from whether a published port happened to be 80 or 443, which meant the most consequential property a service has was decided by a coincidence the compose file never stated. A service with no `ingress` is internal: reachable by other services in the application, not from outside. Compiling an application where nothing is exposed prints a warning.
+
+`ingress:` is the only way to say it — there is no second spelling — and writing the key with nothing under it means "expose this with every default".
 
 Listener rule priorities are derived from the application name and path, so several applications can share one load balancer listener without colliding, and `priority` can be set explicitly if they ever do.
 

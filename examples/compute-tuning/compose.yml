@@ -4,7 +4,7 @@ services:
     ports:
       - "80:8080"
     x-composey:
-      public: true
+      ingress: {}
       cpu: 1024
       memory: 2048
   worker:

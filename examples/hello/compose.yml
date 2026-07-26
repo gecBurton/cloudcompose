@@ -9,6 +9,6 @@ services:
     networks:
       - public
     x-composey:
-      public: true
+      ingress: {}
 networks:
   public:

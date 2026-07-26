@@ -173,7 +173,7 @@ def test_exposure_is_only_ever_declared():
 
 
 def test_public_shorthand_declares_a_default_route():
-    app = _normalized(web=(80, {"public": True}))
+    app = _normalized(web=(80, {"ingress": {}}))
 
     assert [s.name for s in app.public_services] == ["web"]
     assert app.services[0].ingress.path == "/"
@@ -189,3 +189,18 @@ def test_ingress_port_can_be_declared():
     app = _normalized(web=(8080, {"ingress": {"port": 9000}}))
 
     assert app.services[0].ingress.port == 9000
+
+
+def test_bare_ingress_key_declares_a_default_route():
+    # `ingress:` with nothing under it parses as null. Treating that as "not
+    # exposed" would put back the silent non-exposure this design removes.
+    app = _normalized(web=(80, {"ingress": None}))
+
+    assert [s.name for s in app.public_services] == ["web"]
+    assert app.services[0].ingress.path == "/"
+
+
+def test_the_public_shorthand_is_gone():
+    # One way to declare a route, not two.
+    with pytest.raises(ValueError, match="public"):
+        _normalized(web=(80, {"public": True}))

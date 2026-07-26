@@ -14,4 +14,4 @@ services:
       - redis
 
     x-composey:
-      public: true
+      ingress: {}

@@ -54,7 +54,7 @@ def test_declared_ingress_is_not_a_warning():
             "web": DockerService(
                 image="web",
                 ports=[DockerPort(target=8080, published=8080)],
-                **{"x-composey": {"public": True}},
+                **{"x-composey": {"ingress": {}}},
             )
         }
     )

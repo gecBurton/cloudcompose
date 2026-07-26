@@ -22,7 +22,7 @@ services:
       - public
       - private
     x-composey:
-      public: true
+      ingress: {}
       startup_grace_period: 120
   blobs:
     image: minio/minio

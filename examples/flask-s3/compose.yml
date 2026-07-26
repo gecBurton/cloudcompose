@@ -9,7 +9,7 @@ services:
     depends_on:
       - blobs
     x-composey:
-      public: true
+      ingress: {}
   blobs:
     image: minio/minio
     ports:

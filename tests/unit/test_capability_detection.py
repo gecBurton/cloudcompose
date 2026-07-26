@@ -146,7 +146,7 @@ def test_no_public_service_is_detected_from_non_standard_ports():
 
 
 def test_public_can_be_declared_explicitly():
-    app = _public_app(frontend={"public": True})
+    app = _public_app(frontend={"ingress": {}})
 
     assert [s.name for s in normalize(app, "p").public_services] == ["frontend"]
 
@@ -163,7 +163,7 @@ def test_two_services_may_both_be_public_on_distinct_paths():
 
 
 def test_two_services_on_the_same_path_are_rejected():
-    app = _public_app(frontend={"public": True}, backend={"public": True})
+    app = _public_app(frontend={"ingress": {}}, backend={"ingress": {}})
 
     with pytest.raises(ValueError, match="both serve"):
         normalize(app, "p")

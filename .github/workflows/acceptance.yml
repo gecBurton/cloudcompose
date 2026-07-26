@@ -34,7 +34,7 @@ jobs:
     # GitHub's 6 hour default while a NAT gateway and ALB bill by the hour.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Prints the OIDC token's claims — never the token itself — so a trust
       # policy mismatch can be diagnosed from the log. AWS only ever reports
@@ -51,7 +51,7 @@ jobs:
             | jq '{sub, aud, iss, repository, repository_owner, ref, workflow_ref}'
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         # A credential failure must fail fast: the action retries by default,
         # and each attempt can sit on network timeouts for minutes, silently
         # consuming the whole job budget without ever printing the AWS error.
@@ -62,12 +62,12 @@ jobs:
           retry-max-attempts: 1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
         with:
           python-version: "3.14"
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.10.0"
           terraform_wrapper: false   # let the script call the real terraform binary

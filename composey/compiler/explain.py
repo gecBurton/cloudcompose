@@ -244,21 +244,33 @@ def explain(
 def _ingress_decisions(
     docker_app: DockerApplication, semantic: SemanticApplication
 ) -> list[Decision]:
-    if semantic.public_service:
-        declared = (
-            docker_app.services[semantic.public_service].x_composey_raw.get("public")
-            is True
-        )
-        return [
-            Decision(
-                semantic.public_service,
-                "exposed at the environment's root URL",
-                "declared by x-composey: public"
-                if declared
-                else "publishes port 80 or 443",
-                "declared" if declared else "inferred",
+    public = semantic.public_services
+    if public:
+        decisions = []
+        for service in public:
+            raw = docker_app.services[service.name].x_composey_raw
+            declared = "ingress" in raw or raw.get("public") is True
+            decisions.append(
+                Decision(
+                    service.name,
+                    f"served at {service.ingress.path} on port {service.ingress.port}",
+                    "declared by x-composey: ingress"
+                    if declared
+                    else "publishes port 80 or 443",
+                    "declared" if declared else "inferred",
+                )
             )
-        ]
+            decisions.append(
+                Decision(
+                    service.name,
+                    f"healthy when {service.ingress.health_path} returns 2xx/3xx",
+                    "declared by x-composey: ingress"
+                    if "ingress" in raw
+                    else "default health path",
+                    "declared" if "ingress" in raw else "default",
+                )
+            )
+        return decisions
 
     published = [
         name
@@ -267,18 +279,11 @@ def _ingress_decisions(
     ]
     because = (
         f"{', '.join(published)} publish ports, but none on 80 or 443; "
-        f"set x-composey: public: true on the one that should be reachable"
+        f"declare x-composey: ingress on the one that should be reachable"
         if published
         else "no service publishes a port"
     )
-    return [
-        Decision(
-            "application",
-            "NOT reachable from outside",
-            because,
-            "warning",
-        )
-    ]
+    return [Decision("application", "NOT reachable from outside", because, "warning")]
 
 
 def render(decisions: list[Decision]) -> str:

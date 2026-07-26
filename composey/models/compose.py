@@ -2,7 +2,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .semantic import Capability
+from .semantic import Capability, Ingress
 
 
 class Port(BaseModel):
@@ -64,8 +64,21 @@ class XComposey(BaseModel):
         description="What this service really is, when the image name does not say",
     )
     public: Optional[bool] = Field(
-        default=None, description="Expose this service at the environment's root URL"
+        default=None,
+        description="Shorthand for `ingress: {}` — expose this service at the root",
     )
+    ingress: Optional[Ingress] = Field(
+        default=None,
+        description="How this service is reached from outside: path, port, health",
+    )
+
+    @property
+    def exposure(self) -> Optional[Ingress]:
+        """The ingress this service declares, under either spelling."""
+        if self.ingress is not None:
+            return self.ingress
+        return Ingress() if self.public else None
+
     size: Literal["small", "medium", "large"] = Field(default="small")
     cpu: Optional[int] = Field(default=None, gt=0)
     memory: Optional[int] = Field(default=None, gt=0)

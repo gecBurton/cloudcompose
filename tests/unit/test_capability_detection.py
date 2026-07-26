@@ -142,17 +142,28 @@ def _public_app(**overrides):
 
 def test_no_public_service_is_detected_from_non_standard_ports():
     # The behaviour that left two real applications deployed but unreachable.
-    assert normalize(_public_app(), "p").public_service is None
+    assert normalize(_public_app(), "p").public_services == []
 
 
 def test_public_can_be_declared_explicitly():
     app = _public_app(frontend={"public": True})
 
-    assert normalize(app, "p").public_service == "frontend"
+    assert [s.name for s in normalize(app, "p").public_services] == ["frontend"]
 
 
-def test_declaring_two_public_services_is_rejected():
+def test_two_services_may_both_be_public_on_distinct_paths():
+    app = _public_app(
+        frontend={"ingress": {"path": "/"}}, backend={"ingress": {"path": "/api"}}
+    )
+
+    assert sorted(s.name for s in normalize(app, "p").public_services) == [
+        "backend",
+        "frontend",
+    ]
+
+
+def test_two_services_on_the_same_path_are_rejected():
     app = _public_app(frontend={"public": True}, backend={"public": True})
 
-    with pytest.raises(ValueError, match="more than one service"):
+    with pytest.raises(ValueError, match="both serve"):
         normalize(app, "p")

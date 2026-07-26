@@ -11,6 +11,7 @@ from ..models.semantic import (
 )
 from ..models.semantic import (
     CronSchedule,
+    Ingress,
     RateSchedule,
     Relationship,
     Schedule,
@@ -153,21 +154,19 @@ def _settings_for(name: str, service: DockerService) -> XComposey:
 def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
     semantic_services = []
     relationships = []
-    public_service = None
-    declared_public: list[str] = []
+    conventional_public: Optional[str] = None
 
     for s_name, docker_service in app.services.items():
-        # Identify the public service (first one mapping to port 80 or 443).
-        # Only a default: real compose files routinely publish 8080, so
-        # `x-composey: public: true` overrides this below.
-        if docker_service.ports:
-            for p in docker_service.ports:
-                if p.published in [80, 443] and public_service is None:
-                    public_service = s_name
+        # A service publishing 80 or 443 is *probably* the public one. Only used
+        # when nothing declares an ingress, since real compose files routinely
+        # publish 8080 and would otherwise be silently unreachable.
+        if conventional_public is None and any(
+            p.published in (80, 443) for p in docker_service.ports or []
+        ):
+            conventional_public = s_name
 
         settings = _settings_for(s_name, docker_service)
-        if settings.public is True:
-            declared_public.append(s_name)
+        ingress = settings.exposure
 
         # Handle services without ports safely
         primary_port = docker_service.ports[0].target if docker_service.ports else None
@@ -226,6 +225,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 max_scale=settings.max_scale,
                 schedule=schedule,
                 cdn_enabled=settings.cdn,
+                ingress=ingress,
                 env=docker_service.environment,
                 secrets=secret_names,
                 storage=storage_names,
@@ -236,18 +236,39 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         for dep_name in docker_service.depends_on.keys():
             relationships.append(Relationship(client=s_name, server=dep_name))
 
-    if len(declared_public) > 1:
-        raise ValueError(
-            "more than one service declares `x-composey: public: true` "
-            f"({', '.join(declared_public)}); exactly one service is exposed "
-            "at the root URL"
-        )
-    if declared_public:
-        public_service = declared_public[0]
+    # Fall back to the port convention only when nothing was declared, then
+    # resolve each ingress's port against the service it belongs to.
+    if not any(s.ingress for s in semantic_services) and conventional_public:
+        for service in semantic_services:
+            if service.name == conventional_public:
+                service.ingress = Ingress()
+
+    for service in semantic_services:
+        if service.ingress and service.ingress.port is None:
+            service.ingress.port = service.port or 80
+
+    _reject_overlapping_paths(semantic_services)
 
     return SemanticApplication(
         name=project_name,
         services=semantic_services,
         relationships=relationships,
-        public_service=public_service,
     )
+
+
+def _reject_overlapping_paths(services: list[SemanticService]) -> None:
+    """
+    Two services cannot serve the same path: whichever rule the load balancer
+    evaluated first would silently swallow the other's traffic.
+    """
+    seen: dict[str, str] = {}
+    for service in services:
+        if service.ingress is None:
+            continue
+        path = service.ingress.path
+        if path in seen:
+            raise ValueError(
+                f"services {seen[path]!r} and {service.name!r} both serve "
+                f"{path!r}; give each ingress a distinct path"
+            )
+        seen[path] = service.name

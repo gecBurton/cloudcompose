@@ -32,6 +32,37 @@ class RateSchedule(BaseModel):
 Schedule = Annotated[Union[CronSchedule, RateSchedule], Field(discriminator="kind")]
 
 
+class Ingress(BaseModel):
+    """
+    How a service is reached from outside.
+
+    Replaces a single "is this public" boolean, which conflated four separate
+    questions — reachable, on which port, at what path, and judged healthy how —
+    and answered all of them by looking at whether a published port happened to
+    be 80 or 443.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(
+        default="/", description="URL prefix this service is served under"
+    )
+    port: Optional[int] = Field(
+        default=None,
+        description="Container port to route to. Defaults to the service's port.",
+    )
+    health_path: str = Field(
+        default="/", description="Path polled to decide whether an instance is healthy"
+    )
+    priority: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=50000,
+        description="Rule evaluation order on a shared load balancer. Derived "
+        "from the application and path when unset.",
+    )
+
+
 class Service(BaseModel):
     """
     A logical unit of compute or a managed capability.
@@ -78,6 +109,12 @@ class Service(BaseModel):
     )
     cdn_enabled: bool = Field(
         default=False, description="Whether to enable CDN for this service"
+    )
+    ingress: Optional[Ingress] = Field(
+        default=None,
+        description="How this service is reached from outside. None means it is "
+        "internal: reachable by other services in the application, but not "
+        "exposed.",
     )
     env: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
@@ -160,7 +197,8 @@ class Application(BaseModel):
         default_factory=list,
         description="Explicit list of all allowed network connections",
     )
-    public_service: Optional[str] = Field(
-        default=None,
-        description="The name of the service exposed to the internet via the root URL",
-    )
+
+    @property
+    def public_services(self) -> list["Service"]:
+        """Services reachable from outside. There may be any number."""
+        return [s for s in self.services if s.ingress is not None]

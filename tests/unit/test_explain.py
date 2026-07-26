@@ -45,7 +45,7 @@ def test_missing_ingress_names_the_candidates():
     warning = next(d for d in decisions if d.source == "warning")
 
     assert "web" in warning.because
-    assert "public: true" in warning.because
+    assert "x-composey: ingress" in warning.because
 
 
 def test_declared_ingress_is_not_a_warning():
@@ -60,7 +60,7 @@ def test_declared_ingress_is_not_a_warning():
     )
 
     assert not [d for d in decisions if d.source == "warning"]
-    assert any("root URL" in d.decision for d in decisions)
+    assert any("served at /" in d.decision for d in decisions)
 
 
 def test_unwired_managed_service_is_warned_about():

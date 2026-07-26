@@ -20,7 +20,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 
 ### Managed Capabilities (v1)
 - [x] **Container**: Standard ECS Fargate task deployment.
-- [x] **Public HTTP**: Automatic ALB ingress routing for services on port 80/443.
+- [x] **Public HTTP**: ALB ingress routing with per-service path, port and health check. Any number of services may be public.
 - [x] **Secrets**: Automatic mapping of Compose `secrets` to AWS Secrets Manager.
 - [x] **Storage**: Automatic mapping of *named* `volumes` to AWS S3 Buckets. Bind mounts and anonymous volumes are local-development concerns and are ignored.
 - [x] **Managed Object Storage**: Automatically infers AWS S3 from `minio` images.
@@ -92,7 +92,7 @@ services:
 Composey infers what a service is from its image, and which service is public from its published port. Neither guess can ever be complete, so both are overridable:
 
 - `capability`: one of `container`, `database`, `cache`, `object-storage`. Use it when a private or vendored image cannot be recognised — or to *stop* an image being substituted.
-- `public`: set `true` on the one service exposed at the root URL. Needed whenever the public service publishes something other than port 80 or 443.
+- `ingress`: how a service is reached from outside — `path`, `port`, `health_path`, optional `priority`. Any number of services may have one, as long as their paths differ. `public: true` is shorthand for `ingress: {}`.
 
 ```yaml
 services:
@@ -105,8 +105,22 @@ services:
     ports:
       - "8080:8080"
     x-composey:
-      public: true           # published port isn't 80/443
+      ingress:
+        path: /
+        health_path: /healthz
+  api:
+    image: our-api
+    ports:
+      - "8080:8080"
+    x-composey:
+      ingress:
+        path: /api                  # more specific paths are matched first
+        health_path: /api/health
 ```
+
+If nothing declares an `ingress`, a service publishing port 80 or 443 gets one at `/`. That convention is only a fallback — publishing 8080 and declaring nothing means **no ingress at all**, which `--explain` reports as a warning.
+
+Listener rule priorities are derived from the application name and path, so several applications can share one load balancer listener without colliding, and `priority` can be set explicitly if they ever do.
 
 Recognised images are matched by exact name, including common vendored builds (`pgvector`, `postgis`, `timescaledb`, `bitnami/postgresql`, `redismod`, `valkey`, `keydb`). Anything else needs `capability`.
 

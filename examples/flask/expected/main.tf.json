@@ -90,6 +90,9 @@
             "subnet-4"
           ]
         },
+        "service_registries": {
+          "registry_arn": "${aws_service_discovery_service.backend_discovery.arn}"
+        },
         "task_definition": "${aws_ecs_task_definition.backend_td.arn}"
       },
       "frontend_service": {
@@ -107,6 +110,9 @@
             "subnet-3",
             "subnet-4"
           ]
+        },
+        "service_registries": {
+          "registry_arn": "${aws_service_discovery_service.frontend_discovery.arn}"
         },
         "task_definition": "${aws_ecs_task_definition.frontend_td.arn}"
       }
@@ -315,6 +321,47 @@
         "source_security_group_id": "${aws_security_group.public_sg.id}",
         "to_port": 0,
         "type": "ingress"
+      }
+    },
+    "aws_service_discovery_private_dns_namespace": {
+      "app": {
+        "description": "Service discovery for flask in prod",
+        "name": "prod-flask.internal",
+        "vpc": "vpc-123"
+      }
+    },
+    "aws_service_discovery_service": {
+      "backend_discovery": {
+        "dns_config": {
+          "dns_records": [
+            {
+              "ttl": 10,
+              "type": "A"
+            }
+          ],
+          "namespace_id": "${aws_service_discovery_private_dns_namespace.app.id}",
+          "routing_policy": "MULTIVALUE"
+        },
+        "health_check_custom_config": {
+          "failure_threshold": 1
+        },
+        "name": "backend"
+      },
+      "frontend_discovery": {
+        "dns_config": {
+          "dns_records": [
+            {
+              "ttl": 10,
+              "type": "A"
+            }
+          ],
+          "namespace_id": "${aws_service_discovery_private_dns_namespace.app.id}",
+          "routing_policy": "MULTIVALUE"
+        },
+        "health_check_custom_config": {
+          "failure_threshold": 1
+        },
+        "name": "frontend"
       }
     },
     "docker_image": {

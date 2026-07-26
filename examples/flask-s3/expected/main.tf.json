@@ -35,6 +35,9 @@
             "subnet-4"
           ]
         },
+        "service_registries": {
+          "registry_arn": "${aws_service_discovery_service.web_discovery.arn}"
+        },
         "task_definition": "${aws_ecs_task_definition.web_td.arn}"
       }
     },
@@ -156,6 +159,31 @@
         "source_security_group_id": "${aws_security_group.default_sg.id}",
         "to_port": 0,
         "type": "ingress"
+      }
+    },
+    "aws_service_discovery_private_dns_namespace": {
+      "app": {
+        "description": "Service discovery for flask-s3 in prod",
+        "name": "prod-flask-s3.internal",
+        "vpc": "vpc-123"
+      }
+    },
+    "aws_service_discovery_service": {
+      "web_discovery": {
+        "dns_config": {
+          "dns_records": [
+            {
+              "ttl": 10,
+              "type": "A"
+            }
+          ],
+          "namespace_id": "${aws_service_discovery_private_dns_namespace.app.id}",
+          "routing_policy": "MULTIVALUE"
+        },
+        "health_check_custom_config": {
+          "failure_threshold": 1
+        },
+        "name": "web"
       }
     }
   },

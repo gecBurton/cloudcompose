@@ -99,21 +99,42 @@ def _volume_decisions(name: str, docker_service, service) -> list[Decision]:
 def _wiring_decisions(
     name: str, semantic: SemanticApplication, service
 ) -> list[Decision]:
-    """Report whether this service's references to managed services resolve."""
+    """Report whether this service's references to its dependencies resolve."""
     decisions: list[Decision] = []
-    managed = {
+    servers = {
         s.name: s
         for s in semantic.services
-        if s.capability != "container"
+        if s.name != name
         and any(r.client == name and r.server == s.name for r in semantic.relationships)
     }
 
-    for server_name in managed:
+    for server_name, server in servers.items():
+        # A container with no port has no address to hand out.
+        if (
+            server.capability == "container"
+            and server.port is None
+            and any(
+                value == server_name or _url_pattern(server_name).match(value)
+                for value in service.env.values()
+            )
+        ):
+            decisions.append(
+                Decision(
+                    name,
+                    f"cannot reach {server_name}",
+                    f"{server_name} publishes no port, so it has no address to "
+                    f"be found at",
+                    "warning",
+                )
+            )
+            continue
+
         matched = [
             key
             for key, value in service.env.items()
             if value == server_name or _url_pattern(server_name).match(value)
         ]
+
         if matched:
             decisions.append(
                 Decision(

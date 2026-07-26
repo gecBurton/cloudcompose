@@ -28,11 +28,12 @@
         "allocated_storage": 20,
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "postgres",
+        "final_snapshot_identifier": "prod-doctor-db-final-${random_id.db_snapshot.hex}",
         "identifier": "prod-doctor-db",
         "instance_class": "db.t3.micro",
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
-        "skip_final_snapshot": true,
+        "skip_final_snapshot": false,
         "username": "composey",
         "vpc_security_group_ids": [
           "${aws_security_group.private_sg.id}"
@@ -50,7 +51,7 @@
     },
     "aws_ecr_repository": {
       "doctor_ecr": {
-        "force_delete": true,
+        "force_delete": false,
         "image_tag_mutability": "MUTABLE",
         "name": "prod-doctor-doctor"
       }
@@ -189,7 +190,7 @@
     "aws_s3_bucket": {
       "blobs_bucket": {
         "bucket": "prod-doctor-blobs",
-        "force_destroy": true
+        "force_destroy": false
       }
     },
     "aws_secretsmanager_secret": {
@@ -287,6 +288,11 @@
       "doctor_push": {
         "keep_remotely": true,
         "name": "${docker_image.doctor_image.name}"
+      }
+    },
+    "random_id": {
+      "db_snapshot": {
+        "byte_length": 4
       }
     },
     "random_password": {

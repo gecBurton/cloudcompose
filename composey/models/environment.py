@@ -25,6 +25,13 @@ class BaseEnvironment(BaseModel):
         "application choice. Ignored by targets whose log store belongs to the "
         "environment rather than to the compiled application.",
     )
+    retain_data_on_destroy: bool = Field(
+        default=True,
+        description="Whether destroying the stack preserves data. True takes a "
+        "final database snapshot, keeps secrets recoverable, and refuses to "
+        "delete a non-empty bucket. False discards everything, which is what a "
+        "throwaway test environment wants and nothing else does.",
+    )
     tags: Optional[Dict[str, str]] = Field(
         default=None, description="Default tags for all resources"
     )

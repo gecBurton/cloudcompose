@@ -16,11 +16,12 @@
         "allocated_storage": 20,
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "postgres",
+        "final_snapshot_identifier": "prod-scaling-db-final-${random_id.db_snapshot.hex}",
         "identifier": "prod-scaling-db",
         "instance_class": "db.t3.medium",
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
-        "skip_final_snapshot": true,
+        "skip_final_snapshot": false,
         "username": "composey",
         "vpc_security_group_ids": [
           "${aws_security_group.default_sg.id}"
@@ -183,6 +184,11 @@
         "source_security_group_id": "${aws_security_group.default_sg.id}",
         "to_port": 0,
         "type": "ingress"
+      }
+    },
+    "random_id": {
+      "db_snapshot": {
+        "byte_length": 4
       }
     },
     "random_password": {

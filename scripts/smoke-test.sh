@@ -93,7 +93,7 @@ cleanup() {
   if [[ "$KEEP" == "1" ]]; then
     log "KEEP=1 set — leaving resources up. Destroy later with:"
     echo "  (cd $BUILD_DIR && $TF destroy -auto-approve)"
-    echo "  (cd $BOOTSTRAP_DIR && $TF destroy -auto-approve -var name=$NAME)"
+    echo "  (cd $BOOTSTRAP_DIR && $TF destroy -auto-approve -var name=$NAME -var retain_data_on_destroy=false)"
     exit $status
   fi
 
@@ -103,7 +103,7 @@ cleanup() {
     (cd "$BUILD_DIR" && eval "$TF destroy -auto-approve") \
       || { leaked=1; echo "WARNING: app destroy failed — CHECK THE CONSOLE for orphaned resources."; }
   fi
-  (cd "$BOOTSTRAP_DIR" && eval "$TF destroy -auto-approve -var name=$NAME") \
+  (cd "$BOOTSTRAP_DIR" && eval "$TF destroy -auto-approve -var name=$NAME -var retain_data_on_destroy=false") \
     || { leaked=1; echo "WARNING: bootstrap destroy failed — CHECK NAT GATEWAYS / EIPs / ALB manually."; }
 
   (( leaked == 1 )) && state_hint
@@ -143,7 +143,7 @@ log "Deploying bootstrap environment '$NAME'…"
 write_backend "$BOOTSTRAP_DIR" "acceptance/$NAME/bootstrap.tfstate"
 cd "$BOOTSTRAP_DIR"
 eval "$TF init -input=false -reconfigure"
-eval "$TF apply -auto-approve -var name=$NAME"
+eval "$TF apply -auto-approve -var name=$NAME -var retain_data_on_destroy=false"
 
 ALB_DNS="$(eval "$TF output -raw alb_dns_name")"
 [[ -n "$ALB_DNS" ]] || fail "bootstrap produced no alb_dns_name"

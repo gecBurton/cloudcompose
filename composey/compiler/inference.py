@@ -26,6 +26,7 @@ from composey.models.aws import (
     IamRolePolicy,
     LbListenerRule,
     LbTargetGroup,
+    RandomId,
     RandomPassword,
     S3Bucket,
     SecretsManagerSecret,
@@ -177,6 +178,10 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     # Helper for tags
     tags = env.tags if env.tags else None
 
+    # Whether tearing the stack down preserves what it holds. A throwaway test
+    # environment wants everything discarded; nothing else does.
+    discard = not env.retain_data_on_destroy
+
     # 1. One security group per compose network. Services sharing a network can
     # reach each other and services on disjoint networks cannot, which is what
     # Compose already enforces locally.
@@ -294,6 +299,9 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 "large": "db.m5.large",
             }
 
+            if not discard:
+                resources.random_id[f"{service.name}_snapshot"] = RandomId()
+
             db_key = f"{service.name}_db"
             resources.aws_db_instance[db_key] = DbInstance(
                 identifier=get_name(service.name),
@@ -304,7 +312,15 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 allocated_storage=20,
                 db_subnet_group_name=f"${{aws_db_subnet_group.{sng_key}.name}}",
                 vpc_security_group_ids=sg_ids(service.networks),
-                skip_final_snapshot=True,
+                skip_final_snapshot=discard,
+                # Unique per account, so a destroy/recreate/destroy cycle does
+                # not collide with the snapshot the first teardown left behind.
+                final_snapshot_identifier=None
+                if discard
+                else (
+                    f"{get_name(service.name)}-final-"
+                    f"${{random_id.{service.name}_snapshot.hex}}"
+                ),
                 publicly_accessible=False,
                 username=db_username,
                 password=f"${{random_password.{password_key}.result}}",
@@ -348,7 +364,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 .lower()
                 .replace("_", "-")[:63]
                 .rstrip("-"),
-                force_destroy=True,
+                force_destroy=discard,
                 tags=tags,
             )
             continue
@@ -430,6 +446,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             ecr_key = f"{service.name}_ecr"
             resources.aws_ecr_repository[ecr_key] = EcrRepository(
                 name=get_name(service.name).lower(),
+                force_delete=discard,
                 tags=tags,
             )
 
@@ -496,7 +513,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
 
             resources.aws_s3_bucket[bucket_key] = S3Bucket(
                 bucket=get_name(safe_id).lower().replace("_", "-")[:63].rstrip("-"),
-                force_destroy=True,
+                force_destroy=discard,
                 tags=tags,
             )
 

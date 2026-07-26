@@ -39,6 +39,9 @@ def mock_localstack_env():
         private_subnets=["subnet-3", "subnet-4"],
         ecs_cluster_arn="arn:aws:ecs:us-east-1:123456789012:cluster/local-cluster",
         aws_endpoint=LS_ENDPOINT,
+        # A disposable environment: nothing here is worth a final snapshot, and
+        # teardown must not stop at a non-empty bucket.
+        retain_data_on_destroy=False,
     )
 
 

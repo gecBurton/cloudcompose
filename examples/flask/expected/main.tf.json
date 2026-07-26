@@ -32,11 +32,12 @@
         "allocated_storage": 20,
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "mariadb",
+        "final_snapshot_identifier": "prod-flask-db-final-${random_id.db_snapshot.hex}",
         "identifier": "prod-flask-db",
         "instance_class": "db.t3.micro",
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
-        "skip_final_snapshot": true,
+        "skip_final_snapshot": false,
         "username": "composey",
         "vpc_security_group_ids": [
           "${aws_security_group.private_sg.id}"
@@ -54,12 +55,12 @@
     },
     "aws_ecr_repository": {
       "backend_ecr": {
-        "force_delete": true,
+        "force_delete": false,
         "image_tag_mutability": "MUTABLE",
         "name": "prod-flask-backend"
       },
       "frontend_ecr": {
-        "force_delete": true,
+        "force_delete": false,
         "image_tag_mutability": "MUTABLE",
         "name": "prod-flask-frontend"
       }
@@ -229,7 +230,7 @@
     "aws_s3_bucket": {
       "back_notused_volume_bucket": {
         "bucket": "prod-flask-back-notused",
-        "force_destroy": true
+        "force_destroy": false
       }
     },
     "aws_secretsmanager_secret": {
@@ -353,6 +354,11 @@
       "frontend_push": {
         "keep_remotely": true,
         "name": "${docker_image.frontend_image.name}"
+      }
+    },
+    "random_id": {
+      "db_snapshot": {
+        "byte_length": 4
       }
     },
     "random_password": {

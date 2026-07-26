@@ -142,6 +142,7 @@ class DbInstance(BaseModel):
     db_subnet_group_name: str
     vpc_security_group_ids: List[str]
     skip_final_snapshot: bool = True
+    final_snapshot_identifier: Optional[str] = None
     publicly_accessible: bool = False
     username: Optional[str] = None
     password: Optional[str] = None
@@ -203,9 +204,12 @@ class SecretsManagerSecret(BaseModel):
 
     name: str
     description: Optional[str] = None
-    # Hard-delete on destroy (no 7-30 day recovery window) so a torn-down secret
-    # does not reserve its name and block re-creation, matching composey's
-    # ephemeral posture (skip_final_snapshot / force_destroy / force_delete).
+    # Hard-delete on destroy. A recovery window keeps the name reserved, so a
+    # torn-down secret blocks re-creating one with the same name for up to 30
+    # days — which a real-AWS smoke deploy hit in July 2026. Deliberately not
+    # tied to retain_data_on_destroy: the window protects a value an operator
+    # can re-enter, and a retained database is recoverable from its snapshot
+    # without the old credentials, since a restore can set a new master password.
     recovery_window_in_days: int = 0
     tags: Optional[Dict[str, str]] = None
 
@@ -223,6 +227,12 @@ class RandomPassword(BaseModel):
 
     length: int = 16
     special: bool = False
+
+
+class RandomId(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    byte_length: int = 4
 
 
 class CloudWatchLogGroup(BaseModel):
@@ -349,6 +359,7 @@ class AWSResources(BaseModel):
         default_factory=dict
     )
     random_password: Dict[str, RandomPassword] = Field(default_factory=dict)
+    random_id: Dict[str, RandomId] = Field(default_factory=dict)
     aws_s3_bucket: Dict[str, S3Bucket] = Field(default_factory=dict)
     aws_ecr_repository: Dict[str, EcrRepository] = Field(default_factory=dict)
     docker_image: Dict[str, DockerImage] = Field(default_factory=dict)

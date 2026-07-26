@@ -2,7 +2,7 @@ import json
 
 from composey.compiler.inference import infer
 from composey.models.environment import AwsEnvironment
-from composey.models.semantic import Application, RateSchedule, Service
+from composey.models.semantic import Application, RateSchedule, Relationship, Service
 
 
 def test_iam_least_privilege_scoping():
@@ -26,8 +26,10 @@ def test_iam_least_privilege_scoping():
                 image="img",
                 schedule=RateSchedule(value=1, unit="minutes"),
             ),
-            Service(name="api", image="img", storage=["data-bucket"]),
+            Service(name="api", image="img"),
+            Service(name="blobs", image="minio/minio", capability="object-storage"),
         ],
+        relationships=[Relationship(client="api", server="blobs")],
     )
 
     resources = infer(app, env)
@@ -43,13 +45,13 @@ def test_iam_least_privilege_scoping():
     assert "api_td" not in str(run_task_stmt["Resource"])
 
     # 2. Verify S3 IAM Policy for 'api'
-    # It should only have access to its own bucket
-    s3_policy_key = "api_data_bucket_policy"
+    # It should only have access to the bucket it actually depends on
+    s3_policy_key = "api_to_blobs_s3_policy"
     assert s3_policy_key in resources.aws_iam_role_policy
     s3_policy = json.loads(resources.aws_iam_role_policy[s3_policy_key].policy)
 
     s3_stmt = next(s for s in s3_policy["Statement"] if "s3:*" in s["Action"])
-    assert "${aws_s3_bucket.data_bucket_volume_bucket.arn}" in s3_stmt["Resource"]
+    assert "${aws_s3_bucket.blobs_bucket.arn}" in s3_stmt["Resource"]
 
 
 def test_normalizer_validation_protection():

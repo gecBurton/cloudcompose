@@ -134,10 +134,6 @@ class Service(BaseModel):
         default_factory=list,
         description="List of secret names required by this service",
     )
-    storage: list[str] = Field(
-        default_factory=list,
-        description="List of storage volume names (buckets) required by this service",
-    )
 
 
 class Connection(BaseModel):

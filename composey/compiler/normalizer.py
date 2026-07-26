@@ -118,6 +118,43 @@ def _infer_capability(image: str) -> str:
 _BIND_SOURCE_PREFIXES = ("/", "./", "../", "~")
 
 
+def _reject_persistent_volumes(
+    name: str, service: DockerService, capability: str
+) -> None:
+    """
+    Refuse a named volume on a service composey runs as a container.
+
+    A Docker volume is a POSIX filesystem, and composey has nothing to mount
+    there: ECS gives the task an ephemeral layer, so writes appear to succeed
+    and vanish on the next restart, separately per replica. Supporting this
+    properly means a network filesystem, which is a different product from
+    stateless services with managed backing services.
+
+    Volumes on a substituted service are fine and ignored — the managed database
+    or cache brings its own storage, which is the point of substituting it.
+    """
+    if capability != "container":
+        return
+
+    named = sorted(
+        {
+            source
+            for volume in service.volumes or []
+            if (source := _named_volume_source(volume)) is not None
+        }
+    )
+    if not named:
+        return
+
+    raise ValueError(
+        f"service {name!r} mounts named volume(s) {', '.join(named)}; composey "
+        f"cannot provide a persistent filesystem, and running the service "
+        f"without one would lose whatever is written there on every restart. "
+        f"Use a `minio` service for object storage, or drop the volume if the "
+        f"path only needs scratch space, which the task already has."
+    )
+
+
 def _named_volume_source(volume: Union[str, VolumeDefinition]) -> Optional[str]:
     """
     Return the named volume a mount refers to, or None if it isn't one.
@@ -220,13 +257,6 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 else:
                     secret_names.append(s.source)
 
-        # Resolve named volumes to storage names
-        storage_names = []
-        for v in docker_service.volumes or []:
-            source = _named_volume_source(v)
-            if source:
-                storage_names.append(source)
-
         capability = _infer_capability(docker_service.image or "")
 
         # Normalize command to ECS exec form (a list). A string is shell form,
@@ -247,6 +277,8 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
             capability = settings.capability
 
         schedule = _parse_schedule(settings.schedule) if settings.schedule else None
+
+        _reject_persistent_volumes(s_name, docker_service, capability)
 
         semantic_services.append(
             SemanticService(
@@ -270,7 +302,6 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 env=docker_service.environment,
                 config=docker_service.platform_env,
                 secrets=secret_names,
-                storage=storage_names,
             )
         )
 

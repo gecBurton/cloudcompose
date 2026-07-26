@@ -81,27 +81,19 @@ def _port_decisions(name: str, docker_service, service) -> list[Decision]:
 
 
 def _volume_decisions(name: str, docker_service, service) -> list[Decision]:
-    decisions = [
+    """Named volumes are rejected before this runs, so any left are local-only."""
+    dropped = len(docker_service.volumes or [])
+    if not dropped:
+        return []
+
+    return [
         Decision(
             name,
-            f"volume {volume!r} becomes object storage",
-            "named volume",
-            "inferred",
+            f"{dropped} mount(s) dropped",
+            "bind mounts and anonymous volumes have no deployed meaning",
+            "warning",
         )
-        for volume in service.storage
     ]
-
-    declared = len(docker_service.volumes or [])
-    if declared > len(service.storage):
-        decisions.append(
-            Decision(
-                name,
-                f"{declared - len(service.storage)} mount(s) dropped",
-                "bind mounts and anonymous volumes have no deployed meaning",
-                "warning",
-            )
-        )
-    return decisions
 
 
 def _wiring_decisions(

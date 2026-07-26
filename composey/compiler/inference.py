@@ -503,41 +503,6 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 ),
             )
 
-        # Resolve storage to S3 buckets and IAM policies. A named volume is one
-        # bucket keyed on the volume, not on the service: compose files share a
-        # volume between services deliberately, and a bucket each would silently
-        # stop them sharing anything.
-        for bucket_name in service.storage:
-            safe_id = "".join(c if c.isalnum() else "_" for c in bucket_name).strip("_")
-            bucket_key = f"{safe_id}_volume_bucket"
-
-            resources.aws_s3_bucket[bucket_key] = S3Bucket(
-                bucket=get_name(safe_id).lower().replace("_", "-")[:63].rstrip("-"),
-                force_destroy=discard,
-                tags=tags,
-            )
-
-            policy_key = f"{service.name}_{safe_id}_policy"
-            resources.aws_iam_role_policy[policy_key] = IamRolePolicy(
-                name=get_name(f"{service.name}-{safe_id}-policy"),
-                role=f"${{aws_iam_role.{task_role_key}.name}}",
-                policy=json.dumps(
-                    {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Action": ["s3:*"],
-                                "Resource": [
-                                    f"${{aws_s3_bucket.{bucket_key}.arn}}",
-                                    f"${{aws_s3_bucket.{bucket_key}.arn}}/*",
-                                ],
-                            }
-                        ],
-                    }
-                ),
-            )
-
         # Resolve secrets to AWS Secrets Manager references
         container_secrets = []
         for secret_name in service.secrets:

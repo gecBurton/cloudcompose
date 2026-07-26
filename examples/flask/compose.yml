@@ -22,7 +22,6 @@ services:
       - ./backend/src:/code/src:ro
       - ./backend/package.json:/code/package.json
       - ./backend/package-lock.json:/code/package-lock.json
-      - back-notused:/opt/app/node_modules
     networks:
       - public
       - private
@@ -63,7 +62,8 @@ networks:
   public:
   private:
 volumes:
-  back-notused:
+  # Mounted by `db`, which composey substitutes for RDS: the managed database
+  # brings its own storage, so the volume is accepted and ignored.
   db-data:
 secrets:
   db-password:

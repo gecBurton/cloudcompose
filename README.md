@@ -22,7 +22,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 - [x] **Container**: Standard ECS Fargate task deployment.
 - [x] **Public HTTP**: ALB ingress routing with per-service path, port and health check. Any number of services may be public.
 - [x] **Secrets**: Compose `secrets` map to AWS Secrets Manager, as do values the compose file names but does not state (`env_file`, `${...}`), so a developer's `.env` never reaches the generated Terraform.
-- [x] **Storage**: Automatic mapping of *named* `volumes` to AWS S3 Buckets. Bind mounts and anonymous volumes are local-development concerns and are ignored.
+- [ ] **Persistent Filesystems**: Named `volumes` are rejected rather than silently mapped to something that is not a filesystem. *(Out of scope for now)*
 - [x] **Managed Object Storage**: Automatically infers AWS S3 from `minio` images.
 - [x] **Managed Databases**: Automatically infers AWS RDS (Postgres/MySQL/MariaDB) from library images.
 - [x] **Managed Caching**: Automatically infers AWS ElastiCache (Redis) from library images.
@@ -199,6 +199,22 @@ If a service uses a `minio` image, Composey will:
 1.  **Substitute Infrastructure**: Provision an **AWS S3 Bucket** instead of a container.
 2.  **Host Injection**: See [Connection Wiring](#-connection-wiring) below. A variable holding just `blobs` becomes the **bucket ID**; a URL such as `http://blobs:9000` becomes the **bucket domain**.
 3.  **Automated Permissions**: Any service that `depends_on` the Minio service is automatically granted full IAM permissions (`s3:*`) to the generated bucket.
+
+### 💾 Volumes
+Composey deploys stateless services backed by managed services, and does not provide a persistent filesystem. A **named volume on a service that runs as a container is an error**:
+
+```
+service 'backend' mounts named volume(s) media; composey cannot provide a
+persistent filesystem, and running the service without one would lose whatever
+is written there on every restart. Use a `minio` service for object storage, or
+drop the volume if the path only needs scratch space, which the task already has.
+```
+
+It used to create an S3 bucket and mount nothing, so writes landed on the task's ephemeral layer, appeared to succeed and disappeared on the next restart — separately per replica, so a volume shared between two services shared nothing at all. Failing is better than that.
+
+- **Bind mounts and anonymous volumes are ignored.** They inject host paths for local development or provide scratch space, and the task already has a writable ephemeral layer.
+- **Named volumes on substituted services are accepted and ignored.** `db-data:/var/lib/postgresql/data` on a `postgres` service is moot: the managed database brings its own storage, which is why it was substituted.
+- **For object storage, add a `minio` service** — see [Managed Object Storage](#-managed-object-storage-s3).
 
 ### 🕸 Networks
 Composey maps each Compose network to a security group. Two services can reach each other exactly when they share a network, and services on disjoint networks cannot — the same rule Docker enforces on your machine, so the topology you tested locally is the one that gets deployed.

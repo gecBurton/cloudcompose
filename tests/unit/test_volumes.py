@@ -1,107 +1,70 @@
+"""Named volumes are refused; local-only mounts are ignored.
+
+A Docker volume is a POSIX filesystem, and composey has nothing to mount there.
+It used to create an S3 bucket instead and mount nothing at all, so writes went
+to the task's ephemeral layer, appeared to succeed, and vanished on restart —
+separately per replica, so a volume shared between services shared nothing.
+
+Supporting this properly needs a network filesystem, which is a different
+product from stateless services with managed backing services. Until then it is
+an error rather than a silent one.
+"""
+
+import pytest
+
 from composey.compiler.normalizer import normalize
-from composey.models.compose import (
-    Application as DockerApplication,
-)
-from composey.models.compose import (
-    Service as DockerService,
-)
-from composey.models.compose import (
-    VolumeDefinition,
-)
+from composey.models.compose import Application as DockerApplication
+from composey.models.compose import Service as DockerService
+from composey.models.compose import VolumeDefinition
 
 
-def _storage_for(volumes) -> list[str]:
+def _normalize(volumes, image="web:latest"):
     docker_app = DockerApplication(
-        services={"web": DockerService(image="web:latest", volumes=volumes)}
+        services={"web": DockerService(image=image, volumes=volumes)}
     )
-    return normalize(docker_app, "test-project").services[0].storage
+    return normalize(docker_app, "test-project")
 
 
-def test_named_volume_becomes_storage():
-    assert _storage_for(
-        [VolumeDefinition(type="volume", source="db-data", target="/var/lib/mysql")]
-    ) == ["db-data"]
+def test_a_named_volume_is_refused():
+    with pytest.raises(ValueError, match=r"mounts named volume\(s\) db-data"):
+        _normalize([VolumeDefinition(type="volume", source="db-data", target="/data")])
 
 
-def test_bind_mount_is_not_storage():
-    # A bind mount injects a host path for local development; it has no
-    # meaning in a deployed environment and must not become a bucket.
-    assert (
-        _storage_for(
-            [
-                VolumeDefinition(
-                    type="bind", source="/home/dev/app/src", target="/code/src"
-                )
-            ]
-        )
-        == []
-    )
+def test_the_error_says_what_to_do_instead():
+    with pytest.raises(ValueError, match="minio"):
+        _normalize(["media:/data/storage"])
 
 
-def test_anonymous_volume_is_not_storage():
-    assert (
-        _storage_for([VolumeDefinition(type="volume", target="/code/node_modules")])
-        == []
-    )
+def test_every_named_volume_is_listed():
+    with pytest.raises(ValueError, match="assets, media"):
+        _normalize(["media:/data/media", "assets:/data/assets"])
 
 
-def test_short_form_named_volume_becomes_storage():
-    assert _storage_for(["db-data:/var/lib/mysql"]) == ["db-data"]
+def test_a_named_volume_on_a_substituted_service_is_accepted():
+    # The managed database brings its own storage, which is the point of
+    # substituting it, so `db-data:/var/lib/postgresql/data` is simply moot.
+    app = _normalize(["db-data:/var/lib/postgresql/data"], image="postgres:16")
+
+    assert app.services[0].capability == "database"
 
 
-def test_short_form_bind_mounts_are_not_storage():
-    assert (
-        _storage_for(["./src:/code/src:ro", "/etc/hosts:/etc/hosts", "~/.aws:/aws"])
-        == []
-    )
+@pytest.mark.parametrize(
+    "volumes",
+    [
+        [VolumeDefinition(type="bind", source="/host/src", target="/code/src")],
+        [VolumeDefinition(type="volume", target="/code/node_modules")],
+        ["./src:/code/src:ro"],
+        ["/etc/hosts:/etc/hosts"],
+        ["~/.aws:/aws"],
+        ["/code/node_modules"],
+    ],
+)
+def test_local_only_mounts_are_ignored(volumes):
+    # Bind mounts inject host paths for development and anonymous volumes are
+    # scratch space; neither describes anything that must survive deployment.
+    assert _normalize(volumes).services[0].name == "web"
 
 
-def test_short_form_anonymous_volume_is_not_storage():
-    assert _storage_for(["/code/node_modules"]) == []
-
-
-def test_mixed_mounts_keep_only_named_volumes():
-    assert _storage_for(
-        [
-            VolumeDefinition(type="bind", source="/host/src", target="/code/src"),
-            VolumeDefinition(type="volume", source="uploads", target="/data"),
-            VolumeDefinition(type="tmpfs", target="/tmp"),
-        ]
-    ) == ["uploads"]
-
-
-def test_a_volume_mounted_by_two_services_is_one_bucket():
-    # Compose files share a named volume deliberately; a bucket per service
-    # would silently stop them sharing anything.
-    import json
-
-    from composey.compiler.generator import generate
-    from composey.compiler.inference import infer
-    from composey.models.environment import AwsEnvironment
-    from composey.models.semantic import Application, Service
-
-    env = AwsEnvironment(
-        name="prod",
-        vpc_id="vpc-1",
-        public_subnets=["subnet-1"],
-        private_subnets=["subnet-2"],
-        ecs_cluster_arn="arn:aws:ecs:us-east-1:123456789012:cluster/c",
-    )
-    app = Application(
-        name="app",
-        services=[
-            Service(name="backend", image="backend", storage=["media"]),
-            Service(name="worker", image="worker", storage=["media"]),
-        ],
-    )
-    manifest = json.loads(generate(infer(app, env), env))
-
-    buckets = manifest["resource"]["aws_s3_bucket"]
-    assert list(buckets) == ["media_volume_bucket"]
-
-    # Both services are granted access to that one bucket.
-    policies = manifest["resource"]["aws_iam_role_policy"]
-    assert "backend_media_policy" in policies
-    assert "worker_media_policy" in policies
-    for key in ("backend_media_policy", "worker_media_policy"):
-        assert "media_volume_bucket" in policies[key]["policy"]
+def test_a_bind_mount_alongside_a_named_volume_still_fails():
+    with pytest.raises(ValueError, match="media"):
+        _normalize(["./src:/code/src", "media:/data"])

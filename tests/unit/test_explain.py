@@ -102,7 +102,7 @@ def test_dropped_mounts_are_warned_about():
             "web": DockerService(
                 image="web",
                 ports=[DockerPort(target=80, published=80)],
-                volumes=["./src:/code/src", "data:/var/data"],
+                volumes=["./src:/code/src", "/scratch"],
             )
         }
     )

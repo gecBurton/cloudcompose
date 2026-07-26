@@ -35,6 +35,8 @@ services:
     networks:
       - frontnet
 
+    x-composey:
+      public: true
 networks:
   backnet:
   frontnet:

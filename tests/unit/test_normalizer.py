@@ -31,7 +31,8 @@ def test_normalize_basic_service():
     assert len(semantic_app.services) == 1
     assert semantic_app.services[0].name == "web"
     assert semantic_app.services[0].port == 80
-    assert [s.name for s in semantic_app.public_services] == ["web"]
+    # Publishing 80 no longer implies exposure; it must be declared.
+    assert semantic_app.public_services == []
     assert semantic_app.services[0].env["DEBUG"] == "true"
 
 
@@ -53,7 +54,8 @@ def test_normalize_relationships():
     rel = semantic_app.relationships[0]
     assert rel.client == "web"
     assert rel.server == "db"
-    assert [s.name for s in semantic_app.public_services] == ["web"]
+    # Publishing 80 no longer implies exposure; it must be declared.
+    assert semantic_app.public_services == []
 
 
 def test_normalize_no_public_service():
@@ -84,7 +86,8 @@ def test_normalize_multiple_ports_takes_first():
 
     # It should pick the target of the first port entry
     assert semantic_app.services[0].port == 3000
-    assert [s.name for s in semantic_app.public_services] == ["web"]
+    # Publishing 80 no longer implies exposure; it must be declared.
+    assert semantic_app.public_services == []
 
 
 def test_normalize_scaling():

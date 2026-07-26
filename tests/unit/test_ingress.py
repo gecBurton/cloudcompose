@@ -157,19 +157,26 @@ def _normalized(**per_service):
     return normalize(docker_app, "app")
 
 
-def test_port_convention_still_works_when_nothing_is_declared():
+def test_publishing_80_does_not_imply_exposure():
+    # There is no port convention. "Publishes 80 so it is public, publishes 8080
+    # so it is unreachable" was not something a reader could work out, and it
+    # silently decided the most consequential property a service has.
     app = _normalized(web=(80, {}))
 
-    assert [s.name for s in app.public_services] == ["web"]
-    assert app.services[0].ingress.path == "/"
+    assert app.public_services == []
 
 
-def test_declaring_an_ingress_disables_the_port_convention():
-    # Otherwise a service publishing 80 would be silently exposed alongside the
-    # one that was actually declared.
+def test_exposure_is_only_ever_declared():
     app = _normalized(legacy=(80, {}), api=(8080, {"ingress": {"path": "/api"}}))
 
     assert [s.name for s in app.public_services] == ["api"]
+
+
+def test_public_shorthand_declares_a_default_route():
+    app = _normalized(web=(80, {"public": True}))
+
+    assert [s.name for s in app.public_services] == ["web"]
+    assert app.services[0].ingress.path == "/"
 
 
 def test_ingress_port_defaults_to_the_service_port():

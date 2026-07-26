@@ -278,8 +278,8 @@ def _ingress_decisions(
         if any(p.published for p in service.ports or [])
     ]
     because = (
-        f"{', '.join(published)} publish ports, but none on 80 or 443; "
-        f"declare x-composey: ingress on the one that should be reachable"
+        f"{', '.join(published)} publish ports; declare x-composey: ingress on "
+        f"whichever should be reachable from outside"
         if published
         else "no service publishes a port"
     )

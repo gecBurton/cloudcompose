@@ -118,7 +118,7 @@ services:
         health_path: /api/health
 ```
 
-If nothing declares an `ingress`, a service publishing port 80 or 443 gets one at `/`. That convention is only a fallback — publishing 8080 and declaring nothing means **no ingress at all**, which `--explain` reports as a warning.
+**Exposure is only ever declared.** Publishing a port does not make a service reachable — composey previously inferred this from whether a published port happened to be 80 or 443, which meant the most consequential property a service has was decided by a coincidence the compose file never stated. A service with no `ingress` is internal: reachable by other services in the application, not from outside. Compiling an application where nothing is exposed prints a warning.
 
 Listener rule priorities are derived from the application name and path, so several applications can share one load balancer listener without colliding, and `priority` can be set explicitly if they ever do.
 

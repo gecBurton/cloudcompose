@@ -17,6 +17,8 @@ services:
       - blobs
     networks:
       - public
+    x-composey:
+      public: true
   blobs:
     image: minio/minio
     networks:

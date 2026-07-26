@@ -11,7 +11,6 @@ from ..models.semantic import (
 )
 from ..models.semantic import (
     CronSchedule,
-    Ingress,
     RateSchedule,
     Relationship,
     Schedule,
@@ -154,17 +153,8 @@ def _settings_for(name: str, service: DockerService) -> XComposey:
 def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
     semantic_services = []
     relationships = []
-    conventional_public: Optional[str] = None
 
     for s_name, docker_service in app.services.items():
-        # A service publishing 80 or 443 is *probably* the public one. Only used
-        # when nothing declares an ingress, since real compose files routinely
-        # publish 8080 and would otherwise be silently unreachable.
-        if conventional_public is None and any(
-            p.published in (80, 443) for p in docker_service.ports or []
-        ):
-            conventional_public = s_name
-
         settings = _settings_for(s_name, docker_service)
         ingress = settings.exposure
 
@@ -236,13 +226,9 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         for dep_name in docker_service.depends_on.keys():
             relationships.append(Relationship(client=s_name, server=dep_name))
 
-    # Fall back to the port convention only when nothing was declared, then
-    # resolve each ingress's port against the service it belongs to.
-    if not any(s.ingress for s in semantic_services) and conventional_public:
-        for service in semantic_services:
-            if service.name == conventional_public:
-                service.ingress = Ingress()
-
+    # Exposure is only ever declared. Deriving it from a published port made
+    # publishing 80 mean "public" and publishing 8080 mean "unreachable", which
+    # is not something a reader of the compose file could work out.
     for service in semantic_services:
         if service.ingress and service.ingress.port is None:
             service.ingress.port = service.port or 80

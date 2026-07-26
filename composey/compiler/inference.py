@@ -157,6 +157,11 @@ def _path_patterns(path: str) -> list[str]:
     return [trimmed, f"{trimmed}/*"]
 
 
+# Written into every secret composey creates but cannot value. Recognisable in
+# a console, and obviously not a working credential if one reaches an app.
+PLACEHOLDER = "PLACEHOLDER_VALUE_CHANGE_IN_AWS_CONSOLE"
+
+
 def _safe(name: str) -> str:
     """A Terraform-safe identifier fragment."""
     return "".join(c if c.isalnum() else "_" for c in name).strip("_")
@@ -531,7 +536,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             resources.aws_secretsmanager_secret_version[f"{secret_key}_v1"] = (
                 SecretsManagerSecretVersion(
                     secret_id=f"${{aws_secretsmanager_secret.{secret_key}.id}}",
-                    secret_string="PLACEHOLDER_VALUE_CHANGE_IN_AWS_CONSOLE",
+                    secret_string=PLACEHOLDER,
                     lifecycle=TerraformLifecycle(ignore_changes=["secret_string"]),
                 )
             )
@@ -562,6 +567,60 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                         ],
                     }
                 ),
+            )
+
+        # Variables the compose file names but does not value. One secret per
+        # service holding them all, rather than one secret each: ECS can pull an
+        # individual key out of a JSON secret, and Secrets Manager bills per
+        # secret.
+        if service.config:
+            config_key = f"{service.name}_config"
+            resources.aws_secretsmanager_secret[config_key] = SecretsManagerSecret(
+                name=get_name(f"{service.name}-config"),
+                description=f"Platform-supplied configuration for {service.name}",
+                tags=tags,
+            )
+            resources.aws_secretsmanager_secret_version[f"{config_key}_v1"] = (
+                SecretsManagerSecretVersion(
+                    secret_id=f"${{aws_secretsmanager_secret.{config_key}.id}}",
+                    secret_string=json.dumps(
+                        {key: PLACEHOLDER for key in service.config}
+                    ),
+                    # Real values are set outside Terraform, so a later apply
+                    # must not put the placeholders back.
+                    lifecycle=TerraformLifecycle(ignore_changes=["secret_string"]),
+                )
+            )
+
+            container_secrets.extend(
+                {
+                    "name": key,
+                    "valueFrom": (
+                        f"${{aws_secretsmanager_secret.{config_key}.arn}}:{key}::"
+                    ),
+                }
+                for key in service.config
+            )
+
+            resources.aws_iam_role_policy[f"{service.name}_config_policy"] = (
+                IamRolePolicy(
+                    name=get_name(f"{service.name}-config-policy"),
+                    role=f"${{aws_iam_role.{exec_role_key}.name}}",
+                    policy=json.dumps(
+                        {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["secretsmanager:GetSecretValue"],
+                                    "Resource": [
+                                        f"${{aws_secretsmanager_secret.{config_key}.arn}}"
+                                    ],
+                                }
+                            ],
+                        }
+                    ),
+                )
             )
 
         # Container Definition

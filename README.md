@@ -21,7 +21,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 ### Managed Capabilities (v1)
 - [x] **Container**: Standard ECS Fargate task deployment.
 - [x] **Public HTTP**: ALB ingress routing with per-service path, port and health check. Any number of services may be public.
-- [x] **Secrets**: Automatic mapping of Compose `secrets` to AWS Secrets Manager.
+- [x] **Secrets**: Compose `secrets` map to AWS Secrets Manager, as do values the compose file names but does not state (`env_file`, `${...}`), so a developer's `.env` never reaches the generated Terraform.
 - [x] **Storage**: Automatic mapping of *named* `volumes` to AWS S3 Buckets. Bind mounts and anonymous volumes are local-development concerns and are ignored.
 - [x] **Managed Object Storage**: Automatically infers AWS S3 from `minio` images.
 - [x] **Managed Databases**: Automatically infers AWS RDS (Postgres/MySQL/MariaDB) from library images.
@@ -223,6 +223,19 @@ A file that declares no networks gets Compose's implicit `default`, which puts e
 > Connectivity is **not** derived from `depends_on`. That describes startup order and constrains nothing under Compose, so rules built from it were guesses about intent that was never stated. `depends_on` still determines which services receive another's endpoint and credentials.
 
 Each publicly reachable service also gets a small group of its own carrying the load balancer rule, so exposing one service does not open a port on everything sharing its network. That rule admits traffic from the load balancer's security group and nothing else, which is why `alb_security_group_id` is required whenever `alb_arn` is set. AWS attaches at most five security groups to a task, so a service may join at most five networks — four if it is public.
+
+### 🔐 Configuration and Secrets
+`docker compose config` folds `env_file` contents and `${...}` substitutions into a service's environment, so compiling naively bakes a developer's local `.env` into the generated Terraform — passwords and tokens, but also values like `ENVIRONMENT=local` and `POSTGRES_HOST=localhost` that are simply wrong once deployed.
+
+Composey carries across **only what is written literally in the compose file**, which is committed and therefore not secret. Everything else contributes its *name*:
+
+```yaml
+environment:
+  LOG_LEVEL: info            # literal → plain environment variable
+  API_TOKEN: ${API_TOKEN}    # named here, valued elsewhere → Secrets Manager
+```
+
+Named-but-unvalued variables are collected into one Secrets Manager secret per service, created with placeholders and injected individually into the container. `terraform apply` never overwrites them once set, and `--explain` lists what still needs a value. See [`examples/platform-config`](./examples/platform-config/).
 
 ### 🔌 Connection Wiring
 When a service is substituted for a managed one, every client that referred to it by its Compose name is pointed at the real thing. Resolution is driven by the **values** your Compose file already carries, never by variable names:

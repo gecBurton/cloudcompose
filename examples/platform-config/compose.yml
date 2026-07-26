@@ -1,0 +1,23 @@
+# Values the compose file names but does not state.
+#
+# `docker compose config` folds env_file contents and ${...} substitutions into
+# the environment, so without care a developer's local .env — passwords, tokens,
+# and values like ENVIRONMENT=local that are simply wrong once deployed — ends up
+# baked into the generated Terraform.
+#
+# Composey carries across only what is written literally here. Everything else
+# contributes its name: the variable is created in Secrets Manager and injected
+# from there, for an operator to fill in.
+services:
+  web:
+    image: nginxdemos/hello:plain-text
+    ports:
+      - "80:80"
+    environment:
+      # Literal, committed, not a secret: passed through as-is.
+      LOG_LEVEL: info
+      # Named here, valued elsewhere: becomes a Secrets Manager reference.
+      API_TOKEN: ${API_TOKEN}
+      SENTRY_DSN: ${SENTRY_DSN}
+    x-composey:
+      ingress: {}

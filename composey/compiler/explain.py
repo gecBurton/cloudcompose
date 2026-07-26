@@ -216,6 +216,24 @@ def explain(
         decisions.extend(_volume_decisions(name, docker_service, service))
         decisions.extend(_wiring_decisions(name, semantic, service))
 
+        if service.config:
+            decisions.append(
+                Decision(
+                    name,
+                    f"{len(service.config)} variable(s) need values from the platform",
+                    f"{', '.join(service.config[:4])}"
+                    + (
+                        f" and {len(service.config) - 4} more"
+                        if len(service.config) > 4
+                        else ""
+                    )
+                    + " come from env_file or ${...}, so the compose file names "
+                    "them but does not value them; set them in Secrets Manager "
+                    "before the service will work",
+                    "warning",
+                )
+            )
+
         for secret in service.secrets:
             decisions.append(
                 Decision(

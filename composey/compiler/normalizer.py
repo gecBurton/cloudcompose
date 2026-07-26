@@ -268,6 +268,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 ingress=ingress,
                 networks=networks,
                 env=docker_service.environment,
+                config=docker_service.platform_env,
                 secrets=secret_names,
                 storage=storage_names,
             )

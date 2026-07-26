@@ -122,7 +122,13 @@ class Service(BaseModel):
         "reach each other exactly when they share one, as in Compose.",
     )
     env: dict[str, str] = Field(
-        default_factory=dict, description="Environment variables"
+        default_factory=dict,
+        description="Environment variables whose values the compose file states",
+    )
+    config: list[str] = Field(
+        default_factory=list,
+        description="Variables the service needs whose values the platform "
+        "supplies. Named by the compose file, valued outside it.",
     )
     secrets: list[str] = Field(
         default_factory=list,

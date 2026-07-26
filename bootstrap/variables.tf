@@ -44,3 +44,9 @@ variable "tags" {
   description = "Default tags applied to all resources."
   default     = {}
 }
+
+variable "retain_data_on_destroy" {
+  type        = bool
+  description = "Whether tearing down an application preserves its data. False for throwaway environments, which is what the acceptance smoke test needs: teardown must not stop at a non-empty bucket or a final snapshot."
+  default     = true
+}

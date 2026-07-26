@@ -25,7 +25,7 @@
     },
     "aws_ecr_repository": {
       "web_ecr": {
-        "force_delete": true,
+        "force_delete": false,
         "image_tag_mutability": "MUTABLE",
         "name": "prod-build-webapp-web"
       }

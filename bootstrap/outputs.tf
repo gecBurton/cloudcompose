@@ -3,13 +3,14 @@ locals {
   # drop the optional ones that are unset rather than writing nulls.
   environment = merge(
     {
-      target          = "aws"
-      name            = var.name
-      region          = var.region
-      vpc_id          = aws_vpc.this.id
-      public_subnets  = aws_subnet.public[*].id
-      private_subnets = aws_subnet.private[*].id
-      ecs_cluster_arn = aws_ecs_cluster.this.arn
+      target                 = "aws"
+      name                   = var.name
+      region                 = var.region
+      vpc_id                 = aws_vpc.this.id
+      public_subnets         = aws_subnet.public[*].id
+      private_subnets        = aws_subnet.private[*].id
+      ecs_cluster_arn        = aws_ecs_cluster.this.arn
+      retain_data_on_destroy = var.retain_data_on_destroy
     },
     var.create_alb ? {
       alb_arn               = aws_lb.this[0].arn

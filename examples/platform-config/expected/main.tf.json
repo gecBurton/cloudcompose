@@ -113,7 +113,7 @@
       "web_config": {
         "description": "Platform-supplied configuration for web",
         "name": "prod-platform-config-web-config",
-        "recovery_window_in_days": 0
+        "recovery_window_in_days": 7
       }
     },
     "aws_secretsmanager_secret_version": {

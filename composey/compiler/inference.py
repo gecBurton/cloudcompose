@@ -26,6 +26,7 @@ from composey.models.aws import (
     IamRolePolicy,
     LbListenerRule,
     LbTargetGroup,
+    RandomId,
     RandomPassword,
     S3Bucket,
     SecretsManagerSecret,
@@ -177,6 +178,10 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     # Helper for tags
     tags = env.tags if env.tags else None
 
+    # Whether tearing the stack down preserves what it holds. A throwaway test
+    # environment wants everything discarded; nothing else does.
+    discard = not env.retain_data_on_destroy
+
     # 1. One security group per compose network. Services sharing a network can
     # reach each other and services on disjoint networks cannot, which is what
     # Compose already enforces locally.
@@ -262,6 +267,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             db_secret_key = f"{service.name}_db_secret"
             resources.aws_secretsmanager_secret[db_secret_key] = SecretsManagerSecret(
                 name=get_name(f"{service.name}-credentials"),
+                recovery_window_in_days=0 if discard else 7,
                 description=f"Credentials for {service.name} RDS",
                 tags=tags,
             )
@@ -294,6 +300,9 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 "large": "db.m5.large",
             }
 
+            if not discard:
+                resources.random_id[f"{service.name}_snapshot"] = RandomId()
+
             db_key = f"{service.name}_db"
             resources.aws_db_instance[db_key] = DbInstance(
                 identifier=get_name(service.name),
@@ -304,7 +313,15 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 allocated_storage=20,
                 db_subnet_group_name=f"${{aws_db_subnet_group.{sng_key}.name}}",
                 vpc_security_group_ids=sg_ids(service.networks),
-                skip_final_snapshot=True,
+                skip_final_snapshot=discard,
+                # Unique per account, so a destroy/recreate/destroy cycle does
+                # not collide with the snapshot the first teardown left behind.
+                final_snapshot_identifier=None
+                if discard
+                else (
+                    f"{get_name(service.name)}-final-"
+                    f"${{random_id.{service.name}_snapshot.hex}}"
+                ),
                 publicly_accessible=False,
                 username=db_username,
                 password=f"${{random_password.{password_key}.result}}",
@@ -348,7 +365,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 .lower()
                 .replace("_", "-")[:63]
                 .rstrip("-"),
-                force_destroy=True,
+                force_destroy=discard,
                 tags=tags,
             )
             continue
@@ -430,6 +447,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             ecr_key = f"{service.name}_ecr"
             resources.aws_ecr_repository[ecr_key] = EcrRepository(
                 name=get_name(service.name).lower(),
+                force_delete=discard,
                 tags=tags,
             )
 
@@ -496,7 +514,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
 
             resources.aws_s3_bucket[bucket_key] = S3Bucket(
                 bucket=get_name(safe_id).lower().replace("_", "-")[:63].rstrip("-"),
-                force_destroy=True,
+                force_destroy=discard,
                 tags=tags,
             )
 
@@ -527,6 +545,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             secret_key = f"{service.name}_{secret_name}_secret"
             resources.aws_secretsmanager_secret[secret_key] = SecretsManagerSecret(
                 name=get_name(f"{service.name}-{secret_name}"),
+                recovery_window_in_days=0 if discard else 7,
                 description=f"Secret {secret_name} for {app.name} service {service.name}",
                 tags=tags,
             )
@@ -577,6 +596,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             config_key = f"{service.name}_config"
             resources.aws_secretsmanager_secret[config_key] = SecretsManagerSecret(
                 name=get_name(f"{service.name}-config"),
+                recovery_window_in_days=0 if discard else 7,
                 description=f"Platform-supplied configuration for {service.name}",
                 tags=tags,
             )

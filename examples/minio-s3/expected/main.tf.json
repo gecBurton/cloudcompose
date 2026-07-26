@@ -112,7 +112,7 @@
     "aws_s3_bucket": {
       "blobs_bucket": {
         "bucket": "prod-minio-s3-blobs",
-        "force_destroy": true
+        "force_destroy": false
       }
     },
     "aws_security_group": {

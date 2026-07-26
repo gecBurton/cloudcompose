@@ -57,7 +57,11 @@ class Service(BaseModel):
     build_context: Optional[str] = Field(
         default=None,
         description="Path (relative to the compose file) to a Docker build context. "
-        "When set, the image is built and pushed to ECR instead of pulled.",
+        "When set, the image is built and pushed to a registry instead of pulled.",
+    )
+    dockerfile: Optional[str] = Field(
+        default=None,
+        description="Dockerfile path relative to the build context",
     )
     command: Optional[list[str]] = Field(
         default=None, description="Container command override (exec form)"

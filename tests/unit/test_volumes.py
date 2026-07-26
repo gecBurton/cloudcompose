@@ -68,3 +68,40 @@ def test_mixed_mounts_keep_only_named_volumes():
             VolumeDefinition(type="tmpfs", target="/tmp"),
         ]
     ) == ["uploads"]
+
+
+def test_a_volume_mounted_by_two_services_is_one_bucket():
+    # Compose files share a named volume deliberately; a bucket per service
+    # would silently stop them sharing anything.
+    import json
+
+    from composey.compiler.generator import generate
+    from composey.compiler.inference import infer
+    from composey.models.environment import AwsEnvironment
+    from composey.models.semantic import Application, Service
+
+    env = AwsEnvironment(
+        name="prod",
+        vpc_id="vpc-1",
+        public_subnets=["subnet-1"],
+        private_subnets=["subnet-2"],
+        ecs_cluster_arn="arn:aws:ecs:us-east-1:123456789012:cluster/c",
+    )
+    app = Application(
+        name="app",
+        services=[
+            Service(name="backend", image="backend", storage=["media"]),
+            Service(name="worker", image="worker", storage=["media"]),
+        ],
+    )
+    manifest = json.loads(generate(infer(app, env), env))
+
+    buckets = manifest["resource"]["aws_s3_bucket"]
+    assert list(buckets) == ["media_volume_bucket"]
+
+    # Both services are granted access to that one bucket.
+    policies = manifest["resource"]["aws_iam_role_policy"]
+    assert "backend_media_policy" in policies
+    assert "worker_media_policy" in policies
+    for key in ("backend_media_policy", "worker_media_policy"):
+        assert "media_volume_bucket" in policies[key]["policy"]

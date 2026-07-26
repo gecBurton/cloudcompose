@@ -155,7 +155,7 @@
     "aws_iam_role_policy": {
       "backend_back_notused_policy": {
         "name": "prod-flask-backend-back_notused-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:*\"], \"Resource\": [\"${aws_s3_bucket.backend_back_notused_bucket.arn}\", \"${aws_s3_bucket.backend_back_notused_bucket.arn}/*\"]}]}",
+        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:*\"], \"Resource\": [\"${aws_s3_bucket.back_notused_volume_bucket.arn}\", \"${aws_s3_bucket.back_notused_volume_bucket.arn}/*\"]}]}",
         "role": "${aws_iam_role.backend_task_role.name}"
       },
       "backend_db-password_policy": {
@@ -225,8 +225,8 @@
       }
     },
     "aws_s3_bucket": {
-      "backend_back_notused_bucket": {
-        "bucket": "prod-flask-backend-back-notused",
+      "back_notused_volume_bucket": {
+        "bucket": "prod-flask-back-notused",
         "force_destroy": true
       }
     },
@@ -310,6 +310,7 @@
       "backend_image": {
         "build": {
           "context": "backend",
+          "dockerfile": "Dockerfile",
           "platform": "linux/amd64"
         },
         "name": "${aws_ecr_repository.backend_ecr.repository_url}:latest"
@@ -317,6 +318,7 @@
       "frontend_image": {
         "build": {
           "context": "frontend",
+          "dockerfile": "Dockerfile",
           "platform": "linux/amd64"
         },
         "name": "${aws_ecr_repository.frontend_ecr.repository_url}:latest"

@@ -88,6 +88,28 @@ services:
       max_scale: 10
 ```
 
+### 🎛 Overriding Inference
+Composey infers what a service is from its image, and which service is public from its published port. Neither guess can ever be complete, so both are overridable:
+
+- `capability`: one of `container`, `database`, `cache`, `object-storage`. Use it when a private or vendored image cannot be recognised — or to *stop* an image being substituted.
+- `public`: set `true` on the one service exposed at the root URL. Needed whenever the public service publishes something other than port 80 or 443.
+
+```yaml
+services:
+  api:
+    image: ghcr.io/acme/our-own-postgres-build:1
+    x-composey:
+      capability: database   # would otherwise run as a container
+  web:
+    image: our-app
+    ports:
+      - "8080:8080"
+    x-composey:
+      public: true           # published port isn't 80/443
+```
+
+Recognised images are matched by exact name, including common vendored builds (`pgvector`, `postgis`, `timescaledb`, `bitnami/postgresql`, `redismod`, `valkey`, `keydb`). Anything else needs `capability`.
+
 ### 🌍 Global Edge & Security (CDN)
 For public-facing services, you can enable a global edge presence with built-in security.
 

@@ -360,11 +360,20 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             )
 
             image_key = f"{service.name}_image"
-            resources.docker_image[image_key] = DockerImage(
-                name=f"${{aws_ecr_repository.{ecr_key}.repository_url}}:latest",
+            build = {
+                "context": service.build_context,
                 # Pin to amd64 to match Fargate's default X86_64 platform, so images
                 # built on an arm64 host (e.g. Apple Silicon) still run on ECS.
-                build={"context": service.build_context, "platform": "linux/amd64"},
+                "platform": "linux/amd64",
+            }
+            if service.dockerfile:
+                # Monorepos build several services from one context, each with its
+                # own Dockerfile. Dropping this built the wrong image, or failed
+                # outright when no Dockerfile sat at the context root.
+                build["dockerfile"] = service.dockerfile
+            resources.docker_image[image_key] = DockerImage(
+                name=f"${{aws_ecr_repository.{ecr_key}.repository_url}}:latest",
+                build=build,
             )
 
             push_key = f"{service.name}_push"
@@ -403,16 +412,16 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 ),
             )
 
-        # Resolve storage to S3 buckets and IAM policies
+        # Resolve storage to S3 buckets and IAM policies. A named volume is one
+        # bucket keyed on the volume, not on the service: compose files share a
+        # volume between services deliberately, and a bucket each would silently
+        # stop them sharing anything.
         for bucket_name in service.storage:
             safe_id = "".join(c if c.isalnum() else "_" for c in bucket_name).strip("_")
-            bucket_key = f"{service.name}_{safe_id}_bucket"
+            bucket_key = f"{safe_id}_volume_bucket"
 
             resources.aws_s3_bucket[bucket_key] = S3Bucket(
-                bucket=get_name(f"{service.name}-{safe_id}")
-                .lower()
-                .replace("_", "-")[:63]
-                .rstrip("-"),
+                bucket=get_name(safe_id).lower().replace("_", "-")[:63].rstrip("-"),
                 force_destroy=True,
                 tags=tags,
             )

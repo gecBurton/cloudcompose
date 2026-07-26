@@ -314,7 +314,7 @@ retain_data_on_destroy: true
 
 Log retention and data retention are platform policies rather than application choices, so they live here rather than in the compose file.
 
-`retain_data_on_destroy` (default `true`) decides what `terraform destroy` leaves behind. Retaining takes a final database snapshot, keeps deleted secrets recoverable for a week, and refuses to delete a non-empty bucket — so teardown fails loudly rather than discarding data. Set it to `false` only for genuinely disposable environments, such as the one the acceptance smoke test builds and tears down on every run.
+`retain_data_on_destroy` (default `true`) decides what `terraform destroy` leaves behind. Retaining takes a final database snapshot and refuses to delete a non-empty bucket or image repository — so teardown fails loudly rather than discarding data. Secrets are always hard-deleted regardless: a recovery window keeps the name reserved and blocks re-creating a secret with the same name. Set it to `false` only for genuinely disposable environments, such as the one the acceptance smoke test builds and tears down on every run.
 
 ### Running Tests
 The test suite includes unit tests, snapshot comparisons, and local cloud deployment verification via LocalStack.

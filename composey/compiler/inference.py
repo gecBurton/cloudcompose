@@ -267,7 +267,6 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             db_secret_key = f"{service.name}_db_secret"
             resources.aws_secretsmanager_secret[db_secret_key] = SecretsManagerSecret(
                 name=get_name(f"{service.name}-credentials"),
-                recovery_window_in_days=0 if discard else 7,
                 description=f"Credentials for {service.name} RDS",
                 tags=tags,
             )
@@ -545,7 +544,6 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             secret_key = f"{service.name}_{secret_name}_secret"
             resources.aws_secretsmanager_secret[secret_key] = SecretsManagerSecret(
                 name=get_name(f"{service.name}-{secret_name}"),
-                recovery_window_in_days=0 if discard else 7,
                 description=f"Secret {secret_name} for {app.name} service {service.name}",
                 tags=tags,
             )
@@ -596,7 +594,6 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             config_key = f"{service.name}_config"
             resources.aws_secretsmanager_secret[config_key] = SecretsManagerSecret(
                 name=get_name(f"{service.name}-config"),
-                recovery_window_in_days=0 if discard else 7,
                 description=f"Platform-supplied configuration for {service.name}",
                 tags=tags,
             )

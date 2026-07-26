@@ -237,12 +237,12 @@
       "backend_db-password_secret": {
         "description": "Secret db-password for flask service backend",
         "name": "prod-flask-backend-db-password",
-        "recovery_window_in_days": 7
+        "recovery_window_in_days": 0
       },
       "db_db_secret": {
         "description": "Credentials for db RDS",
         "name": "prod-flask-db-credentials",
-        "recovery_window_in_days": 7
+        "recovery_window_in_days": 0
       }
     },
     "aws_secretsmanager_secret_version": {

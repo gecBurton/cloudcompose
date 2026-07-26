@@ -65,7 +65,6 @@ def test_the_snapshot_name_is_unique_per_teardown():
     [
         ("aws_s3_bucket", "force_destroy", False),
         ("aws_ecr_repository", "force_delete", False),
-        ("aws_secretsmanager_secret", "recovery_window_in_days", 7),
     ],
 )
 def test_retained_resources_do_not_discard(kind, key, expected):
@@ -79,7 +78,6 @@ def test_retained_resources_do_not_discard(kind, key, expected):
     [
         ("aws_s3_bucket", "force_destroy", True),
         ("aws_ecr_repository", "force_delete", True),
-        ("aws_secretsmanager_secret", "recovery_window_in_days", 0),
     ],
 )
 def test_a_throwaway_environment_discards_everything(kind, key, expected):
@@ -88,6 +86,17 @@ def test_a_throwaway_environment_discards_everything(kind, key, expected):
     resources = _resources(retain=False)
 
     assert all(r[key] == expected for r in resources[kind].values())
+
+
+def test_secrets_are_always_hard_deleted():
+    # A recovery window keeps the name reserved and blocks re-creating a secret
+    # with the same name, which broke a real deploy. The window would protect a
+    # value an operator can re-enter, and a retained database is recoverable
+    # from its snapshot regardless, so retention does not buy enough to reopen
+    # that failure.
+    for retain in (True, False):
+        secrets = _resources(retain)["aws_secretsmanager_secret"].values()
+        assert all(s["recovery_window_in_days"] == 0 for s in secrets)
 
 
 def test_a_throwaway_database_skips_its_snapshot():

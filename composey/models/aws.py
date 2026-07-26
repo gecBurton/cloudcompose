@@ -204,9 +204,12 @@ class SecretsManagerSecret(BaseModel):
 
     name: str
     description: Optional[str] = None
-    # 0 hard-deletes, so a torn-down secret does not reserve its name and block
-    # re-creation. Set from the environment's retain_data_on_destroy: anything
-    # other than a throwaway environment wants the recovery window.
+    # Hard-delete on destroy. A recovery window keeps the name reserved, so a
+    # torn-down secret blocks re-creating one with the same name for up to 30
+    # days — which a real-AWS smoke deploy hit in July 2026. Deliberately not
+    # tied to retain_data_on_destroy: the window protects a value an operator
+    # can re-enter, and a retained database is recoverable from its snapshot
+    # without the old credentials, since a restore can set a new master password.
     recovery_window_in_days: int = 0
     tags: Optional[Dict[str, str]] = None
 

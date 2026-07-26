@@ -17,6 +17,8 @@ services:
       - blobs
     networks:
       - public
+    x-composey:
+      ingress: {}
   blobs:
     image: minio/minio
     networks:

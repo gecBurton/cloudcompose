@@ -111,7 +111,7 @@
           }
         ],
         "listener_arn": "arn:aws:lb:us-east-1:123456789012:listener/app/shared-alb/123/456",
-        "priority": 100
+        "priority": 49901
       }
     },
     "aws_lb_target_group": {

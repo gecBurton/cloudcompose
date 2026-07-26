@@ -3,7 +3,7 @@ import json
 from composey.compiler.generator import generate
 from composey.compiler.inference import infer
 from composey.models.environment import AwsEnvironment
-from composey.models.semantic import Application, Service
+from composey.models.semantic import Application, Ingress, Service
 
 ALB_ARN = "arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123"
 
@@ -24,8 +24,15 @@ def _env(region: str = "us-east-1") -> AwsEnvironment:
 def _app(cdn_enabled: bool) -> Application:
     return Application(
         name="site",
-        services=[Service(name="web", image="nginx", port=80, cdn_enabled=cdn_enabled)],
-        public_service="web",
+        services=[
+            Service(
+                name="web",
+                image="nginx",
+                port=80,
+                cdn_enabled=cdn_enabled,
+                ingress=Ingress(),
+            )
+        ],
     )
 
 

@@ -8,6 +8,8 @@ services:
       BUCKET_NAME: blobs
     depends_on:
       - blobs
+    x-composey:
+      ingress: {}
   blobs:
     image: minio/minio
     ports:

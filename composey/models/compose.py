@@ -1,8 +1,8 @@
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .semantic import Capability
+from .semantic import Capability, Ingress
 
 
 class Port(BaseModel):
@@ -63,9 +63,30 @@ class XComposey(BaseModel):
         default=None,
         description="What this service really is, when the image name does not say",
     )
-    public: Optional[bool] = Field(
-        default=None, description="Expose this service at the environment's root URL"
+    ingress: Optional[Ingress] = Field(
+        default=None,
+        description="How this service is reached from outside: path, port, health",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bare_ingress_means_defaults(cls, data):
+        """
+        `ingress:` with nothing under it declares a default route.
+
+        Without this it parses as null and the service is quietly internal —
+        reintroducing, at the only place it still could, exactly the silent
+        non-exposure this design exists to prevent.
+        """
+        if isinstance(data, dict) and "ingress" in data and data["ingress"] is None:
+            data = {**data, "ingress": {}}
+        return data
+
+    @property
+    def exposure(self) -> Optional[Ingress]:
+        """The route this service declares, if any."""
+        return self.ingress
+
     size: Literal["small", "medium", "large"] = Field(default="small")
     cpu: Optional[int] = Field(default=None, gt=0)
     memory: Optional[int] = Field(default=None, gt=0)

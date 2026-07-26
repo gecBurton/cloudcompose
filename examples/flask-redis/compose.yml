@@ -12,3 +12,6 @@ services:
       REDIS_HOST: redis
     depends_on:
       - redis
+
+    x-composey:
+      ingress: {}

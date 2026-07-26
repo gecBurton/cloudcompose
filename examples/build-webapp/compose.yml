@@ -9,5 +9,7 @@ services:
       - 80:80
     networks:
       - public
+    x-composey:
+      ingress: {}
 networks:
   public:

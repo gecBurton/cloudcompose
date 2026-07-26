@@ -4,6 +4,7 @@ services:
     ports:
       - "80:80"
     x-composey:
+      ingress: {}
       size: large
   db:
     image: postgres

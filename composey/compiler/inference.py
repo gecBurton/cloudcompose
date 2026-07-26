@@ -1,3 +1,4 @@
+import hashlib
 import json
 from typing import Optional
 
@@ -120,6 +121,42 @@ def _connection_for(service: SemanticService) -> Optional[Connection]:
     return None
 
 
+# Listener rule priorities must be unique across every application sharing a
+# listener, so they cannot simply start at 1. Each application gets a band
+# derived from its name, and its routes are ordered within that band by path
+# specificity, longest first, so that /api/admin is matched before /api.
+_PRIORITY_BANDS = 500
+_BAND_WIDTH = 100
+
+
+def _priority_band(app_name: str) -> int:
+    digest = hashlib.sha256(app_name.encode()).digest()
+    return 1 + (int.from_bytes(digest[:4], "big") % _PRIORITY_BANDS) * _BAND_WIDTH
+
+
+def _listener_priorities(app: SemanticApp) -> dict[str, int]:
+    """Assign each public service a stable, unique listener rule priority."""
+    band = _priority_band(app.name)
+    ordered = sorted(app.public_services, key=lambda s: (-len(s.ingress.path), s.name))
+
+    priorities: dict[str, int] = {}
+    for offset, service in enumerate(ordered):
+        priorities[service.name] = (
+            service.ingress.priority
+            if service.ingress.priority is not None
+            else band + offset
+        )
+    return priorities
+
+
+def _path_patterns(path: str) -> list[str]:
+    """ALB path patterns matching a prefix and everything beneath it."""
+    if path == "/":
+        return ["/*"]
+    trimmed = path.rstrip("/")
+    return [trimmed, f"{trimmed}/*"]
+
+
 def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     resources = AWSResources()
 
@@ -151,6 +188,8 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
         cidr_blocks=["0.0.0.0/0"],
         description=f"Allow all outbound for {app.name} in {env.name}",
     )
+
+    priorities = _listener_priorities(app)
 
     # 2. Map each Semantic Service to AWS resources
     for service in app.services:
@@ -549,15 +588,22 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
         )
 
         # 4. Handle Public Ingress (ALB integration)
-        if app.public_service == service.name and env.alb_arn and not service.schedule:
+        if service.ingress and env.alb_arn and not service.schedule:
+            ingress = service.ingress
+            ingress_port = ingress.port or service.port or 80
+
             tg_key = f"{service.name}_tg"
             resources.aws_lb_target_group[tg_key] = LbTargetGroup(
                 name=get_name(f"{service.name}-tg"),
-                port=service.port or 80,
+                port=ingress_port,
                 protocol="HTTP",
                 vpc_id=env.vpc_id,
                 target_type="ip",
-                health_check={"enabled": True, "path": "/", "matcher": "200-399"},
+                health_check={
+                    "enabled": True,
+                    "path": ingress.health_path,
+                    "matcher": "200-399",
+                },
                 tags=tags,
             )
 
@@ -565,29 +611,31 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 rule_key = f"{service.name}_listener_rule"
                 resources.aws_lb_listener_rule[rule_key] = LbListenerRule(
                     listener_arn=env.alb_listener_arn,
-                    priority=100,
+                    priority=priorities[service.name],
                     action=[
                         {
                             "type": "forward",
                             "target_group_arn": f"${{aws_lb_target_group.{tg_key}.arn}}",
                         }
                     ],
-                    condition=[{"path_pattern": {"values": ["/*"]}}],
+                    condition=[
+                        {"path_pattern": {"values": _path_patterns(ingress.path)}}
+                    ],
                 )
 
             ecs_service.load_balancer = [
                 {
                     "target_group_arn": f"${{aws_lb_target_group.{tg_key}.arn}}",
                     "container_name": service.name,
-                    "container_port": service.port or 80,
+                    "container_port": ingress_port,
                 }
             ]
 
             alb_ingress_rule_key = f"alb_to_{service.name}_rule"
             resources.aws_security_group_rule[alb_ingress_rule_key] = SecurityGroupRule(
                 type="ingress",
-                from_port=service.port or 80,
-                to_port=service.port or 80,
+                from_port=ingress_port,
+                to_port=ingress_port,
                 protocol="tcp",
                 security_group_id=f"${{aws_security_group.{app_sg_key}.id}}",
                 cidr_blocks=["0.0.0.0/0"],

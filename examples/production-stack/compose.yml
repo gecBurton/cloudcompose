@@ -7,6 +7,7 @@ services:
       - cache
       - db
     x-composey:
+      ingress: {}
       size: medium
       min_scale: 2
       max_scale: 10

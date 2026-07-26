@@ -35,6 +35,8 @@ services:
     networks:
       - frontnet
 
+    x-composey:
+      ingress: {}
 networks:
   backnet:
   frontnet:

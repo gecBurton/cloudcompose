@@ -6,7 +6,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from .compiler import compile_to_terraform
+from .compiler import compile_application
 from .compiler.explain import explain, render
 from .compiler.normalizer import normalize
 from .compiler.parser import parse
@@ -99,7 +99,21 @@ def main(
         console.print(
             f"[bold blue]Compiling:[/] {compose_file} -> {project_name} ({env.target})"
         )
-        tf_json = compile_to_terraform(str(compose_file), env, project_name)
+        docker_app = parse(str(compose_file))
+        semantic = normalize(docker_app, project_name)
+
+        # Report anything the compiler could not decide. Removing the port
+        # convention made a missing ingress more likely, and a warning nobody
+        # sees is no better than the silence it replaced.
+        warnings = [d for d in explain(docker_app, semantic) if d.source == "warning"]
+        for warning in warnings:
+            console.print(f"[yellow]warning[/] {warning.subject}: {warning.decision}")
+        if warnings:
+            console.print(
+                f"[yellow]{len(warnings)} warning(s)[/] — run with --explain for detail"
+            )
+
+        tf_json = compile_application(semantic, env)
 
         # 3. Write Output
         output_dir.mkdir(parents=True, exist_ok=True)

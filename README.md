@@ -20,7 +20,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 
 ### Managed Capabilities (v1)
 - [x] **Container**: Standard ECS Fargate task deployment.
-- [x] **Public HTTP**: Automatic ALB ingress routing for services on port 80/443.
+- [x] **Public HTTP**: ALB ingress routing with per-service path, port and health check. Any number of services may be public.
 - [x] **Secrets**: Automatic mapping of Compose `secrets` to AWS Secrets Manager.
 - [x] **Storage**: Automatic mapping of *named* `volumes` to AWS S3 Buckets. Bind mounts and anonymous volumes are local-development concerns and are ignored.
 - [x] **Managed Object Storage**: Automatically infers AWS S3 from `minio` images.
@@ -92,7 +92,7 @@ services:
 Composey infers what a service is from its image, and which service is public from its published port. Neither guess can ever be complete, so both are overridable:
 
 - `capability`: one of `container`, `database`, `cache`, `object-storage`. Use it when a private or vendored image cannot be recognised — or to *stop* an image being substituted.
-- `public`: set `true` on the one service exposed at the root URL. Needed whenever the public service publishes something other than port 80 or 443.
+- `ingress`: how a service is reached from outside — `path`, `port`, `health_path`, optional `priority`. Any number of services may have one, as long as their paths differ. Write `ingress: {}` to take every default.
 
 ```yaml
 services:
@@ -105,8 +105,24 @@ services:
     ports:
       - "8080:8080"
     x-composey:
-      public: true           # published port isn't 80/443
+      ingress:
+        path: /
+        health_path: /healthz
+  api:
+    image: our-api
+    ports:
+      - "8080:8080"
+    x-composey:
+      ingress:
+        path: /api                  # more specific paths are matched first
+        health_path: /api/health
 ```
+
+**Exposure is only ever declared.** Publishing a port does not make a service reachable — composey previously inferred this from whether a published port happened to be 80 or 443, which meant the most consequential property a service has was decided by a coincidence the compose file never stated. A service with no `ingress` is internal: reachable by other services in the application, not from outside. Compiling an application where nothing is exposed prints a warning.
+
+`ingress:` is the only way to say it — there is no second spelling — and writing the key with nothing under it means "expose this with every default".
+
+Listener rule priorities are derived from the application name and path, so several applications can share one load balancer listener without colliding, and `priority` can be set explicitly if they ever do.
 
 Recognised images are matched by exact name, including common vendored builds (`pgvector`, `postgis`, `timescaledb`, `bitnami/postgresql`, `redismod`, `valkey`, `keydb`). Anything else needs `capability`.
 

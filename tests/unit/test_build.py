@@ -19,6 +19,7 @@ def _env():
         ecs_cluster_arn="arn:aws:ecs:us-east-1:1:cluster/prod",
         alb_arn="arn:aws:lb:us-east-1:1:loadbalancer/app/shared/1",
         alb_listener_arn="arn:aws:lb:us-east-1:1:listener/app/shared/1/2",
+        alb_security_group_id="sg-alb0123456789",
     )
 
 

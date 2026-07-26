@@ -28,6 +28,7 @@ def _env() -> AwsEnvironment:
         ecs_cluster_arn="arn:aws:ecs:eu-west-2:123456789012:cluster/c",
         alb_arn="arn:aws:elasticloadbalancing:eu-west-2:1:loadbalancer/app/a/b",
         alb_listener_arn="arn:aws:elasticloadbalancing:eu-west-2:1:listener/app/a/b/c",
+        alb_security_group_id="sg-alb0123456789",
     )
 
 
@@ -128,3 +129,37 @@ def test_external_networks_are_rejected():
             {"web": ["shared"]},
             {"shared": NetworkDefinition(external=True)},
         )
+
+
+def test_load_balancer_ingress_comes_from_the_balancer_alone():
+    # The rule used to allow 0.0.0.0/0, so anything able to route to the private
+    # subnet — another application's tasks, a bastion, a peered network — could
+    # reach the task port directly and bypass the load balancer.
+    rule = _groups("flask")["aws_security_group_rule"]["alb_to_backend_rule"]
+
+    assert rule["source_security_group_id"] == "sg-alb0123456789"
+    assert "cidr_blocks" not in rule
+
+
+def test_a_load_balancer_without_its_security_group_is_rejected():
+    with pytest.raises(ValueError, match="alb_security_group_id is required"):
+        AwsEnvironment(
+            name="prod",
+            vpc_id="vpc-1",
+            public_subnets=["subnet-1"],
+            private_subnets=["subnet-2"],
+            ecs_cluster_arn="arn:aws:ecs:eu-west-2:1:cluster/c",
+            alb_arn="arn:aws:elasticloadbalancing:eu-west-2:1:loadbalancer/app/a/b",
+        )
+
+
+def test_an_environment_without_a_load_balancer_is_still_valid():
+    env = AwsEnvironment(
+        name="prod",
+        vpc_id="vpc-1",
+        public_subnets=["subnet-1"],
+        private_subnets=["subnet-2"],
+        ecs_cluster_arn="arn:aws:ecs:eu-west-2:1:cluster/c",
+    )
+
+    assert env.alb_security_group_id is None

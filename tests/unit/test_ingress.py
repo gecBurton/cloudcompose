@@ -31,6 +31,7 @@ def _env() -> AwsEnvironment:
         ecs_cluster_arn="arn:aws:ecs:eu-west-2:123456789012:cluster/c",
         alb_arn=ALB,
         alb_listener_arn=LISTENER,
+        alb_security_group_id="sg-alb0123456789",
     )
 
 

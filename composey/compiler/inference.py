@@ -678,8 +678,8 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                     to_port=ingress_port,
                     protocol="tcp",
                     security_group_id=f"${{aws_security_group.{ingress_sg_key}.id}}",
-                    cidr_blocks=["0.0.0.0/0"],
-                    description=f"Allow ALB to talk to {service.name}",
+                    source_security_group_id=env.alb_security_group_id,
+                    description=f"Allow the load balancer to reach {service.name}",
                 )
             )
             ecs_service.network_configuration["security_groups"] = [

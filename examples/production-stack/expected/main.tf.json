@@ -352,13 +352,11 @@
     },
     "aws_security_group_rule": {
       "alb_to_web_rule": {
-        "cidr_blocks": [
-          "0.0.0.0/0"
-        ],
-        "description": "Allow ALB to talk to web",
+        "description": "Allow the load balancer to reach web",
         "from_port": 80,
         "protocol": "tcp",
         "security_group_id": "${aws_security_group.web_ingress_sg.id}",
+        "source_security_group_id": "sg-alb0123456789",
         "to_port": 80,
         "type": "ingress"
       },

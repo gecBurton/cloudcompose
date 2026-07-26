@@ -12,8 +12,9 @@ locals {
       ecs_cluster_arn = aws_ecs_cluster.this.arn
     },
     var.create_alb ? {
-      alb_arn          = aws_lb.this[0].arn
-      alb_listener_arn = aws_lb_listener.this[0].arn
+      alb_arn               = aws_lb.this[0].arn
+      alb_listener_arn      = aws_lb_listener.this[0].arn
+      alb_security_group_id = aws_security_group.alb[0].id
     } : {},
     length(var.tags) > 0 ? { tags = var.tags } : {},
     var.aws_endpoint == null ? {} : { aws_endpoint = var.aws_endpoint },

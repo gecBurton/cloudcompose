@@ -222,7 +222,7 @@ A file that declares no networks gets Compose's implicit `default`, which puts e
 > [!NOTE]
 > Connectivity is **not** derived from `depends_on`. That describes startup order and constrains nothing under Compose, so rules built from it were guesses about intent that was never stated. `depends_on` still determines which services receive another's endpoint and credentials.
 
-Each publicly reachable service also gets a small group of its own carrying the load balancer rule, so exposing one service does not open a port on everything sharing its network. AWS attaches at most five security groups to a task, so a service may join at most five networks — four if it is public.
+Each publicly reachable service also gets a small group of its own carrying the load balancer rule, so exposing one service does not open a port on everything sharing its network. That rule admits traffic from the load balancer's security group and nothing else, which is why `alb_security_group_id` is required whenever `alb_arn` is set. AWS attaches at most five security groups to a task, so a service may join at most five networks — four if it is public.
 
 ### 🔌 Connection Wiring
 When a service is substituted for a managed one, every client that referred to it by its Compose name is pointed at the real thing. Resolution is driven by the **values** your Compose file already carries, never by variable names:
@@ -294,6 +294,7 @@ private_subnets:
 ecs_cluster_arn: arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster
 alb_arn: arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123
 alb_listener_arn: arn:aws:lb:us-east-1:123456789012:listener/app/shared-alb/123/456
+alb_security_group_id: sg-0123456789abcdef0
 log_retention_days: 7
 ```
 

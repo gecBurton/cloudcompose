@@ -22,6 +22,7 @@ def mock_prod_env():
         ecs_cluster_arn="arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster",
         alb_arn="arn:aws:lb:us-east-1:123456789012:loadbalancer/app/shared-alb/123",
         alb_listener_arn="arn:aws:lb:us-east-1:123456789012:listener/app/shared-alb/123/456",
+        alb_security_group_id="sg-alb0123456789",
     )
 
 

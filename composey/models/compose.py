@@ -1,7 +1,6 @@
-import os
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Port(BaseModel):
@@ -14,16 +13,17 @@ class Port(BaseModel):
 class Build(BaseModel):
     """
     docker-compose build
+
+    `context` is expected to be relative to the compose file. The parser makes
+    it so; taking the basename of an absolute path (as this model used to) is
+    wrong whenever the context is not directly beside the compose file, which
+    is the normal case in a monorepo where several services build from the root.
     """
 
     context: str = Field(description="context")
-
-    @field_validator("context")
-    @classmethod
-    def make_relative(cls, v: str) -> str:
-        if os.path.isabs(v):
-            return os.path.basename(v)
-        return v
+    dockerfile: Optional[str] = Field(
+        default=None, description="Dockerfile path, relative to the context"
+    )
 
 
 class Dependency(BaseModel):

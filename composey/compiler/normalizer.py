@@ -1,5 +1,5 @@
 import re
-from typing import Optional, Union
+from typing import Optional, Union, get_args
 
 from ..models.compose import Application as DockerApplication
 from ..models.compose import VolumeDefinition
@@ -7,6 +7,7 @@ from ..models.semantic import (
     Application as SemanticApplication,
 )
 from ..models.semantic import (
+    Capability,
     CronSchedule,
     RateSchedule,
     Relationship,
@@ -56,6 +57,60 @@ def _parse_schedule(raw: str) -> Schedule:
     return CronSchedule(expression=" ".join(fields))
 
 
+# Substrings that identify what a library image really is. Matched against each
+# path segment of the image reference, so vendored and mirrored images resolve
+# too: pgvector/pgvector, bitnami/postgresql and public.ecr.aws/.../postgres all
+# name a database. Matching only the three canonical names missed every one of
+# those, and the failure was silent — a database ran as a container with its
+# data directory on ephemeral storage.
+_CAPABILITY_IMAGES: dict[str, frozenset[str]] = {
+    "database": frozenset(
+        {
+            "postgres",
+            "postgresql",
+            "pgvector",
+            "postgis",
+            "timescaledb",
+            "mysql",
+            "mariadb",
+            "percona",
+            "percona-server-mysql",
+        }
+    ),
+    "cache": frozenset({"redis", "redismod", "redis-stack", "valkey", "keydb"}),
+    "object-storage": frozenset({"minio"}),
+}
+
+
+def _infer_capability(image: str) -> str:
+    """
+    Guess what an image really is from its name.
+
+    Inference can never be complete — an image can be called anything — so this
+    is only a default. `x-composey: capability:` overrides it, which is the
+    supported way to correct a wrong guess or to classify a private image.
+    """
+    reference = image.lower().split("@")[0]
+    # Drop the tag, taking care not to mistake a registry port for one.
+    path, _, last = reference.rpartition("/")
+    segments = f"{path}/{last.split(':')[0]}".strip("/").split("/")
+
+    # A leading registry host is addressing, not identity: ghcr.io or
+    # redis.example.com say nothing about what the image contains.
+    if len(segments) > 1 and ("." in segments[0] or segments[0] == "localhost"):
+        segments = segments[1:]
+
+    # A segment must be one of the known names exactly. Looser matching cannot
+    # tell redislabs/redismod (a cache) from acme/redis-dashboard (an app that
+    # merely talks to one), and guessing wrong deploys a managed service as a
+    # container — or worse, an application as a database.
+    for capability, known in _CAPABILITY_IMAGES.items():
+        if any(segment in known for segment in segments):
+            return capability
+
+    return "container"
+
+
 # Prefixes that mark a short-form volume source as a host path rather than a
 # named volume, matching how Compose itself disambiguates the two.
 _BIND_SOURCE_PREFIXES = ("/", "./", "../", "~")
@@ -87,13 +142,19 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
     semantic_services = []
     relationships = []
     public_service = None
+    declared_public: list[str] = []
 
     for s_name, docker_service in app.services.items():
-        # Identify the public service (first one mapping to port 80 or 443)
+        # Identify the public service (first one mapping to port 80 or 443).
+        # Only a default: real compose files routinely publish 8080, so
+        # `x-composey: public: true` overrides this below.
         if docker_service.ports:
             for p in docker_service.ports:
                 if p.published in [80, 443] and public_service is None:
                     public_service = s_name
+
+        if docker_service.x_composey.get("public") is True:
+            declared_public.append(s_name)
 
         # Handle services without ports safely
         primary_port = docker_service.ports[0].target if docker_service.ports else None
@@ -114,27 +175,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
             if source:
                 storage_names.append(source)
 
-        # Infer capability from image name
-        capability = "container"
-        image_lower = (docker_service.image or "").lower()
-
-        # Database detection: starts with or matches specific library images
-        db_images = ["postgres", "mysql", "mariadb"]
-        if any(
-            image_lower.startswith(db) or f"/{db}" in image_lower for db in db_images
-        ):
-            capability = "database"
-        # Cache detection
-        elif any(
-            image_lower.startswith(c) or f"/{c}" in image_lower
-            for c in ["redis", "valkey"]
-        ):
-            capability = "cache"
-        # Storage detection
-        elif any(
-            image_lower.startswith(s) or f"/{s}" in image_lower for s in ["minio"]
-        ):
-            capability = "object-storage"
+        capability = _infer_capability(docker_service.image or "")
 
         # Normalize command to ECS exec form (a list). A string is shell form,
         # so wrap it the way Docker would: /bin/sh -c "<string>".
@@ -147,6 +188,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         # A service with a build context is built and pushed to ECR rather than
         # pulled. Kept relative to the compose file for deterministic output.
         build_context = docker_service.build.context if docker_service.build else None
+        dockerfile = docker_service.build.dockerfile if docker_service.build else None
 
         # Extract x-composey size/resource hints
         size = "small"
@@ -159,6 +201,13 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         startup_grace_period = None
 
         x_composey = docker_service.x_composey
+        if "capability" in x_composey:
+            capability = x_composey["capability"]
+            if capability not in get_args(Capability):
+                raise ValueError(
+                    f"service {s_name!r} declares unknown capability "
+                    f"{capability!r}; expected one of {', '.join(get_args(Capability))}"
+                )
         if "size" in x_composey:
             size = x_composey["size"]
         if "cpu" in x_composey:
@@ -191,6 +240,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 memory=memory,
                 port=primary_port,
                 build_context=build_context,
+                dockerfile=dockerfile,
                 command=command,
                 startup_grace_period=startup_grace_period,
                 min_scale=min_scale,
@@ -206,6 +256,15 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         # Build relationships
         for dep_name in docker_service.depends_on.keys():
             relationships.append(Relationship(client=s_name, server=dep_name))
+
+    if len(declared_public) > 1:
+        raise ValueError(
+            "more than one service declares `x-composey: public: true` "
+            f"({', '.join(declared_public)}); exactly one service is exposed "
+            "at the root URL"
+        )
+    if declared_public:
+        public_service = declared_public[0]
 
     return SemanticApplication(
         name=project_name,

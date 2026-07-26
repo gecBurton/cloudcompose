@@ -49,7 +49,7 @@ def test_iam_least_privilege_scoping():
     s3_policy = json.loads(resources.aws_iam_role_policy[s3_policy_key].policy)
 
     s3_stmt = next(s for s in s3_policy["Statement"] if "s3:*" in s["Action"])
-    assert "${aws_s3_bucket.api_data_bucket_bucket.arn}" in s3_stmt["Resource"]
+    assert "${aws_s3_bucket.data_bucket_volume_bucket.arn}" in s3_stmt["Resource"]
 
 
 def test_normalizer_validation_protection():

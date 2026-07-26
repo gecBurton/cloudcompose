@@ -162,6 +162,7 @@
       "web_image": {
         "build": {
           "context": "app",
+          "dockerfile": "Dockerfile",
           "platform": "linux/amd64"
         },
         "name": "${aws_ecr_repository.web_ecr.repository_url}:latest"

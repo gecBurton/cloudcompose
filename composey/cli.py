@@ -7,6 +7,9 @@ import typer
 from rich.console import Console
 
 from .compiler import compile_to_terraform
+from .compiler.explain import explain, render
+from .compiler.normalizer import normalize
+from .compiler.parser import parse
 from .models.environment import load_environment
 
 app = typer.Typer(
@@ -33,8 +36,8 @@ def main(
         dir_okay=False,
         readable=True,
     ),
-    env_file: Path = typer.Option(
-        ...,
+    env_file: Optional[Path] = typer.Option(
+        None,
         "--env",
         "-e",
         help="Path to the Environment configuration YAML",
@@ -55,6 +58,11 @@ def main(
         "-o",
         help="Directory to write the generated Terraform JSON",
     ),
+    explain_only: bool = typer.Option(
+        False,
+        "--explain",
+        help="Report every inference the compiler makes, and write nothing",
+    ),
     version: Optional[bool] = typer.Option(
         None,
         "--version",
@@ -71,6 +79,18 @@ def main(
         project_name = compose_file.absolute().parent.name
 
     try:
+        # Explaining needs no environment: every inference reported here is made
+        # before the target is consulted.
+        if explain_only:
+            docker_app = parse(str(compose_file))
+            semantic = normalize(docker_app, project_name)
+            console.print(render(explain(docker_app, semantic)))
+            return
+
+        if env_file is None:
+            console.print("[bold red]Error:[/] --env is required to compile")
+            raise typer.Exit(code=1)
+
         # 1. Load Environment
         console.print(f"[bold blue]Loading environment:[/] {env_file}")
         env = load_environment(str(env_file))
@@ -106,6 +126,8 @@ def main(
             f"[bold green]Success![/] Terraform manifest written to [cyan]{output_file}[/]"
         )
 
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"[bold red]Error during compilation:[/] {e}")
         raise typer.Exit(code=1)

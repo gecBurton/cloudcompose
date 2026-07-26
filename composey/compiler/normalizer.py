@@ -1,13 +1,15 @@
 import re
-from typing import Optional, Union, get_args
+from typing import Optional, Union
+
+from pydantic import ValidationError
 
 from ..models.compose import Application as DockerApplication
-from ..models.compose import VolumeDefinition
+from ..models.compose import Service as DockerService
+from ..models.compose import VolumeDefinition, XComposey
 from ..models.semantic import (
     Application as SemanticApplication,
 )
 from ..models.semantic import (
-    Capability,
     CronSchedule,
     RateSchedule,
     Relationship,
@@ -138,6 +140,16 @@ def _named_volume_source(volume: Union[str, VolumeDefinition]) -> Optional[str]:
     return source
 
 
+def _settings_for(name: str, service: DockerService) -> XComposey:
+    """Validate a service's x-composey block, naming the service if it is wrong."""
+    try:
+        return XComposey.model_validate(service.x_composey_raw)
+    except ValidationError as error:
+        raise ValueError(
+            f"service {name!r} has an invalid x-composey block:\n{error}"
+        ) from error
+
+
 def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
     semantic_services = []
     relationships = []
@@ -153,7 +165,8 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 if p.published in [80, 443] and public_service is None:
                     public_service = s_name
 
-        if docker_service.x_composey.get("public") is True:
+        settings = _settings_for(s_name, docker_service)
+        if settings.public is True:
             declared_public.append(s_name)
 
         # Handle services without ports safely
@@ -190,63 +203,29 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
         build_context = docker_service.build.context if docker_service.build else None
         dockerfile = docker_service.build.dockerfile if docker_service.build else None
 
-        # Extract x-composey size/resource hints
-        size = "small"
-        cpu = None
-        memory = None
-        min_scale = 1
-        max_scale = 1
-        schedule = None
-        cdn_enabled = False
-        startup_grace_period = None
+        # An explicit capability always beats what the image name suggests.
+        if settings.capability is not None:
+            capability = settings.capability
 
-        x_composey = docker_service.x_composey
-        if "capability" in x_composey:
-            capability = x_composey["capability"]
-            if capability not in get_args(Capability):
-                raise ValueError(
-                    f"service {s_name!r} declares unknown capability "
-                    f"{capability!r}; expected one of {', '.join(get_args(Capability))}"
-                )
-        if "size" in x_composey:
-            size = x_composey["size"]
-        if "cpu" in x_composey:
-            cpu = int(x_composey["cpu"])
-        if "memory" in x_composey:
-            memory = int(x_composey["memory"])
-        if "min_scale" in x_composey:
-            min_scale = int(x_composey["min_scale"])
-        if "max_scale" in x_composey:
-            max_scale = int(x_composey["max_scale"])
-        if "schedule" in x_composey:
-            schedule = _parse_schedule(str(x_composey["schedule"]))
-        if "cdn" in x_composey:
-            cdn_enabled = bool(x_composey["cdn"])
-        if "startup_grace_period" in x_composey:
-            startup_grace_period = int(x_composey["startup_grace_period"])
-        elif "health_check_grace_period" in x_composey:
-            # Deprecated ECS-flavoured spelling of startup_grace_period. Accepted
-            # so existing compose files keep working rather than having the key
-            # silently ignored.
-            startup_grace_period = int(x_composey["health_check_grace_period"])
+        schedule = _parse_schedule(settings.schedule) if settings.schedule else None
 
         semantic_services.append(
             SemanticService(
                 name=s_name,
                 image=docker_service.image or "placeholder",
                 capability=capability,
-                size=size,
-                cpu=cpu,
-                memory=memory,
+                size=settings.size,
+                cpu=settings.cpu,
+                memory=settings.memory,
                 port=primary_port,
                 build_context=build_context,
                 dockerfile=dockerfile,
                 command=command,
-                startup_grace_period=startup_grace_period,
-                min_scale=min_scale,
-                max_scale=max_scale,
+                startup_grace_period=settings.grace_period,
+                min_scale=settings.min_scale,
+                max_scale=settings.max_scale,
                 schedule=schedule,
-                cdn_enabled=cdn_enabled,
+                cdn_enabled=settings.cdn,
                 env=docker_service.environment,
                 secrets=secret_names,
                 storage=storage_names,

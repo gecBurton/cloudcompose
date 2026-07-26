@@ -110,6 +110,38 @@ services:
 
 Recognised images are matched by exact name, including common vendored builds (`pgvector`, `postgis`, `timescaledb`, `bitnami/postgresql`, `redismod`, `valkey`, `keydb`). Anything else needs `capability`.
 
+The whole `x-composey` block is schema-validated: an unknown or misspelled key is an error, not something quietly ignored. An override you can typo is not an override.
+
+### 🔎 Seeing what was inferred
+Inference is only safe when a wrong guess is visible. `--explain` reports every decision, what it was made from, and — most usefully — the places where nothing was decided:
+
+```bash
+uv run composey --explain -f docker-compose.yml
+```
+
+```
+backend
+  inferred  runs as a container
+            image 'placeholder' is not a recognised managed service
+  inferred  listens on 8080
+            first published port
+  warning   nothing wired to db
+            no environment variable references 'db'; the service will not be able to find it
+
+db
+  inferred  substituted for a managed database
+            image 'postgres:17' is a recognised database
+
+application
+  warning   NOT reachable from outside
+            backend, db publish ports, but none on 80 or 443; set x-composey: public: true
+            on the one that should be reachable
+
+7 decision(s), 2 worth checking
+```
+
+No environment is needed — every inference reported here is made before the target is consulted — so it is a fast local check on any compose file.
+
 ### 🌍 Global Edge & Security (CDN)
 For public-facing services, you can enable a global edge presence with built-in security.
 

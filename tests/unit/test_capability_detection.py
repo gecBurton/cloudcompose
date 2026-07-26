@@ -92,8 +92,35 @@ def test_capability_override_beats_inference():
 
 
 def test_unknown_capability_is_rejected_by_name():
-    with pytest.raises(ValueError, match="unknown capability 'databse'"):
+    with pytest.raises(ValueError, match="service 'thing' has an invalid x-composey"):
         _normalize(capability="databse")
+
+
+def test_misspelled_key_is_rejected_rather_than_ignored():
+    # The failure this validation exists for: `capabilty` was silently dropped,
+    # and the service deployed as whatever the compiler guessed.
+    with pytest.raises(ValueError, match="capabilty"):
+        _normalize(capabilty="database")
+
+
+def test_misspelled_public_is_rejected():
+    with pytest.raises(ValueError, match="publik"):
+        _normalize(publik=True)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"size": "enormous"},
+        {"min_scale": -1},
+        {"max_scale": 0},
+        {"cpu": 0},
+        {"startup_grace_period": -5},
+    ],
+)
+def test_out_of_range_values_are_rejected(settings):
+    with pytest.raises(ValueError, match="invalid x-composey"):
+        _normalize(**settings)
 
 
 def _public_app(**overrides):

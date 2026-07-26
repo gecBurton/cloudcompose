@@ -2,6 +2,8 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .semantic import Capability
+
 
 class Port(BaseModel):
     mode: Literal["ingress", "egress"] = "ingress"
@@ -46,6 +48,44 @@ class VolumeDefinition(BaseModel):
     read_only: bool = False
 
 
+class XComposey(BaseModel):
+    """
+    The `x-composey` block on a service.
+
+    Validated with `extra="forbid"` on purpose. An override you can misspell is
+    not an override: before this existed, `capabilty: database` was silently
+    dropped and the service was deployed as whatever the compiler guessed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    capability: Optional[Capability] = Field(
+        default=None,
+        description="What this service really is, when the image name does not say",
+    )
+    public: Optional[bool] = Field(
+        default=None, description="Expose this service at the environment's root URL"
+    )
+    size: Literal["small", "medium", "large"] = Field(default="small")
+    cpu: Optional[int] = Field(default=None, gt=0)
+    memory: Optional[int] = Field(default=None, gt=0)
+    min_scale: int = Field(default=1, ge=0)
+    max_scale: int = Field(default=1, ge=1)
+    schedule: Optional[str] = Field(default=None)
+    cdn: bool = Field(default=False)
+    startup_grace_period: Optional[int] = Field(default=None, ge=0)
+    health_check_grace_period: Optional[int] = Field(
+        default=None, ge=0, description="Deprecated spelling of startup_grace_period"
+    )
+
+    @property
+    def grace_period(self) -> Optional[int]:
+        """The startup grace period under either spelling."""
+        if self.startup_grace_period is not None:
+            return self.startup_grace_period
+        return self.health_check_grace_period
+
+
 class Service(BaseModel):
     """
     docker-compose service
@@ -67,7 +107,7 @@ class Service(BaseModel):
     volumes: Optional[list[Union[str, VolumeDefinition]]] = Field(default=None)
 
     @property
-    def x_composey(self) -> dict:
+    def x_composey_raw(self) -> dict:
         return (self.model_extra or {}).get("x-composey") or {}
 
 

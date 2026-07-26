@@ -3,6 +3,12 @@ services:
     image: nginx:latest
     ports:
       - "80:80"
+    environment:
+      # Rewritten to the RDS endpoint and the ElastiCache address. Without
+      # these the service depends on both and can reach neither, which is what
+      # `--explain` warns about.
+      DB_HOST: db
+      REDIS_URL: redis://cache
     depends_on:
       - cache
       - db
@@ -20,8 +26,6 @@ services:
 
   cache:
     image: redis:alpine
-    environment:
-      - REDIS_URL=redis://cache
 
   cleanup:
     image: busybox

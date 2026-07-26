@@ -124,6 +124,11 @@ class Service(BaseModel):
         description="environment", default_factory=dict
     )
     depends_on: dict[str, Dependency] = Field(default_factory=dict)
+    platform_env: list[str] = Field(
+        default_factory=list,
+        description="Variables the service needs whose values come from the "
+        "platform rather than the compose file. Populated by the parser.",
+    )
     networks: Optional[dict[str, Optional[dict]]] = Field(
         default=None,
         description="Networks this service joins. `docker compose config` always "

@@ -64,7 +64,28 @@ class EcsService(BaseModel):
     health_check_grace_period_seconds: Optional[int] = None
 
     network_configuration: Dict[str, Any]  # Subnets and SGs
+    service_registries: Optional[Dict[str, Any]] = None
     load_balancer: List[Dict[str, Any]] = Field(default_factory=list)
+    tags: Optional[Dict[str, str]] = None
+
+
+class ServiceDiscoveryPrivateDnsNamespace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    vpc: str
+    description: Optional[str] = None
+    tags: Optional[Dict[str, str]] = None
+
+
+class ServiceDiscoveryService(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    dns_config: Dict[str, Any]
+    # ECS deregisters instances itself; without this Cloud Map expects an
+    # external health checker and leaves every instance unhealthy.
+    health_check_custom_config: Dict[str, Any] = {"failure_threshold": 1}
     tags: Optional[Dict[str, str]] = None
 
 
@@ -345,6 +366,12 @@ class AWSResources(BaseModel):
         default_factory=dict
     )
     aws_wafv2_web_acl: Dict[str, Wafv2WebAcl] = Field(default_factory=dict)
+    aws_service_discovery_private_dns_namespace: Dict[
+        str, ServiceDiscoveryPrivateDnsNamespace
+    ] = Field(default_factory=dict)
+    aws_service_discovery_service: Dict[str, ServiceDiscoveryService] = Field(
+        default_factory=dict
+    )
     aws_security_group: Dict[str, SecurityGroup] = Field(default_factory=dict)
     aws_security_group_rule: Dict[str, SecurityGroupRule] = Field(default_factory=dict)
     aws_cloudwatch_log_group: Dict[str, CloudWatchLogGroup] = Field(

@@ -27,6 +27,8 @@ from composey.models.aws import (
     LbListenerRule,
     LbTargetGroup,
     RandomId,
+    ServiceDiscoveryPrivateDnsNamespace,
+    ServiceDiscoveryService,
     RandomPassword,
     S3Bucket,
     SecretsManagerSecret,
@@ -89,13 +91,32 @@ def _database_engine(image: str) -> str:
     return "postgres"
 
 
-def _connection_for(service: SemanticService) -> Optional[Connection]:
+def _is_discoverable(service: SemanticService) -> bool:
     """
-    Describe how a client reaches this service once AWS has replaced it.
+    Whether other services can be given a name for this one.
 
-    Returns None for anything composey runs as a container, which clients reach
-    without the compiler rewriting anything.
+    A scheduled task runs and exits rather than being a service, and a container
+    with no port publishes nothing to reach.
     """
+    return (
+        service.capability == "container"
+        and service.port is not None
+        and service.schedule is None
+    )
+
+
+def _connection_for(service: SemanticService, namespace: str) -> Optional[Connection]:
+    """
+    Describe how a client reaches this service once AWS has deployed it.
+
+    Container services included: an ECS task has no name until it is registered
+    in Cloud Map, so without this a client resolving a sibling by its compose
+    name simply fails. Compose gives every service a name on a shared network;
+    ECS gives it nothing.
+    """
+    if _is_discoverable(service):
+        return Connection(host=f"{service.name}.{namespace}", port=service.port)
+
     if service.capability == "database":
         return Connection(
             host=f"${{aws_db_instance.{service.name}_db.address}}",
@@ -168,6 +189,17 @@ def _safe(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in name).strip("_")
 
 
+def _namespace_for(env_name: str, app_name: str) -> str:
+    """
+    A private DNS zone for this application.
+
+    Scoped by environment and application because Cloud Map namespaces are
+    unique per VPC, and several applications routinely share one.
+    """
+    label = "-".join(part for part in (env_name, app_name) if part)
+    return f"{''.join(c if c.isalnum() or c == '-' else '-' for c in label).strip('-').lower()}.internal"
+
+
 def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     resources = AWSResources()
 
@@ -230,6 +262,37 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
         )
 
     priorities = _listener_priorities(app)
+
+    # A private DNS zone so services can find each other by their compose names.
+    namespace = _namespace_for(env.name, app.name)
+    discoverable = [s for s in app.services if _is_discoverable(s)]
+    if discoverable:
+        resources.aws_service_discovery_private_dns_namespace["app"] = (
+            ServiceDiscoveryPrivateDnsNamespace(
+                name=namespace,
+                vpc=env.vpc_id,
+                description=f"Service discovery for {app.name} in {env.name}",
+                tags=tags,
+            )
+        )
+
+    for service in discoverable:
+        resources.aws_service_discovery_service[f"{_safe(service.name)}_discovery"] = (
+            ServiceDiscoveryService(
+                name=service.name,
+                dns_config={
+                    "namespace_id": (
+                        "${aws_service_discovery_private_dns_namespace.app.id}"
+                    ),
+                    # A records: awsvpc gives every task its own address, and
+                    # MULTIVALUE returns all of them so clients spread across
+                    # replicas instead of pinning to one.
+                    "dns_records": [{"ttl": 10, "type": "A"}],
+                    "routing_policy": "MULTIVALUE",
+                },
+                tags=tags,
+            )
+        )
 
     # 2. Map each Semantic Service to AWS resources
     for service in app.services:
@@ -655,6 +718,16 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                 "security_groups": sg_ids(service.networks),
                 "assign_public_ip": False,
             },
+            service_registries=(
+                {
+                    "registry_arn": (
+                        f"${{aws_service_discovery_service."
+                        f"{_safe(service.name)}_discovery.arn}}"
+                    )
+                }
+                if _is_discoverable(service)
+                else None
+            ),
             tags=tags,
         )
 
@@ -924,7 +997,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
     connections = {
         service.name: connection
         for service in app.services
-        if (connection := _connection_for(service)) is not None
+        if (connection := _connection_for(service, namespace)) is not None
     }
 
     # 3. Dynamic Link Injection (Service Discovery)

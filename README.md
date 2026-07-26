@@ -30,6 +30,7 @@ Composey provides a PaaS-like deployment experience where application engineers 
 - [x] **Edge Delivery**: Optional CloudFront + WAF integration for public services.
 - [x] **Scheduled Tasks**: Native EventBridge integration for cron-like jobs.
 - [x] **Worker**: Support for background services without public ports.
+- [x] **Service Discovery**: Services find each other by their Compose names, registered in a private DNS zone per application.
 
 ### Quality & Guarantees
 - [x] **Determinism**: Byte-identical output for equivalent inputs (canonical JSON/sorting).
@@ -252,6 +253,21 @@ environment:
 ```
 
 Named-but-unvalued variables are collected into one Secrets Manager secret per service, created with placeholders and injected individually into the container. `terraform apply` never overwrites them once set, and `--explain` lists what still needs a value. See [`examples/platform-config`](./examples/platform-config/).
+
+### 📛 Service Discovery
+Compose puts every service on a shared network where siblings resolve by name. An ECS task has no name at all, so composey registers each reachable service in a private DNS zone per application and rewrites references to it:
+
+```yaml
+services:
+  web:
+    environment:
+      API_URL: http://api        # → http://api.prod-web-api.internal:80
+    depends_on: [api]
+  api:
+    ports: ["80"]                # not published, but reachable by name
+```
+
+A service is registered when it runs as a container, publishes a port, and is not a scheduled task — anything else has no address to hand out, and `--explain` warns when something references one that has not. Names are resolvable VPC-wide; whether a connection is *permitted* remains a matter of [networks](#-networks). See [`examples/web-api`](./examples/web-api/).
 
 ### 🔌 Connection Wiring
 When a service is substituted for a managed one, every client that referred to it by its Compose name is pointed at the real thing. Resolution is driven by the **values** your Compose file already carries, never by variable names:

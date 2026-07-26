@@ -1,0 +1,31 @@
+# Two containers that talk to each other — the shape no other example had, and
+# the reason composey shipped for eight days with no service discovery at all.
+#
+# Compose puts both on a shared network where `api` resolves by name. ECS gives
+# a task no name whatsoever, so composey registers each reachable service in a
+# private DNS zone and rewrites references to it.
+services:
+  web:
+    image: nginxdemos/hello:plain-text
+    ports:
+      - "80:80"
+    environment:
+      # Resolves to api.<environment>-<application>.internal once compiled.
+      API_URL: http://api
+    depends_on:
+      - api
+    networks:
+      - app
+    x-composey:
+      ingress: {}
+
+  api:
+    image: nginxdemos/hello:plain-text
+    # Not published to the host: reachable by `web`, not from outside.
+    ports:
+      - "80"
+    networks:
+      - app
+
+networks:
+  app:

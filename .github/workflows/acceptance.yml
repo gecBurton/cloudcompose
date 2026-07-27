@@ -16,6 +16,7 @@ on:
           - build-webapp
           - doctor
           - production-stack
+          - web-api
 
 permissions:
   id-token: write   # required for OIDC federation to AWS
@@ -106,6 +107,9 @@ jobs:
             doctor)
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
+            web-api)
+              export COMPOSE=examples/web-api/compose.yml PROJECT=webapi \
+                     EXPECT="Server name" ;;
             production-stack)
               export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
                      EXPECT="Welcome to nginx" POLL_TIMEOUT=600 ;;

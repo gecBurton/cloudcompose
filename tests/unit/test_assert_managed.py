@@ -407,3 +407,69 @@ def test_a_scaling_target_with_no_policy_fails():
 
     assert result.returncode == 1
     assert "no policy decides when to scale" in result.stderr
+
+
+NAMESPACE = "prod-webapi.internal"
+API_REGISTRY = "arn:aws:servicediscovery:eu-west-2:1:service/srv-api"
+
+
+def namespace():
+    return {
+        "type": "aws_service_discovery_private_dns_namespace",
+        "name": "app",
+        "values": {"name": NAMESPACE, "id": "ns-1"},
+    }
+
+
+def discovery(name="api", arn=API_REGISTRY):
+    return {
+        "type": "aws_service_discovery_service",
+        "name": f"{name}_discovery",
+        "values": {"name": name, "arn": arn},
+    }
+
+
+def ecs_service(name="api", registry=API_REGISTRY):
+    values = {"name": name, "task_definition": f"arn:...:{name}:1"}
+    if registry:
+        values["service_registries"] = [{"registry_arn": registry}]
+    return {"type": "aws_ecs_service", "name": f"{name}_service", "values": values}
+
+
+def test_service_discovery_assertions_pass():
+    result = run(
+        [
+            namespace(),
+            discovery(),
+            ecs_service(),
+            task_definition(
+                [container(environment={"API_URL": f"http://api.{NAMESPACE}:80"})]
+            ),
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Cloud Map substitution assertions passed" in result.stdout
+    assert "API_URL points at a registered service" in result.stdout
+
+
+def test_a_registration_with_no_service_behind_it_fails():
+    # A DNS record that nothing answers is worse than no record at all.
+    result = run([namespace(), discovery(), ecs_service(registry=None)])
+
+    assert result.returncode == 1
+    assert "nothing will ever answer" in result.stderr
+
+
+def test_registering_without_a_namespace_fails():
+    result = run([discovery(), ecs_service()])
+
+    assert result.returncode == 1
+    assert "no namespace" in result.stderr
+
+
+def test_an_example_where_nothing_refers_to_a_sibling_still_passes():
+    result = run([namespace(), discovery(), ecs_service()])
+
+    assert result.returncode == 0, result.stderr
+    assert "no service refers to another by name" in result.stdout

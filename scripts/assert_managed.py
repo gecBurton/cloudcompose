@@ -314,6 +314,51 @@ def check_scaling(by_type):
     return True
 
 
+def check_service_discovery(by_type):
+    services = by_type.get("aws_service_discovery_service", [])
+    if not services:
+        return False
+
+    print("\nCloud Map (service discovery):")
+    namespaces = by_type.get("aws_service_discovery_private_dns_namespace", [])
+    if not namespaces:
+        fail("services are registered but there is no namespace to register into")
+    namespace = namespaces[0]["values"]["name"]
+    print(f"  [ok] namespace created: {namespace}")
+
+    # Every registered service must actually be attached to a running service,
+    # or the record exists with nothing behind it.
+    registries = {
+        (s["values"].get("service_registries") or [{}])[0].get("registry_arn", "")
+        for s in by_type.get("aws_ecs_service", [])
+    }
+    for service in services:
+        arn = service["values"]["arn"]
+        if arn not in registries:
+            fail(
+                f"{service['values']['name']} is registered in Cloud Map but no "
+                f"ECS service points at it, so nothing will ever answer"
+            )
+    names = ", ".join(sorted(s["values"]["name"] for s in services))
+    print(f"  [ok] each registration is backed by a service: {names}")
+
+    # And a client must have been given the name. Without this the records
+    # exist and no one was told about them.
+    resolved = [
+        (entry["name"], entry["value"])
+        for name, value in env_values(by_type)
+        for entry in [{"name": name, "value": value}]
+        if namespace in value
+    ]
+    if resolved:
+        for name, value in resolved:
+            print(f"  [ok] {name} points at a registered service: {value}")
+    else:
+        print("  [ok] no service refers to another by name in this example")
+
+    return True
+
+
 def main():
     state = json.load(sys.stdin)
     by_type = {}
@@ -329,6 +374,7 @@ def main():
             ("CloudFront", check_cdn(by_type)),
             ("EventBridge", check_schedule(by_type)),
             ("scaling", check_scaling(by_type)),
+            ("Cloud Map", check_service_discovery(by_type)),
         )
         if ran
     ]

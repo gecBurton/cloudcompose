@@ -258,3 +258,218 @@ def test_all_three_substitutions_reported_together():
 
     assert result.returncode == 0, result.stderr
     assert "RDS, ElastiCache substitution assertions passed" in result.stdout
+
+
+ALB_HOST = "prodstack-alb-123.eu-west-2.elb.amazonaws.com"
+WAF_ARN = "arn:aws:wafv2:us-east-1:123456789012:global/webacl/prodstack-waf/abc"
+
+
+def cloudfront(origin=ALB_HOST, web_acl=WAF_ARN, enabled=True):
+    return {
+        "type": "aws_cloudfront_distribution",
+        "name": "web_cdn",
+        "values": {
+            "enabled": enabled,
+            "comment": "CDN for web",
+            "domain_name": "d111.cloudfront.net",
+            "origin": [{"domain_name": origin, "origin_id": "ALB"}],
+            "web_acl_id": web_acl,
+        },
+    }
+
+
+def web_acl(arn=WAF_ARN):
+    return {
+        "type": "aws_wafv2_web_acl",
+        "name": "web_waf",
+        "values": {"name": "prodstack-waf", "scope": "CLOUDFRONT", "arn": arn},
+    }
+
+
+def test_cdn_assertions_pass():
+    result = run([cloudfront(), web_acl()])
+
+    assert result.returncode == 0, result.stderr
+    assert "CloudFront substitution assertions passed" in result.stdout
+
+
+def test_a_waf_outside_us_east_1_fails():
+    # CLOUDFRONT-scoped ACLs only exist in us-east-1. This is what proves the
+    # aliased provider works while the rest of the stack is in eu-west-2.
+    wrong = WAF_ARN.replace("us-east-1", "eu-west-2")
+
+    result = run([cloudfront(web_acl=wrong), web_acl(arn=wrong)])
+
+    assert result.returncode == 1
+    assert "not in us-east-1" in result.stderr
+
+
+def test_a_distribution_without_a_waf_fails():
+    result = run([cloudfront()])
+
+    assert result.returncode == 1
+    assert "unprotected" in result.stderr
+
+
+def test_an_origin_pointing_somewhere_else_fails():
+    # The origin used to be derived by string-splitting the load balancer ARN,
+    # which produced something that was not a hostname at all.
+    result = run([cloudfront(origin="app"), web_acl()])
+
+    assert result.returncode == 1
+    assert "not the load balancer" in result.stderr
+
+
+def schedule_rule(expression="cron(0 2 * * ? *)"):
+    return {
+        "type": "aws_cloudwatch_event_rule",
+        "name": "cleanup_rule",
+        "values": {
+            "name": "prodstack-cleanup",
+            "schedule_expression": expression,
+            "state": "ENABLED",
+        },
+    }
+
+
+def schedule_target(task_arn="arn:aws:ecs:eu-west-2:1:task-definition/cleanup:1"):
+    return {
+        "type": "aws_cloudwatch_event_target",
+        "name": "cleanup_target",
+        "values": {"ecs_target": [{"task_definition_arn": task_arn}]},
+    }
+
+
+def test_schedule_assertions_pass():
+    result = run([schedule_rule(), schedule_target()])
+
+    assert result.returncode == 0, result.stderr
+    assert "EventBridge substitution assertions passed" in result.stdout
+
+
+def test_a_schedule_with_nothing_to_run_fails():
+    result = run([schedule_rule()])
+
+    assert result.returncode == 1
+    assert "nothing is wired to run" in result.stderr
+
+
+def test_a_scheduled_task_also_running_as_a_service_fails():
+    task = "arn:aws:ecs:eu-west-2:1:task-definition/cleanup:1"
+    service = {
+        "type": "aws_ecs_service",
+        "name": "cleanup_service",
+        "values": {"name": "cleanup", "task_definition": task},
+    }
+
+    result = run([schedule_rule(), schedule_target(task), service])
+
+    assert result.returncode == 1
+    assert "running continuously" in result.stderr
+
+
+def scaling_target(low=2, high=10):
+    return {
+        "type": "aws_appautoscaling_target",
+        "name": "web_asg_target",
+        "values": {
+            "min_capacity": low,
+            "max_capacity": high,
+            "resource_id": "service/prodstack/web",
+        },
+    }
+
+
+def scaling_policy():
+    return {
+        "type": "aws_appautoscaling_policy",
+        "name": "web_cpu_scaling",
+        "values": {"name": "cpu"},
+    }
+
+
+def test_scaling_assertions_pass():
+    result = run([scaling_target(), scaling_policy()])
+
+    assert result.returncode == 0, result.stderr
+    assert "scaling substitution assertions passed" in result.stdout
+
+
+def test_a_scaling_target_that_cannot_scale_fails():
+    result = run([scaling_target(low=1, high=1), scaling_policy()])
+
+    assert result.returncode == 1
+    assert "cannot scale" in result.stderr
+
+
+def test_a_scaling_target_with_no_policy_fails():
+    result = run([scaling_target()])
+
+    assert result.returncode == 1
+    assert "no policy decides when to scale" in result.stderr
+
+
+NAMESPACE = "prod-webapi.internal"
+API_REGISTRY = "arn:aws:servicediscovery:eu-west-2:1:service/srv-api"
+
+
+def namespace():
+    return {
+        "type": "aws_service_discovery_private_dns_namespace",
+        "name": "app",
+        "values": {"name": NAMESPACE, "id": "ns-1"},
+    }
+
+
+def discovery(name="api", arn=API_REGISTRY):
+    return {
+        "type": "aws_service_discovery_service",
+        "name": f"{name}_discovery",
+        "values": {"name": name, "arn": arn},
+    }
+
+
+def ecs_service(name="api", registry=API_REGISTRY):
+    values = {"name": name, "task_definition": f"arn:...:{name}:1"}
+    if registry:
+        values["service_registries"] = [{"registry_arn": registry}]
+    return {"type": "aws_ecs_service", "name": f"{name}_service", "values": values}
+
+
+def test_service_discovery_assertions_pass():
+    result = run(
+        [
+            namespace(),
+            discovery(),
+            ecs_service(),
+            task_definition(
+                [container(environment={"API_URL": f"http://api.{NAMESPACE}:80"})]
+            ),
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Cloud Map substitution assertions passed" in result.stdout
+    assert "API_URL points at a registered service" in result.stdout
+
+
+def test_a_registration_with_no_service_behind_it_fails():
+    # A DNS record that nothing answers is worse than no record at all.
+    result = run([namespace(), discovery(), ecs_service(registry=None)])
+
+    assert result.returncode == 1
+    assert "nothing will ever answer" in result.stderr
+
+
+def test_registering_without_a_namespace_fails():
+    result = run([discovery(), ecs_service()])
+
+    assert result.returncode == 1
+    assert "no namespace" in result.stderr
+
+
+def test_an_example_where_nothing_refers_to_a_sibling_still_passes():
+    result = run([namespace(), discovery(), ecs_service()])
+
+    assert result.returncode == 0, result.stderr
+    assert "no service refers to another by name" in result.stdout

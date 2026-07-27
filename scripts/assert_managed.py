@@ -207,6 +207,158 @@ def check_cache(by_type):
     return True
 
 
+def check_cdn(by_type):
+    distributions = by_type.get("aws_cloudfront_distribution", [])
+    if not distributions:
+        return False
+
+    print("\nCloudFront (cdn):")
+    for distribution in distributions:
+        values = distribution["values"]
+        if not values.get("enabled"):
+            fail(f"distribution {values.get('comment')} is disabled")
+        print(f"  [ok] distribution serving at {values['domain_name']}")
+
+        origin = (values.get("origin") or [{}])[0]
+        host = origin.get("domain_name") or ""
+        if not host or "${" in host:
+            fail(f"origin has no resolved domain name: {host!r}")
+        if not host.endswith("elb.amazonaws.com"):
+            fail(f"origin {host!r} is not the load balancer")
+        print(f"  [ok] origin is the load balancer: {host}")
+
+        if not values.get("web_acl_id"):
+            fail("distribution has no web ACL attached")
+
+    acls = [
+        acl
+        for acl in by_type.get("aws_wafv2_web_acl", [])
+        if acl["values"].get("scope") == "CLOUDFRONT"
+    ]
+    if not acls:
+        fail("no CLOUDFRONT-scoped web ACL, so the distribution is unprotected")
+
+    for acl in acls:
+        arn = acl["values"]["arn"]
+        # AWS only hosts CLOUDFRONT-scoped ACLs in us-east-1, whatever region
+        # the rest of the stack is in. This is the assertion that proves the
+        # aliased provider works; without it the apply simply fails.
+        if ":us-east-1:" not in arn:
+            fail(f"web ACL is not in us-east-1: {arn}")
+        print(f"  [ok] web ACL created in us-east-1: {acl['values']['name']}")
+
+    return True
+
+
+def check_schedule(by_type):
+    rules = by_type.get("aws_cloudwatch_event_rule", [])
+    if not rules:
+        return False
+
+    print("\nEventBridge (scheduled tasks):")
+    for rule in rules:
+        values = rule["values"]
+        if not values.get("schedule_expression"):
+            fail(f"rule {values['name']} has no schedule")
+        if values.get("state") != "ENABLED":
+            fail(f"rule {values['name']} is not enabled")
+        print(f"  [ok] {values['name']} runs {values['schedule_expression']}")
+
+    targets = by_type.get("aws_cloudwatch_event_target", [])
+    if not targets:
+        fail("a schedule exists but nothing is wired to run")
+
+    for target in targets:
+        ecs_target = (target["values"].get("ecs_target") or [{}])[0]
+        if not ecs_target.get("task_definition_arn"):
+            fail("schedule target does not run a task definition")
+    print("  [ok] each schedule runs a task definition")
+
+    # A scheduled service is a task, not a long-running service. If one also
+    # appears as an ECS service it is running continuously as well.
+    scheduled = {
+        (t["values"].get("ecs_target") or [{}])[0].get("task_definition_arn", "")
+        for t in targets
+    }
+    for service in by_type.get("aws_ecs_service", []):
+        if service["values"].get("task_definition") in scheduled:
+            fail(
+                f"{service['values']['name']} is scheduled but also runs as a "
+                f"service, so it is running continuously as well"
+            )
+    print("  [ok] scheduled tasks do not also run as services")
+
+    return True
+
+
+def check_scaling(by_type):
+    targets = by_type.get("aws_appautoscaling_target", [])
+    if not targets:
+        return False
+
+    print("\nApplication Auto Scaling:")
+    for target in targets:
+        values = target["values"]
+        low, high = values["min_capacity"], values["max_capacity"]
+        if low > high:
+            fail(f"scaling bounds are inverted: {low} > {high}")
+        if high <= 1:
+            fail(f"a scaling target exists but cannot scale: max is {high}")
+        print(f"  [ok] {values['resource_id']} scales {low} to {high}")
+
+    policies = by_type.get("aws_appautoscaling_policy", [])
+    if not policies:
+        fail("a scaling target exists but no policy decides when to scale")
+    print(f"  [ok] {len(policies)} scaling policy(ies) attached")
+
+    return True
+
+
+def check_service_discovery(by_type):
+    services = by_type.get("aws_service_discovery_service", [])
+    if not services:
+        return False
+
+    print("\nCloud Map (service discovery):")
+    namespaces = by_type.get("aws_service_discovery_private_dns_namespace", [])
+    if not namespaces:
+        fail("services are registered but there is no namespace to register into")
+    namespace = namespaces[0]["values"]["name"]
+    print(f"  [ok] namespace created: {namespace}")
+
+    # Every registered service must actually be attached to a running service,
+    # or the record exists with nothing behind it.
+    registries = {
+        (s["values"].get("service_registries") or [{}])[0].get("registry_arn", "")
+        for s in by_type.get("aws_ecs_service", [])
+    }
+    for service in services:
+        arn = service["values"]["arn"]
+        if arn not in registries:
+            fail(
+                f"{service['values']['name']} is registered in Cloud Map but no "
+                f"ECS service points at it, so nothing will ever answer"
+            )
+    names = ", ".join(sorted(s["values"]["name"] for s in services))
+    print(f"  [ok] each registration is backed by a service: {names}")
+
+    # And a client must have been given the name. Without this the records
+    # exist and no one was told about them.
+    resolved = [
+        (entry["name"], entry["value"])
+        for name, value in env_values(by_type)
+        for entry in [{"name": name, "value": value}]
+        if namespace in value
+    ]
+    if resolved:
+        for name, value in resolved:
+            print(f"  [ok] {name} points at a registered service: {value}")
+    else:
+        print("  [ok] no service refers to another by name in this example")
+
+    return True
+
+
 def main():
     state = json.load(sys.stdin)
     by_type = {}
@@ -219,12 +371,16 @@ def main():
             ("S3", check_s3(by_type)),
             ("RDS", check_rds(by_type)),
             ("ElastiCache", check_cache(by_type)),
+            ("CloudFront", check_cdn(by_type)),
+            ("EventBridge", check_schedule(by_type)),
+            ("scaling", check_scaling(by_type)),
+            ("Cloud Map", check_service_discovery(by_type)),
         )
         if ran
     ]
 
     if not checked:
-        print("\n  No managed substitutions in this example — nothing to assert.")
+        print("\n  Nothing managed in this example — nothing to assert.")
         return
 
     print(f"\n  All {', '.join(checked)} substitution assertions passed.")

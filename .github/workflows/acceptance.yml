@@ -15,6 +15,8 @@ on:
           - minio-s3
           - build-webapp
           - doctor
+          - production-stack
+          - web-api
 
 permissions:
   id-token: write   # required for OIDC federation to AWS
@@ -32,7 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     # Bound the blast radius of a hang. Without this a stuck poll would sit on
     # GitHub's 6 hour default while a NAT gateway and ALB bill by the hour.
-    timeout-minutes: 60
+    # CloudFront is the long pole: a distribution takes about fifteen minutes to
+    # deploy and must be disabled and propagated before it can be deleted, so a
+    # production-stack run is far longer than the others.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
@@ -102,5 +107,11 @@ jobs:
             doctor)
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
+            web-api)
+              export COMPOSE=examples/web-api/compose.yml PROJECT=webapi \
+                     EXPECT="Server name" ;;
+            production-stack)
+              export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
+                     EXPECT="Welcome to nginx" POLL_TIMEOUT=600 ;;
           esac
           scripts/smoke-test.sh

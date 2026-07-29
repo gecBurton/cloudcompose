@@ -18,6 +18,7 @@
     "aws_db_instance": {
       "db_db": {
         "allocated_storage": 20,
+        "db_name": "example",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "mariadb",
         "final_snapshot_identifier": "prod-nginx-flask-mysql-db-final-${random_id.db_snapshot.hex}",

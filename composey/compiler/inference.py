@@ -369,6 +369,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             resources.aws_db_instance[db_key] = DbInstance(
                 identifier=get_name(service.name),
                 engine=engine,
+                db_name=service.database_name or service.name,
                 instance_class=db_instance_classes.get(
                     service.size, db_instance_classes["small"]
                 ),

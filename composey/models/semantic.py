@@ -85,6 +85,12 @@ class Service(BaseModel):
     port: Optional[int] = Field(
         default=None, description="The internal port the service listens on"
     )
+    database_name: Optional[str] = Field(
+        default=None,
+        description="For a database capability, the database to create inside "
+        "the managed instance. Taken from what the compose file already states, "
+        "so the name an application connected to locally is the one deployed.",
+    )
     build_context: Optional[str] = Field(
         default=None,
         description="Path (relative to the compose file) to a Docker build context. "

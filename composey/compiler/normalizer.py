@@ -118,6 +118,41 @@ def _infer_capability(image: str) -> str:
 _BIND_SOURCE_PREFIXES = ("/", "./", "../", "~")
 
 
+# The variable each official database image reads to decide which database to
+# create on first boot. Consulted by name, unlike application variables, because
+# these are the images' documented contract rather than a guess about intent: a
+# compose file setting POSTGRES_DB has already stated the name it expects.
+_DATABASE_NAME_VARIABLES = ("POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE")
+
+
+def _database_name(service_name: str, environment: dict[str, Optional[str]]) -> str:
+    """
+    The database to create inside a managed instance.
+
+    Falls back to the service's own name, which is what a compose file that
+    never named one gets locally from the image's own default.
+    """
+    for variable in _DATABASE_NAME_VARIABLES:
+        stated = environment.get(variable)
+        if stated:
+            return _sanitize_database_name(stated)
+
+    return _sanitize_database_name(service_name)
+
+
+def _sanitize_database_name(raw: str) -> str:
+    """
+    Coerce a name into one every supported engine accepts.
+
+    Postgres and MySQL both allow only letters, digits and underscores, and
+    Postgres requires the first character to be a letter.
+    """
+    cleaned = "".join(c if c.isalnum() else "_" for c in raw.lower()).lstrip(
+        "_0123456789"
+    )
+    return (cleaned or "app")[:63]
+
+
 def _reject_persistent_volumes(
     name: str, service: DockerService, capability: str
 ) -> None:
@@ -289,6 +324,11 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 cpu=settings.cpu,
                 memory=settings.memory,
                 port=primary_port,
+                database_name=(
+                    _database_name(s_name, docker_service.environment)
+                    if capability == "database"
+                    else None
+                ),
                 build_context=build_context,
                 dockerfile=dockerfile,
                 command=command,

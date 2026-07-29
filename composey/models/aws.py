@@ -158,6 +158,10 @@ class DbInstance(BaseModel):
 
     identifier: str
     engine: Literal["postgres", "mysql", "mariadb"]
+    # The database created inside the instance. Postgres would otherwise fall
+    # back to one named "postgres"; MySQL and MariaDB create none at all, so an
+    # application that connected locally has nothing to connect to once deployed.
+    db_name: str
     instance_class: str
     allocated_storage: int
     db_subnet_group_name: str

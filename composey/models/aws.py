@@ -66,6 +66,7 @@ class EcsService(BaseModel):
     network_configuration: Dict[str, Any]  # Subnets and SGs
     service_registries: Optional[Dict[str, Any]] = None
     load_balancer: List[Dict[str, Any]] = Field(default_factory=list)
+    lifecycle: Optional[TerraformLifecycle] = None
     tags: Optional[Dict[str, str]] = None
 
 

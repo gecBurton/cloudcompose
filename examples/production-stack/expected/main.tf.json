@@ -177,8 +177,13 @@
     "aws_ecs_service": {
       "web_service": {
         "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster",
-        "desired_count": 1,
+        "desired_count": 2,
         "launch_type": "FARGATE",
+        "lifecycle": {
+          "ignore_changes": [
+            "desired_count"
+          ]
+        },
         "load_balancer": [
           {
             "container_name": "web",

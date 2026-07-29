@@ -713,6 +713,20 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             name=get_name(service.name),
             cluster=env.ecs_cluster_arn,
             task_definition=f"${{aws_ecs_task_definition.{task_def_key}.arn}}",
+            # Start at the floor the application asked for. Leaving this at one
+            # while autoscaling held a higher minimum meant every apply reset the
+            # service to a single task and autoscaling immediately pulled it back
+            # up, so the stack never converged and each deploy dipped capacity.
+            desired_count=service.min_scale,
+            # Once autoscaling owns the count, Terraform must stop asserting it:
+            # the desired count is whatever the last scaling activity decided,
+            # and reverting it on every apply is the same drift from the other
+            # direction.
+            lifecycle=(
+                TerraformLifecycle(ignore_changes=["desired_count"])
+                if service.max_scale > 1
+                else None
+            ),
             health_check_grace_period_seconds=service.startup_grace_period,
             network_configuration={
                 "subnets": env.private_subnets,

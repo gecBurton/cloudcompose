@@ -73,7 +73,7 @@ Composey supports the **`x-composey`** extension to allow engineers to specify t
 - `large`: 4096 CPU, 8GB RAM | `db.m5.large`
 
 **Scaling & Resources:**
-- `min_scale`: Minimum number of instances (Default: 1).
+- `min_scale`: Minimum number of instances (Default: 1). The service is created at this count, and once `max_scale` is above it Terraform stops asserting the count so scaling activity is not reverted on the next apply.
 - `max_scale`: Maximum number of instances (Default: 1). If > 1, creates AWS AppAutoScaling policies for CPU (70%) and Memory (80%).
 - `cpu` / `memory`: Explicit Fargate unit overrides.
 - `startup_grace_period`: Seconds a newly started instance is given to become healthy before health checks are enforced. (The older ECS-flavoured name `health_check_grace_period` is still accepted.)

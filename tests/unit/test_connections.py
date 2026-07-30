@@ -175,7 +175,12 @@ def _manifest(env_vars: dict) -> dict:
         name="app",
         services=[
             Service(name="web", image="web", port=80, env=env_vars),
-            Service(name="db", image="postgres:16", capability="database"),
+            Service(
+                name="db",
+                image="postgres:16",
+                capability="database",
+                database_name="app_db",
+            ),
             Service(name="cache", image="redis:7", capability="cache"),
             Service(name="blobs", image="minio/minio", capability="object-storage"),
         ],
@@ -256,7 +261,7 @@ def test_the_secret_holds_a_complete_and_usable_url():
 
     assert version["secret_string"] == (
         "postgres://composey:${random_password.db_password.result}"
-        "@${aws_db_instance.db_db.address}:5432/db"
+        "@${aws_db_instance.db_db.address}:5432/app_db"
     )
 
 

@@ -133,7 +133,12 @@ def test_managed_services_are_unaffected():
     resources = _infer(
         [
             Service(name="web", image="web", port=80),
-            Service(name="db", image="postgres:16", capability="database"),
+            Service(
+                name="db",
+                image="postgres:16",
+                capability="database",
+                database_name="app_db",
+            ),
         ],
         [Relationship(client="web", server="db")],
     )

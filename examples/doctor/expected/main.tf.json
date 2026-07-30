@@ -26,7 +26,7 @@
     "aws_db_instance": {
       "db_db": {
         "allocated_storage": 20,
-        "db_name": "db",
+        "db_name": "doctor_db",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "postgres",
         "final_snapshot_identifier": "prod-doctor-db-final-${random_id.db_snapshot.hex}",
@@ -221,7 +221,7 @@
       },
       "doctor_database_url_url_v1": {
         "secret_id": "${aws_secretsmanager_secret.doctor_database_url_url.id}",
-        "secret_string": "postgres://composey:${random_password.db_password.result}@${aws_db_instance.db_db.address}:5432/db"
+        "secret_string": "postgres://composey:${random_password.db_password.result}@${aws_db_instance.db_db.address}:5432/doctor_db"
       }
     },
     "aws_security_group": {

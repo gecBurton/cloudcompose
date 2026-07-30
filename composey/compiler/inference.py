@@ -131,7 +131,7 @@ def _connection_for(service: SemanticService, namespace: str) -> Optional[Connec
             # wiring below routes it to Secrets Manager rather than the
             # container's environment.
             password=f"${{random_password.{service.name}_password.result}}",
-            database=service.database_name or service.name,
+            database=service.database_name,
         )
 
     if service.capability == "cache":
@@ -378,7 +378,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             resources.aws_db_instance[db_key] = DbInstance(
                 identifier=get_name(service.name),
                 engine=engine,
-                db_name=service.database_name or service.name,
+                db_name=service.database_name,
                 instance_class=db_instance_classes.get(
                     service.size, db_instance_classes["small"]
                 ),

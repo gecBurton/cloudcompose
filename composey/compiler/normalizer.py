@@ -125,19 +125,30 @@ _BIND_SOURCE_PREFIXES = ("/", "./", "../", "~")
 _DATABASE_NAME_VARIABLES = ("POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE")
 
 
-def _database_name(service_name: str, environment: dict[str, Optional[str]]) -> str:
+def _database_name(
+    app_name: str, service_name: str, environment: dict[str, Optional[str]]
+) -> str:
     """
     The database to create inside a managed instance.
 
-    Falls back to the service's own name, which is what a compose file that
-    never named one gets locally from the image's own default.
+    A name the compose file states is used as written, because the application
+    was tested against it. Anything else is composey's own choice, and it is
+    made compound -- application and service -- rather than the bare service
+    name, so that the compiler cannot pick a name the engine refuses.
+
+    RDS rejects a DBName that is a reserved word for the engine, and `db` is one
+    on Postgres. Since `db` is about the most likely name for a database service
+    in a compose file, the bare service name was the one default guaranteed to
+    hit this. It failed at CreateDBInstance, not at `terraform validate`, which
+    only knows the provider's schema and not the engine's keywords.
     """
     for variable in _DATABASE_NAME_VARIABLES:
         stated = environment.get(variable)
         if stated:
             return _sanitize_database_name(stated)
 
-    return _sanitize_database_name(service_name)
+    compound = f"{app_name}_{service_name}" if app_name else service_name
+    return _sanitize_database_name(compound)
 
 
 def _sanitize_database_name(raw: str) -> str:
@@ -325,7 +336,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 memory=settings.memory,
                 port=primary_port,
                 database_name=(
-                    _database_name(s_name, docker_service.environment)
+                    _database_name(project_name, s_name, docker_service.environment)
                     if capability == "database"
                     else None
                 ),

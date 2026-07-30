@@ -189,7 +189,9 @@ If a service uses a standard database image (`postgres`, `mysql`, or `mariadb`),
 1.  **Substitute Infrastructure**: Provision an **AWS RDS Instance** instead of a container.
 2.  **Automate Networking**: Create database subnet groups and security group rules automatically.
 3.  **Dynamic Host Injection**: Automatically scan your application's environment variables. If it finds a variable pointing to the database service name (e.g., `DB_HOST: db`), it replaces it with the **actual RDS endpoint address**.
-4.  **Create the database**: The instance contains a database named by whatever the image itself was told to create — `POSTGRES_DB`, `MYSQL_DATABASE` or `MARIADB_DATABASE` — falling back to the service's own name. These are read by name, unlike application variables, because they are the official images' documented contract rather than a guess: a compose file setting `POSTGRES_DB: inventory` has already stated the name its application connects to.
+4.  **Create the database**: The instance contains a database named by whatever the image itself was told to create — `POSTGRES_DB`, `MYSQL_DATABASE` or `MARIADB_DATABASE` — and that name is used exactly as written, because the application was tested against it. These three are read by name, unlike application variables, because they are the official images' documented contract rather than a guess.
+
+    Where the compose file names none, composey picks `<application>_<service>` — `doctor_db`, not `db`. The bare service name is not safe as a default: RDS refuses a `DBName` that is a reserved word for the engine, and `db` is reserved on Postgres while also being the likeliest thing to call a database service. That failure arrives from `CreateDBInstance`, not from `terraform validate`, which knows the provider's schema and not the engine's keywords.
 
 ### ⚡️ Managed Caching (ElastiCache)
 If a service uses a `redis` image, Composey will:

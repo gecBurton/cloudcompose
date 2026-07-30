@@ -34,7 +34,12 @@ def _policies(client_env: dict, relationships: list[Relationship]) -> set[str]:
         services=[
             Service(name="web", image="web", port=80, env=client_env),
             Service(name="blobs", image="minio/minio", capability="object-storage"),
-            Service(name="db", image="postgres:16", capability="database"),
+            Service(
+                name="db",
+                image="postgres:16",
+                capability="database",
+                database_name="shop_db",
+            ),
         ],
         relationships=relationships,
     )

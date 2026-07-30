@@ -1,6 +1,6 @@
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Capability = Literal["container", "database", "cache", "object-storage"]
 
@@ -140,6 +140,25 @@ class Service(BaseModel):
         default_factory=list,
         description="List of secret names required by this service",
     )
+
+    @model_validator(mode="after")
+    def _a_database_is_named(self) -> "Service":
+        """
+        A database capability must carry the database it holds.
+
+        Left optional, the only place to put a fallback was next to each use, and
+        the obvious fallback -- the service's own name -- is one RDS refuses:
+        `db` is a reserved word on Postgres, and `db` is what a compose file
+        calls its database. Requiring the name here means a backend cannot
+        reintroduce that by reaching for a default of its own.
+        """
+        if self.capability == "database" and not self.database_name:
+            raise ValueError(
+                f"service {self.name!r} is a database and must carry a "
+                f"database_name; the normalizer derives one from the compose "
+                f"file, and no backend should have to guess"
+            )
+        return self
 
 
 class Connection(BaseModel):

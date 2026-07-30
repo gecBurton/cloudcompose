@@ -165,6 +165,22 @@ class Connection(BaseModel):
         description="Identifier of the thing being addressed, where that "
         "differs from the host: a bucket, container or database name.",
     )
+    username: Optional[str] = Field(
+        default=None,
+        description="Identity a client authenticates as. None means the service "
+        "takes no credentials, so whatever the compose file wrote is left alone.",
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="Secret a client authenticates with. Setting this makes any "
+        "value carrying it confidential, which is what stops it being written "
+        "into a plain environment variable.",
+    )
+    database: Optional[str] = Field(
+        default=None,
+        description="The database a client selects on connecting, where the "
+        "service holds more than one.",
+    )
     addressed_by: Literal["host", "name"] = Field(
         default="host",
         description="Which attribute a bare reference to the service resolves "

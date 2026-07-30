@@ -16,7 +16,7 @@ CONNECTIONS = {"db": DB, "cache": CACHE, "blobs": BUCKET}
 
 
 def resolve(value: str) -> str:
-    return resolve_value(value, CONNECTIONS)
+    return resolve_value(value, CONNECTIONS).value
 
 
 def test_bare_reference_to_a_database_resolves_to_its_host():
@@ -44,7 +44,9 @@ def test_port_is_dropped_when_the_connection_declares_none():
     assert resolve("http://blobs:9000") == f"http://{BUCKET.host}"
 
 
-def test_userinfo_is_preserved():
+def test_userinfo_is_preserved_when_the_service_takes_no_credentials():
+    # This connection declares no username, so nothing is authoritative enough
+    # to overwrite what the compose file wrote.
     assert resolve("postgres://user:pw@db:5432/app") == (
         f"postgres://user:pw@{DB.host}:5432/app"
     )
@@ -76,8 +78,75 @@ def test_variable_names_are_never_consulted():
 def test_a_service_named_like_a_substring_is_not_matched():
     connections = {"db": DB}
 
-    assert resolve_value("dbadmin", connections) == "dbadmin"
-    assert resolve_value("http://dbadmin:80", connections) == "http://dbadmin:80"
+    assert resolve_value("dbadmin", connections).value == "dbadmin"
+    assert resolve_value("http://dbadmin:80", connections).value == "http://dbadmin:80"
+
+
+# A database that generated its own credentials, which is what inference builds.
+CREDENTIALED_DB = Connection(
+    host="db.eu-west-2.rds.amazonaws.com",
+    port=5432,
+    username="composey",
+    password="s3cret",
+    database="orders",
+)
+CREDENTIALED = {"db": CREDENTIALED_DB}
+
+
+def test_the_managed_credentials_replace_what_the_compose_file_wrote():
+    # The username in the compose file belonged to a container that no longer
+    # exists; the managed instance generated its own. Preserving the local one
+    # produces a URL that finds a real database and is rejected by it.
+    assert resolve_value("postgres://user:pw@db:5432/app", CREDENTIALED).value == (
+        "postgres://composey:s3cret@db.eu-west-2.rds.amazonaws.com:5432/orders"
+    )
+
+
+def test_credentials_are_supplied_even_when_the_url_stated_none():
+    assert resolve_value("postgres://db/app", CREDENTIALED).value == (
+        "postgres://composey:s3cret@db.eu-west-2.rds.amazonaws.com:5432/orders"
+    )
+
+
+def test_the_deployed_database_name_replaces_the_local_one():
+    # Same argument as the port and the credentials: the path named the
+    # database the local container created.
+    assert resolve_value("postgres://db:5432/whatever", CREDENTIALED).value.endswith(
+        "/orders"
+    )
+
+
+def test_query_parameters_survive_the_database_being_substituted():
+    assert resolve_value("postgres://db/app?sslmode=require", CREDENTIALED).value == (
+        "postgres://composey:s3cret@db.eu-west-2.rds.amazonaws.com:5432/orders"
+        "?sslmode=require"
+    )
+
+
+def test_a_value_carrying_a_password_is_confidential():
+    assert resolve_value("postgres://db/app", CREDENTIALED).confidential is True
+
+
+def test_a_bare_reference_is_never_confidential():
+    # It resolves to an address, which is not a secret and belongs in the
+    # environment where an application can read it cheaply.
+    resolution = resolve_value("db", CREDENTIALED)
+
+    assert resolution.confidential is False
+    assert resolution.value == CREDENTIALED_DB.host
+
+
+def test_a_value_reaching_a_service_without_credentials_is_not_confidential():
+    assert resolve("redis://cache:6379") is not None
+    assert resolve_value("redis://cache:6379", CONNECTIONS).confidential is False
+
+
+def test_the_service_a_value_reached_for_is_reported():
+    # This is what permissions are built from, so it has to be reported rather
+    # than guessed at from the resolved value.
+    assert resolve_value("http://blobs:9000", CONNECTIONS).service == "blobs"
+    assert resolve_value("blobs", CONNECTIONS).service == "blobs"
+    assert resolve_value("nothing-to-see", CONNECTIONS).service is None
 
 
 def test_default_port_prefers_the_connection():
@@ -86,8 +155,8 @@ def test_default_port_prefers_the_connection():
     assert default_port(None, 8080) == 8080
 
 
-def _compile(env_vars: dict) -> dict:
-    """Compile a container that depends on a database, cache and bucket."""
+def _manifest(env_vars: dict) -> dict:
+    """Compile a container that references a database, cache and bucket."""
     import json
 
     from composey.compiler.generator import generate
@@ -116,10 +185,26 @@ def _compile(env_vars: dict) -> dict:
             Relationship(client="web", server="blobs"),
         ],
     )
-    manifest = json.loads(generate(infer(app, env), env))
+    return json.loads(generate(infer(app, env), env))
+
+
+def _container(manifest: dict) -> dict:
+    import json
+
     task_def = manifest["resource"]["aws_ecs_task_definition"]["web_td"]
-    container = json.loads(task_def["container_definitions"])[0]
+    return json.loads(task_def["container_definitions"])[0]
+
+
+def _compile(env_vars: dict) -> dict:
+    """The plain environment a compiled container is given."""
+    container = _container(_manifest(env_vars))
     return {entry["name"]: entry["value"] for entry in container["environment"]}
+
+
+def _compile_secrets(env_vars: dict) -> dict:
+    """The secret references a compiled container is given."""
+    container = _container(_manifest(env_vars))
+    return {entry["name"]: entry["valueFrom"] for entry in container["secrets"]}
 
 
 def test_end_to_end_wiring_of_every_capability():
@@ -144,11 +229,59 @@ def test_end_to_end_wiring_of_every_capability():
     assert resolved["UNRELATED"] == "leave-me-alone"
 
 
-def test_database_url_keeps_its_port():
-    # The previous implementation rewrote any URL as if it were http, which
-    # silently dropped the port from schemes like postgres://.
-    resolved = _compile({"DATABASE_URL": "postgres://user@db:5432/app"})
-
-    assert resolved["DATABASE_URL"] == (
-        "postgres://user@${aws_db_instance.db_db.address}:5432/app"
+def test_a_database_url_never_reaches_the_plain_environment():
+    # It carries the master password. In the task definition it would be
+    # readable by anyone who can describe it.
+    assert "DATABASE_URL" not in _compile(
+        {"DATABASE_URL": "postgres://user@db:5432/app"}
     )
+
+
+def test_a_database_url_is_delivered_as_a_secret():
+    secrets = _compile_secrets({"DATABASE_URL": "postgres://user@db:5432/app"})
+
+    assert secrets["DATABASE_URL"] == (
+        "${aws_secretsmanager_secret.web_database_url_url.arn}"
+    )
+
+
+def test_the_secret_holds_a_complete_and_usable_url():
+    # Host, port, credentials and database all substituted: everything the
+    # client needs to connect, assembled by terraform because ECS cannot
+    # assemble it (valueFrom takes an ARN, not a template).
+    manifest = _manifest({"DATABASE_URL": "postgres://user@db:5432/app"})
+    version = manifest["resource"]["aws_secretsmanager_secret_version"][
+        "web_database_url_url_v1"
+    ]
+
+    assert version["secret_string"] == (
+        "postgres://composey:${random_password.db_password.result}"
+        "@${aws_db_instance.db_db.address}:5432/db"
+    )
+
+
+def test_a_rotated_password_reaches_the_client():
+    # Unlike the secrets composey cannot value, every part of this one is
+    # derived from state, so terraform must keep it in step rather than ignore
+    # changes to it.
+    manifest = _manifest({"DATABASE_URL": "postgres://db/app"})
+    version = manifest["resource"]["aws_secretsmanager_secret_version"][
+        "web_database_url_url_v1"
+    ]
+
+    assert "lifecycle" not in version
+
+
+def test_the_client_may_read_the_url_secret():
+    manifest = _manifest({"DATABASE_URL": "postgres://db/app"})
+    policies = manifest["resource"]["aws_iam_role_policy"]
+
+    assert "web_web_database_url_url_policy" in policies
+
+
+def test_a_url_without_credentials_stays_in_the_environment():
+    # ElastiCache takes no credentials, so nothing about this value is secret
+    # and paying for a secret to hold it would be waste.
+    resolved = _compile({"REDIS_URL": "redis://cache:6379"})
+
+    assert resolved["REDIS_URL"].startswith("redis://${aws_elasticache_cluster")

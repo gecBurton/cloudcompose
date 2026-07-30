@@ -8,6 +8,7 @@ passes, 503 otherwise — with a per-service breakdown.
 Env contract (what composey injects):
   S3    : BUCKET_NAME               (bucket id)
   RDS   : DB_HOST + DB_USERNAME/DB_PASSWORD (secrets)
+  RDS   : DATABASE_URL              (secret; credentials and database included)
   Redis : REDIS_URL                 (redis://host:port)
 """
 
@@ -82,7 +83,36 @@ def check_redis():
     return f"ok: set+get on {url}"
 
 
-CHECKS = {"s3": check_s3, "db": check_db, "redis": check_redis}
+def check_db_url():
+    """
+    Connect using only DATABASE_URL, the way most frameworks do.
+
+    This is the check that proves the substitution is complete: the URL has to
+    carry credentials the managed instance accepts and name a database that
+    exists on it. Nothing here falls back to a separate variable, so a URL
+    missing either fails rather than quietly working for another reason.
+    """
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        return "skipped: DATABASE_URL not set"
+    import psycopg2
+
+    conn = psycopg2.connect(url, connect_timeout=5)
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT current_database(), current_user")
+            database, user = cur.fetchone()
+    finally:
+        conn.close()
+    return f"ok: connected as {user} to {database}"
+
+
+CHECKS = {
+    "s3": check_s3,
+    "db": check_db,
+    "db_url": check_db_url,
+    "redis": check_redis,
+}
 
 
 @app.get("/health")

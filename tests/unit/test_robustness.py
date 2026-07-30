@@ -26,7 +26,9 @@ def test_iam_least_privilege_scoping():
                 image="img",
                 schedule=RateSchedule(value=1, unit="minutes"),
             ),
-            Service(name="api", image="img"),
+            # The environment reference is what earns the grant; depends_on
+            # alone no longer does.
+            Service(name="api", image="img", env={"BUCKET": "blobs"}),
             Service(name="blobs", image="minio/minio", capability="object-storage"),
         ],
         relationships=[Relationship(client="api", server="blobs")],

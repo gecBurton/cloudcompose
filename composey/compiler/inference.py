@@ -43,7 +43,7 @@ from composey.models.semantic import Application as SemanticApp
 from composey.models.semantic import Connection, CronSchedule, Schedule
 from composey.models.semantic import Service as SemanticService
 
-from .connections import resolve_environment
+from .connections import resolve_value
 
 
 def _eventbridge_expression(schedule: Schedule) -> str:
@@ -80,6 +80,10 @@ def _eventbridge_expression(schedule: Schedule) -> str:
 # cannot disagree about how a client reaches a service.
 _DATABASE_PORTS = {"postgres": 5432, "mysql": 3306, "mariadb": 3306}
 _CACHE_PORT = 6379
+
+# "admin" is a reserved master username on RDS Postgres; this is a non-reserved
+# name valid across every engine composey substitutes.
+DATABASE_USERNAME = "composey"
 
 
 def _database_engine(image: str) -> str:
@@ -121,6 +125,13 @@ def _connection_for(service: SemanticService, namespace: str) -> Optional[Connec
         return Connection(
             host=f"${{aws_db_instance.{service.name}_db.address}}",
             port=_DATABASE_PORTS[_database_engine(service.image)],
+            username=DATABASE_USERNAME,
+            # The generated master password, read straight from the resource
+            # that generates it. Anything carrying this is confidential, and the
+            # wiring below routes it to Secrets Manager rather than the
+            # container's environment.
+            password=f"${{random_password.{service.name}_password.result}}",
+            database=service.database_name or service.name,
         )
 
     if service.capability == "cache":
@@ -318,9 +329,7 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
             elif "mariadb" in service.image.lower():
                 engine = "mariadb"
 
-            # "admin" is a reserved master username on RDS Postgres; use a
-            # non-reserved name that is valid across engines.
-            db_username = "composey"
+            db_username = DATABASE_USERNAME
 
             # 1. Create a random master password
             password_key = f"{service.name}_password"
@@ -1015,14 +1024,12 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
         if (connection := _connection_for(service, namespace)) is not None
     }
 
-    # 3. Dynamic Link Injection (Service Discovery)
-    # If a service depends on a managed capability, inject the connection details
+    # 3. Point every reference to a managed service at the real thing, and grant
+    # the client whatever reaching it requires.
     for service in app.services:
         if service.capability != "container":
             continue
 
-        service_key = f"{service.name}_service"
-        # We need to find the ECS task definition for this service
         task_def_key = f"{service.name}_td"
         if task_def_key not in resources.aws_ecs_task_definition:
             continue
@@ -1033,17 +1040,88 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
 
         exec_role_key = f"{service.name}_exec_role"
 
-        # Check all relationships where this service is the client
-        for rel in [r for r in app.relationships if r.client == service.name]:
-            server = next((s for s in app.services if s.name == rel.server), None)
-            if not server or server.capability == "container":
+        # Resolution is driven by the values the compose file already carries,
+        # never by variable names, and it reports which service each value
+        # reached for. That report is what the permissions below are built from.
+        environment: list[dict] = []
+        referenced: set[str] = set()
+
+        for entry in container["environment"]:
+            resolved = resolve_value(entry["value"], connections)
+            if resolved.service is not None:
+                referenced.add(resolved.service)
+
+            if not resolved.confidential:
+                environment.append({**entry, "value": resolved.value})
                 continue
 
-            # Server is a managed service (DB, Cache, or S3)
-            if server.capability == "database":
-                db_secret_key = f"{server.name}_db_secret"
+            # A value carrying a credential cannot be a plain environment
+            # variable: it would sit in the task definition, readable by anyone
+            # who can describe it. ECS cannot assemble one either — `valueFrom`
+            # takes a secret's ARN, not a template — so Terraform composes the
+            # finished value and stores it, and the container is handed the
+            # whole thing at start-up.
+            url_key = f"{service.name}_{_safe(entry['name']).lower()}_url"
+            resources.aws_secretsmanager_secret[url_key] = SecretsManagerSecret(
+                name=get_name(f"{service.name}-{entry['name'].lower()}"),
+                description=(
+                    f"{entry['name']} for {service.name}, including credentials "
+                    f"for {resolved.service}"
+                ),
+                tags=tags,
+            )
+            resources.aws_secretsmanager_secret_version[f"{url_key}_v1"] = (
+                SecretsManagerSecretVersion(
+                    secret_id=f"${{aws_secretsmanager_secret.{url_key}.id}}",
+                    secret_string=resolved.value,
+                    # Deliberately no ignore_changes, unlike the secrets composey
+                    # cannot value: every part of this is derived from state, so
+                    # a rotated password has to reach the client.
+                )
+            )
+            container["secrets"].append(
+                {
+                    "name": entry["name"],
+                    "valueFrom": f"${{aws_secretsmanager_secret.{url_key}.arn}}",
+                }
+            )
+            resources.aws_iam_role_policy[f"{service.name}_{url_key}_policy"] = (
+                IamRolePolicy(
+                    name=get_name(f"{service.name}-{entry['name'].lower()}-policy"),
+                    role=f"${{aws_iam_role.{exec_role_key}.name}}",
+                    policy=json.dumps(
+                        {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["secretsmanager:GetSecretValue"],
+                                    "Resource": [
+                                        f"${{aws_secretsmanager_secret.{url_key}.arn}}"
+                                    ],
+                                }
+                            ],
+                        }
+                    ),
+                )
+            )
 
-                # Inject credentials from the RDS secret
+        container["environment"] = environment
+
+        # Permissions follow the references, not depends_on. A service that
+        # names a bucket in its environment and omits depends_on was handed the
+        # bucket and denied every operation on it — the same class of mistake as
+        # deriving connectivity from startup order, which networks already fixed.
+        for server_name in sorted(referenced):
+            server = next((s for s in app.services if s.name == server_name), None)
+            if server is None:
+                continue
+
+            if server.capability == "database":
+                # The credentials the client presents are the master pair, which
+                # it receives inside the URL above. The individual fields stay
+                # available for applications that want them separately.
+                db_secret_key = f"{server.name}_db_secret"
                 container["secrets"].extend(
                     [
                         {
@@ -1057,9 +1135,9 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                     ]
                 )
 
-                # Grant Exec Role access to the RDS secret
-                rds_secret_policy_key = f"{service.name}_to_{server.name}_rds_secret"
-                resources.aws_iam_role_policy[rds_secret_policy_key] = IamRolePolicy(
+                resources.aws_iam_role_policy[
+                    f"{service.name}_to_{server.name}_rds_secret"
+                ] = IamRolePolicy(
                     name=get_name(f"{service.name}-{server.name}-rds-secret"),
                     role=f"${{aws_iam_role.{exec_role_key}.name}}",
                     policy=json.dumps(
@@ -1080,10 +1158,9 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
 
             elif server.capability == "object-storage":
                 bucket_key = f"{server.name}_bucket"
-
-                # Also grant IAM permissions to the client service
-                policy_key = f"{service.name}_to_{server.name}_s3_policy"
-                resources.aws_iam_role_policy[policy_key] = IamRolePolicy(
+                resources.aws_iam_role_policy[
+                    f"{service.name}_to_{server.name}_s3_policy"
+                ] = IamRolePolicy(
                     name=get_name(f"{service.name}-{server.name}-s3-policy"),
                     role=f"${{aws_iam_role.{service.name}_task_role.name}}",
                     policy=json.dumps(
@@ -1103,17 +1180,11 @@ def infer(app: SemanticApp, env: AwsEnvironment) -> AWSResources:
                     ),
                 )
 
-        # Point every reference to a managed service at the real thing. Driven
-        # by the values the compose file already carries, not by variable names.
-        container["environment"] = resolve_environment(
-            container["environment"], connections
-        )
-
         task_def.container_definitions = json.dumps(container_defs)
 
-    # Connectivity is not derived from relationships. depends_on describes
-    # startup order and constrains nothing under Compose, so rules built from it
-    # were guesses; network membership above is the compose file's own answer.
-    # Relationships still say who gets whose endpoint and credentials.
+    # Connectivity is not derived from relationships either. depends_on
+    # describes startup order and constrains nothing under Compose, so rules
+    # built from it were guesses; network membership above is the compose file's
+    # own answer.
 
     return resources

@@ -278,11 +278,15 @@ When a service is substituted for a managed one, every client that referred to i
 | `DB_HOST: db` | the database endpoint |
 | `BUCKET_NAME: blobs` | the bucket ID |
 | `REDIS_URL: redis://cache:6379` | `redis://<endpoint>:6379` |
-| `DATABASE_URL: postgres://u@db:5432/app` | `postgres://u@<endpoint>:5432/app` |
+| `DATABASE_URL: postgres://u@db:5432/app` | `postgres://composey:<password>@<endpoint>:5432/<database>` |
 | `S3_ENDPOINT: http://blobs:9000` | `http://<bucket-domain>` |
 | anything not naming a service | unchanged |
 
-The scheme, user info and path are preserved; the port comes from the managed service, since the port a container listened on locally rarely survives substitution.
+The scheme and query string are preserved. Everything the managed service owns comes from the managed service: the port, because the port a container listened on locally rarely survives substitution, and — for a database — the credentials and database name, because the ones written locally belonged to a container the platform threw away. A URL keeping its original user info would resolve to a real database and be rejected by it.
+
+**A value carrying a credential is not an environment variable.** A resolved database URL contains the generated master password, so it is written to its own Secrets Manager secret and injected as a secret rather than sitting in the task definition where anyone able to describe it could read it. ECS cannot assemble such a value itself — `valueFrom` takes a secret's ARN, not a template — so Terraform composes the finished URL and stores it. Nothing about that secret is ignored on later applies: every part of it is derived from state, so a rotated password reaches the client.
+
+Permissions follow the same references. A service that names a bucket in its environment is granted access to it whether or not it also declares `depends_on`, and a service that declares `depends_on` without ever referencing the bucket is granted nothing — for the same reason [networks](#-networks) do not come from `depends_on`.
 
 > [!NOTE]
 > Composey deliberately preserves the *shape* your Compose file already uses, because that shape is what works locally. If a variable needs a URL, write a URL — `REDIS_URL: redis://cache` — rather than a bare service name.

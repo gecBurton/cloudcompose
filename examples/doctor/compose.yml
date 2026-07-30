@@ -13,6 +13,9 @@ services:
     environment:
       BUCKET_NAME: blobs
       DB_HOST: db
+      # Rewritten to a complete, credentialed URL and delivered as a secret,
+      # because it carries the master password once substituted.
+      DATABASE_URL: postgres://user@db:5432/app
       REDIS_URL: redis://cache:6379
     depends_on:
       - blobs

@@ -150,6 +150,7 @@
     "aws_db_instance": {
       "db_db": {
         "allocated_storage": 20,
+        "db_name": "db",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "postgres",
         "final_snapshot_identifier": "prod-production-stack-db-final-${random_id.db_snapshot.hex}",
@@ -176,8 +177,13 @@
     "aws_ecs_service": {
       "web_service": {
         "cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster",
-        "desired_count": 1,
+        "desired_count": 2,
         "launch_type": "FARGATE",
+        "lifecycle": {
+          "ignore_changes": [
+            "desired_count"
+          ]
+        },
         "load_balancer": [
           {
             "container_name": "web",

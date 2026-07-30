@@ -73,7 +73,7 @@ Composey supports the **`x-composey`** extension to allow engineers to specify t
 - `large`: 4096 CPU, 8GB RAM | `db.m5.large`
 
 **Scaling & Resources:**
-- `min_scale`: Minimum number of instances (Default: 1).
+- `min_scale`: Minimum number of instances (Default: 1). The service is created at this count, and once `max_scale` is above it Terraform stops asserting the count so scaling activity is not reverted on the next apply.
 - `max_scale`: Maximum number of instances (Default: 1). If > 1, creates AWS AppAutoScaling policies for CPU (70%) and Memory (80%).
 - `cpu` / `memory`: Explicit Fargate unit overrides.
 - `startup_grace_period`: Seconds a newly started instance is given to become healthy before health checks are enforced. (The older ECS-flavoured name `health_check_grace_period` is still accepted.)
@@ -189,6 +189,7 @@ If a service uses a standard database image (`postgres`, `mysql`, or `mariadb`),
 1.  **Substitute Infrastructure**: Provision an **AWS RDS Instance** instead of a container.
 2.  **Automate Networking**: Create database subnet groups and security group rules automatically.
 3.  **Dynamic Host Injection**: Automatically scan your application's environment variables. If it finds a variable pointing to the database service name (e.g., `DB_HOST: db`), it replaces it with the **actual RDS endpoint address**.
+4.  **Create the database**: The instance contains a database named by whatever the image itself was told to create — `POSTGRES_DB`, `MYSQL_DATABASE` or `MARIADB_DATABASE` — falling back to the service's own name. These are read by name, unlike application variables, because they are the official images' documented contract rather than a guess: a compose file setting `POSTGRES_DB: inventory` has already stated the name its application connects to.
 
 ### ⚡️ Managed Caching (ElastiCache)
 If a service uses a `redis` image, Composey will:

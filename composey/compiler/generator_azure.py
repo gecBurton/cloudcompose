@@ -114,6 +114,11 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_role_assignment.items()
         }
 
+    if resources.azurerm_redis_cache:
+        result["azurerm_redis_cache"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_redis_cache.items()
+        }
+
     # Docker resources
     if resources.docker_image:
         result["docker_image"] = resources.docker_image

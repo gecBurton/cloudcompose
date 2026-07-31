@@ -176,6 +176,49 @@ class RoleAssignment(BaseModel):
     principal_id: str
 
 
+class RedisCache(BaseModel):
+    """Azure Cache for Redis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+
+    # SKU configuration
+    sku_name: str = Field(
+        default="Standard",
+        description="Basic, Standard, or Premium",
+    )
+    family: str = Field(
+        default="C",
+        description="C for Basic/Standard, P for Premium",
+    )
+    capacity: int = Field(
+        default=1,
+        description="0-6 for C family (Basic/Standard), 1-5 for P family (Premium)",
+    )
+
+    # Redis configuration
+    redis_version: str = Field(default="6", description="Redis version 4 or 6")
+    enable_non_ssl_port: bool = False
+    minimum_tls_version: str = "1.2"
+
+    # Networking (Premium tier only)
+    subnet_id: Optional[str] = Field(
+        default=None,
+        description="Subnet ID for VNet injection (Premium tier only)",
+    )
+
+    # Persistence (Premium tier only)
+    redis_configuration: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Redis configuration including persistence settings",
+    )
+
+    tags: Optional[Dict[str, str]] = None
+
+
 class AzureResources(BaseModel):
     """A registry of the Azure resources our compiler supports."""
 
@@ -198,6 +241,7 @@ class AzureResources(BaseModel):
         default_factory=dict
     )
     azurerm_role_assignment: Dict[str, RoleAssignment] = Field(default_factory=dict)
+    azurerm_redis_cache: Dict[str, RedisCache] = Field(default_factory=dict)
 
     # Docker provider resources (same as AWS)
     docker_image: Dict[str, Any] = Field(default_factory=dict)

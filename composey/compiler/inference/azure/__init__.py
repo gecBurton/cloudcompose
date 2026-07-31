@@ -58,7 +58,11 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
     # Step 5: Infer database resources
     connections = _infer_databases(resources, app, env, get_name, tags)
 
-    # Step 6: Infer container apps
+    # Step 6: Infer cache resources
+    cache_connections = _infer_caches(resources, app, env, get_name, tags)
+    connections.update(cache_connections)
+
+    # Step 7: Infer container apps
     _infer_container_apps(resources, app, env, get_name, tags, identity_id, connections)
 
     return resources
@@ -215,6 +219,67 @@ def _infer_databases(
         # Use existing server - create connection to it
         # This would need additional configuration
         pass
+
+    return connections
+
+
+def _infer_caches(
+    resources: AzureResources,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    get_name: Callable[[str], str],
+    tags: dict[str, str] | None,
+) -> dict[str, Connection]:
+    """Infer Azure Cache for Redis instances.
+
+    Returns a mapping of service name to Connection for use in wiring.
+    """
+    from composey.constants import DefaultPorts
+    from composey.models.azure import RedisCache
+
+    connections: dict[str, Connection] = {}
+
+    cache_services = [s for s in app.services if s.capability == "cache"]
+
+    for service in cache_services:
+        cache_key = f"{service.name}_redis"
+
+        # Map size to SKU
+        # Basic: Dev/test, no SLA
+        # Standard: Production, replication
+        # Premium: Production, clustering, VNet
+        size_sku_map = {
+            "small": ("Standard", "C", 1),  # 1 GB
+            "medium": ("Standard", "C", 2),  # 3 GB
+            "large": ("Premium", "P", 1),  # 6 GB with clustering
+        }
+        sku_name, family, capacity = size_sku_map.get(
+            service.size, ("Standard", "C", 1)
+        )
+
+        # VNet injection for Premium tier
+        subnet_id = env.infrastructure_subnet_id if sku_name == "Premium" else None
+
+        resources.azurerm_redis_cache[cache_key] = RedisCache(
+            name=get_name(service.name),
+            resource_group_name=env.name,
+            location=env.region,
+            sku_name=sku_name,
+            family=family,
+            capacity=capacity,
+            redis_version="6",
+            enable_non_ssl_port=False,
+            minimum_tls_version="1.2",
+            subnet_id=subnet_id,
+            tags=tags,
+        )
+
+        # Connection uses primary access key
+        connections[service.name] = Connection(
+            host=f"${{azurerm_redis_cache.{cache_key}.hostname}}",
+            port=DefaultPorts.REDIS,
+            password=f"${{azurerm_redis_cache.{cache_key}.primary_access_key}}",
+        )
 
     return connections
 

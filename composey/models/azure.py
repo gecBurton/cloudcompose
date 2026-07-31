@@ -123,6 +123,46 @@ class PostgreSQLFlexibleDatabase(BaseModel):
     collation: str = "en_US.utf8"
 
 
+class MySQLFlexibleServer(BaseModel):
+    """Azure Database for MySQL - Flexible Server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+
+    # Version and SKU
+    version: str = Field(default="8.0", description="MySQL version")
+    sku_name: str = Field(default="B_Standard_B1ms", description="SKU name")
+    storage_mb: int = Field(default=32768, description="Storage in MB (32GB)")
+
+    # Authentication
+    administrator_login: str
+    administrator_password: str
+
+    # Networking
+    delegated_subnet_id: Optional[str] = None
+    private_dns_zone_id: Optional[str] = None
+    public_network_access_enabled: bool = False
+
+    # High availability
+    high_availability: Optional[Dict[str, str]] = None
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class MySQLFlexibleDatabase(BaseModel):
+    """Database within a MySQL Flexible Server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    server_id: str
+    charset: str = "utf8mb4"
+    collation: str = "utf8mb4_unicode_ci"
+
+
 class KeyVault(BaseModel):
     """Azure Key Vault for secrets."""
 
@@ -176,6 +216,138 @@ class RoleAssignment(BaseModel):
     principal_id: str
 
 
+class StorageAccount(BaseModel):
+    """Azure Storage Account for Blob Storage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+
+    account_tier: str = Field(
+        default="Standard",
+        description="Standard or Premium",
+    )
+    account_replication_type: str = Field(
+        default="LRS",
+        description="LRS, GRS, RAGRS, ZRS, GZRS, or RAGZRS",
+    )
+    account_kind: str = Field(
+        default="StorageV2",
+        description="StorageV2, Storage, or BlobStorage",
+    )
+
+    # Security
+    min_tls_version: str = "TLS1_2"
+    enable_https_traffic_only: bool = True
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class StorageContainer(BaseModel):
+    """Container within an Azure Storage Account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    storage_account_name: str
+    container_access_type: str = Field(
+        default="private",
+        description="private, blob, or container",
+    )
+
+
+class CdnProfile(BaseModel):
+    """Azure CDN Profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+    sku: str = Field(
+        default="Standard_Microsoft",
+        description="Standard_Microsoft, Standard_Verizon, Standard_Akamai, or Premium_Verizon",
+    )
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class CdnEndpoint(BaseModel):
+    """Azure CDN Endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    profile_name: str
+    resource_group_name: str
+    location: str
+
+    # Origin configuration
+    origin_host_header: str
+    origins: List[Dict[str, Any]]
+
+    # HTTPS
+    is_http_allowed: bool = False
+    is_https_allowed: bool = True
+
+    # Optimizations
+    optimization_type: str = Field(
+        default="GeneralWebDelivery",
+        description="GeneralWebDelivery, DynamicSiteAcceleration, etc.",
+    )
+
+    # Cache rules
+    global_delivery_rule: Optional[Dict[str, Any]] = None
+    delivery_rule: Optional[List[Dict[str, Any]]] = None
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class RedisCache(BaseModel):
+    """Azure Cache for Redis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+
+    # SKU configuration
+    sku_name: str = Field(
+        default="Standard",
+        description="Basic, Standard, or Premium",
+    )
+    family: str = Field(
+        default="C",
+        description="C for Basic/Standard, P for Premium",
+    )
+    capacity: int = Field(
+        default=1,
+        description="0-6 for C family (Basic/Standard), 1-5 for P family (Premium)",
+    )
+
+    # Redis configuration
+    redis_version: str = Field(default="6", description="Redis version 4 or 6")
+    enable_non_ssl_port: bool = False
+    minimum_tls_version: str = "1.2"
+
+    # Networking (Premium tier only)
+    subnet_id: Optional[str] = Field(
+        default=None,
+        description="Subnet ID for VNet injection (Premium tier only)",
+    )
+
+    # Persistence (Premium tier only)
+    redis_configuration: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Redis configuration including persistence settings",
+    )
+
+    tags: Optional[Dict[str, str]] = None
+
+
 class AzureResources(BaseModel):
     """A registry of the Azure resources our compiler supports."""
 
@@ -192,12 +364,23 @@ class AzureResources(BaseModel):
     azurerm_postgresql_flexible_server_database: Dict[
         str, PostgreSQLFlexibleDatabase
     ] = Field(default_factory=dict)
+    azurerm_mysql_flexible_server: Dict[str, MySQLFlexibleServer] = Field(
+        default_factory=dict
+    )
+    azurerm_mysql_flexible_database: Dict[str, MySQLFlexibleDatabase] = Field(
+        default_factory=dict
+    )
     azurerm_key_vault: Dict[str, KeyVault] = Field(default_factory=dict)
     azurerm_key_vault_secret: Dict[str, KeyVaultSecret] = Field(default_factory=dict)
     azurerm_user_assigned_identity: Dict[str, UserAssignedIdentity] = Field(
         default_factory=dict
     )
     azurerm_role_assignment: Dict[str, RoleAssignment] = Field(default_factory=dict)
+    azurerm_redis_cache: Dict[str, RedisCache] = Field(default_factory=dict)
+    azurerm_storage_account: Dict[str, StorageAccount] = Field(default_factory=dict)
+    azurerm_storage_container: Dict[str, StorageContainer] = Field(default_factory=dict)
+    azurerm_cdn_profile: Dict[str, CdnProfile] = Field(default_factory=dict)
+    azurerm_cdn_endpoint: Dict[str, CdnEndpoint] = Field(default_factory=dict)
 
     # Docker provider resources (same as AWS)
     docker_image: Dict[str, Any] = Field(default_factory=dict)

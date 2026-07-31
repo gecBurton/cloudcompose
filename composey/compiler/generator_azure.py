@@ -93,6 +93,18 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             for k, v in resources.azurerm_postgresql_flexible_server_database.items()
         }
 
+    if resources.azurerm_mysql_flexible_server:
+        result["azurerm_mysql_flexible_server"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_mysql_flexible_server.items()
+        }
+
+    if resources.azurerm_mysql_flexible_database:
+        result["azurerm_mysql_flexible_database"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_mysql_flexible_database.items()
+        }
+
     if resources.azurerm_key_vault:
         result["azurerm_key_vault"] = {
             k: _clean_model(v) for k, v in resources.azurerm_key_vault.items()
@@ -114,6 +126,31 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_role_assignment.items()
         }
 
+    if resources.azurerm_redis_cache:
+        result["azurerm_redis_cache"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_redis_cache.items()
+        }
+
+    if resources.azurerm_storage_account:
+        result["azurerm_storage_account"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_storage_account.items()
+        }
+
+    if resources.azurerm_storage_container:
+        result["azurerm_storage_container"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_storage_container.items()
+        }
+
+    if resources.azurerm_cdn_profile:
+        result["azurerm_cdn_profile"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_cdn_profile.items()
+        }
+
+    if resources.azurerm_cdn_endpoint:
+        result["azurerm_cdn_endpoint"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_cdn_endpoint.items()
+        }
+
     # Docker resources
     if resources.docker_image:
         result["docker_image"] = resources.docker_image
@@ -123,7 +160,9 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
 
     # Random resources
     if resources.random_password:
-        result["random_password"] = resources.random_password
+        result["random_password"] = {
+            k: _clean_model(v) for k, v in resources.random_password.items()
+        }
 
     return result
 

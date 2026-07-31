@@ -1,0 +1,133 @@
+{
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 3.0"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "docker": {},
+    "random": {}
+  },
+  "data": {
+    "azurerm_client_config": {
+      "current": {}
+    }
+  },
+  "resource": {
+    "azurerm_container_app_environment": {
+      "main": {
+        "name": "prod-env",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "log_analytics_workspace_id": "/subscriptions/123/workspaces/prod",
+        "infrastructure_subnet_id": "/subscriptions/123/subnets/prod",
+        "internal_load_balancer_enabled": false
+      }
+    },
+    "azurerm_container_app": {
+      "web": {
+        "name": "prod-flask-s3-web",
+        "resource_group_name": "prod",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "revision_mode": "Single",
+        "template": {
+          "containers": [
+            {
+              "name": "web",
+              "image": "flask-app",
+              "resources": {
+                "cpu": 0.25,
+                "memory": "0.5Gi"
+              },
+              "env": [
+                {
+                  "name": "BUCKET_NAME",
+                  "value": "blobs"
+                },
+                {
+                  "name": "S3_ENDPOINT",
+                  "value": "http://blobs:9000"
+                },
+                {
+                  "name": "BLOBS_URL",
+                  "value": "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "min_replicas": 1,
+            "max_replicas": 1,
+            "rules": [
+              {
+                "name": "http-default",
+                "custom": {
+                  "type": "http",
+                  "metadata": {
+                    "concurrentRequests": "100"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 5000,
+          "transport": "auto",
+          "traffic_weight": {
+            "latest_revision": true,
+            "percentage": 100
+          }
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        }
+      }
+    },
+    "azurerm_key_vault": {
+      "main": {
+        "name": "prod-flask-s3-kv",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "sku_name": "standard",
+        "soft_delete_retention_days": 7,
+        "purge_protection_enabled": false
+      }
+    },
+    "azurerm_storage_account": {
+      "blobs_storage": {
+        "name": "prod-flask-s3-blobs",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "account_tier": "Standard",
+        "account_replication_type": "LRS",
+        "account_kind": "StorageV2",
+        "min_tls_version": "TLS1_2",
+        "enable_https_traffic_only": true
+      }
+    },
+    "azurerm_storage_container": {
+      "blobs_container": {
+        "name": "blobs",
+        "storage_account_name": "${azurerm_storage_account.blobs_storage.name}",
+        "container_access_type": "private"
+      }
+    }
+  }
+}

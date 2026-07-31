@@ -8,10 +8,10 @@ import time
 import pytest
 import requests
 
-from composey.models.environment import AwsEnvironment
+from composey.models.environment import AwsEnvironment, AzureEnvironment
 
 
-# Standard Mock Environment
+# AWS Mock Environment
 @pytest.fixture(scope="session")
 def mock_prod_env():
     return AwsEnvironment(
@@ -45,6 +45,20 @@ def mock_localstack_env():
     )
 
 
+# Azure Mock Environment
+@pytest.fixture(scope="session")
+def mock_azure_prod_env():
+    return AzureEnvironment(
+        name="prod",
+        region="eastus",
+        container_apps_environment_name="prod-env",
+        log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
+        vnet_id="/subscriptions/123/vnets/prod",
+        infrastructure_subnet_id="/subscriptions/123/subnets/prod",
+        container_registry_name="prodacr",
+    )
+
+
 @pytest.fixture(scope="session")
 def terraform_base():
     """
@@ -61,6 +75,7 @@ def terraform_base():
         "terraform": {
             "required_providers": {
                 "aws": {"source": "hashicorp/aws", "version": "~> 5.0"},
+                "azurerm": {"source": "hashicorp/azurerm", "version": "~> 3.0"},
                 "random": {"source": "hashicorp/random", "version": "~> 3.6"},
                 "docker": {"source": "kreuzwerker/docker", "version": "~> 3.0"},
             }

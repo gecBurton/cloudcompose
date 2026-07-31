@@ -258,6 +258,53 @@ class StorageContainer(BaseModel):
     )
 
 
+class CdnProfile(BaseModel):
+    """Azure CDN Profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+    sku: str = Field(
+        default="Standard_Microsoft",
+        description="Standard_Microsoft, Standard_Verizon, Standard_Akamai, or Premium_Verizon",
+    )
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class CdnEndpoint(BaseModel):
+    """Azure CDN Endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    profile_name: str
+    resource_group_name: str
+    location: str
+
+    # Origin configuration
+    origin_host_header: str
+    origins: List[Dict[str, Any]]
+
+    # HTTPS
+    is_http_allowed: bool = False
+    is_https_allowed: bool = True
+
+    # Optimizations
+    optimization_type: str = Field(
+        default="GeneralWebDelivery",
+        description="GeneralWebDelivery, DynamicSiteAcceleration, etc.",
+    )
+
+    # Cache rules
+    global_delivery_rule: Optional[Dict[str, Any]] = None
+    delivery_rule: Optional[List[Dict[str, Any]]] = None
+
+    tags: Optional[Dict[str, str]] = None
+
+
 class RedisCache(BaseModel):
     """Azure Cache for Redis."""
 
@@ -332,6 +379,8 @@ class AzureResources(BaseModel):
     azurerm_redis_cache: Dict[str, RedisCache] = Field(default_factory=dict)
     azurerm_storage_account: Dict[str, StorageAccount] = Field(default_factory=dict)
     azurerm_storage_container: Dict[str, StorageContainer] = Field(default_factory=dict)
+    azurerm_cdn_profile: Dict[str, CdnProfile] = Field(default_factory=dict)
+    azurerm_cdn_endpoint: Dict[str, CdnEndpoint] = Field(default_factory=dict)
 
     # Docker provider resources (same as AWS)
     docker_image: Dict[str, Any] = Field(default_factory=dict)

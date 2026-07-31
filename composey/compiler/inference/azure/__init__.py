@@ -10,6 +10,8 @@ from typing import Callable
 from composey.models.aws import RandomPassword
 from composey.models.azure import (
     AzureResources,
+    CdnEndpoint,
+    CdnProfile,
     ContainerApp,
     ContainerAppEnvironment,
     ContainerRegistry,
@@ -72,6 +74,9 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
 
     # Step 8: Infer container apps
     _infer_container_apps(resources, app, env, get_name, tags, identity_id, connections)
+
+    # Step 9: Infer CDN for services with cdn_enabled
+    _infer_cdn(resources, app, env, get_name, tags)
 
     return resources
 
@@ -558,3 +563,60 @@ def _get_memory_gb(service) -> str:
         "large": "2Gi",
     }
     return size_map.get(service.size, "0.5Gi")
+
+
+def _infer_cdn(
+    resources: AzureResources,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    get_name: Callable[[str], str],
+    tags: dict[str, str] | None,
+) -> None:
+    """Infer Azure CDN for services with cdn_enabled."""
+    cdn_services = [s for s in app.services if s.cdn_enabled and s.ingress]
+
+    if not cdn_services:
+        return
+
+    # Create single CDN profile for the app
+    profile_key = "main"
+    resources.azurerm_cdn_profile[profile_key] = CdnProfile(
+        name=get_name("cdn"),
+        resource_group_name=env.name,
+        location=env.region,
+        sku="Standard_Microsoft",
+        tags=tags,
+    )
+
+    # Create endpoint for each CDN-enabled service
+    for service in cdn_services:
+        endpoint_key = f"{service.name}_cdn"
+
+        # Get the Container App FQDN as origin
+        origin_host = f"${{azurerm_container_app.{service.name}.ingress[0].fqdn}}"
+
+        resources.azurerm_cdn_endpoint[endpoint_key] = CdnEndpoint(
+            name=get_name(f"{service.name}-cdn"),
+            profile_name=f"${{azurerm_cdn_profile.{profile_key}.name}}",
+            resource_group_name=env.name,
+            location=env.region,
+            origin_host_header=origin_host,
+            origins=[
+                {
+                    "name": "default",
+                    "host_name": origin_host,
+                    "http_port": 80,
+                    "https_port": 443,
+                }
+            ],
+            is_http_allowed=False,
+            is_https_allowed=True,
+            optimization_type="GeneralWebDelivery",
+            global_delivery_rule={
+                "cache_expiration_action": {
+                    "behavior": "Override",
+                    "duration": "1.00:00:00",  # 1 day cache
+                },
+            },
+            tags=tags,
+        )

@@ -141,6 +141,16 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_storage_container.items()
         }
 
+    if resources.azurerm_cdn_profile:
+        result["azurerm_cdn_profile"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_cdn_profile.items()
+        }
+
+    if resources.azurerm_cdn_endpoint:
+        result["azurerm_cdn_endpoint"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_cdn_endpoint.items()
+        }
+
     # Docker resources
     if resources.docker_image:
         result["docker_image"] = resources.docker_image

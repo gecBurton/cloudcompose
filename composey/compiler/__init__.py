@@ -1,7 +1,9 @@
-from ..models.environment import AwsEnvironment, BaseEnvironment
+from ..models.environment import AwsEnvironment, AzureEnvironment, BaseEnvironment
 from ..models.semantic import Application as SemanticApplication
-from .generator import generate
-from .inference import infer
+from .generator import generate as generate_aws
+from .generator_azure import generate as generate_azure
+from .inference import infer as infer_aws
+from .inference.azure import infer as infer_azure
 from .normalizer import normalize
 from .parser import parse
 
@@ -13,12 +15,14 @@ def compile_application(app: SemanticApplication, env: BaseEnvironment) -> str:
     Parsing and normalization are target-agnostic; inference and generation are
     not, so the backend is selected here.
     """
-    if not isinstance(env, AwsEnvironment):
+    if isinstance(env, AwsEnvironment):
+        return generate_aws(infer_aws(app, env), env)
+    elif isinstance(env, AzureEnvironment):
+        return generate_azure(infer_azure(app, env), env)
+    else:
         raise NotImplementedError(
             f"No compiler backend is implemented for target {env.target!r}"
         )
-
-    return generate(infer(app, env), env)
 
 
 def compile_to_terraform(

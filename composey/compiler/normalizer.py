@@ -31,6 +31,8 @@ from ..models.compose import Service as DockerService
 from ..models.compose import VolumeDefinition, XComposey
 from ..models.semantic import (
     Application as SemanticApplication,
+    AutoScalingConfig as SemanticAutoScalingConfig,
+    AutoScalingMetric as SemanticAutoScalingMetric,
     CronSchedule,
     RateSchedule,
     Relationship,
@@ -287,6 +289,21 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
 
         schedule = _parse_schedule(settings.schedule) if settings.schedule else None
 
+        # Parse auto-scaling configuration
+        auto_scaling = None
+        if settings.auto_scaling:
+            auto_scaling = SemanticAutoScalingConfig(
+                metrics=[
+                    SemanticAutoScalingMetric(
+                        type=m.type,
+                        target_value=m.target,
+                    )
+                    for m in settings.auto_scaling.metrics
+                ],
+                scale_in_cooldown=settings.auto_scaling.scale_in_cooldown,
+                scale_out_cooldown=settings.auto_scaling.scale_out_cooldown,
+            )
+
         _reject_persistent_volumes(s_name, docker_service, capability)
 
         semantic_services.append(
@@ -309,6 +326,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 startup_grace_period=settings.grace_period,
                 min_scale=settings.min_scale,
                 max_scale=settings.max_scale,
+                auto_scaling=auto_scaling,
                 schedule=schedule,
                 cdn_enabled=settings.cdn,
                 ingress=ingress,

@@ -584,11 +584,12 @@ def _handle_autoscaling(
     get_name: Callable[[str], str],
     tags: dict[str, str] | None,
 ) -> None:
-    """Handle auto-scaling configuration."""
-    from composey.constants import (
-        AUTOSCALING_CPU_TARGET,
-        AUTOSCALING_MEMORY_TARGET,
-    )
+    """Handle auto-scaling configuration.
+
+    Supports configurable metrics (CPU, memory, requests per target) with
+    customizable target values and cooldown periods.
+    """
+    from composey.models.semantic import AutoScalingConfig
 
     service_key = f"{service.name}_service"
     target_key = f"{service.name}_asg_target"
@@ -599,28 +600,38 @@ def _handle_autoscaling(
         resource_id=f'service/${{split("/", "${{aws_ecs_service.{service_key}.cluster}}")[1]}}/${{aws_ecs_service.{service_key}.name}}',
     )
 
-    # CPU scaling
-    cpu_policy_key = f"{service.name}_cpu_scaling"
-    resources.aws_appautoscaling_policy[cpu_policy_key] = AppAutoscalingPolicy(
-        name=get_name(f"{service.name}-cpu-scaling"),
-        resource_id=f"${{aws_appautoscaling_target.{target_key}.resource_id}}",
-        target_tracking_scaling_policy_configuration={
-            "predefined_metric_specification": {
-                "predefined_metric_type": "ECSServiceAverageCPUUtilization"
-            },
-            "target_value": AUTOSCALING_CPU_TARGET,
-        },
-    )
+    # Get auto-scaling configuration (use defaults if not specified)
+    config = service.auto_scaling or AutoScalingConfig()
 
-    # Memory scaling
-    mem_policy_key = f"{service.name}_mem_scaling"
-    resources.aws_appautoscaling_policy[mem_policy_key] = AppAutoscalingPolicy(
-        name=get_name(f"{service.name}-mem-scaling"),
-        resource_id=f"${{aws_appautoscaling_target.{target_key}.resource_id}}",
-        target_tracking_scaling_policy_configuration={
-            "predefined_metric_specification": {
-                "predefined_metric_type": "ECSServiceAverageMemoryUtilization"
-            },
-            "target_value": AUTOSCALING_MEMORY_TARGET,
-        },
-    )
+    # Map semantic metrics to AWS metric types
+    metric_mapping = {
+        "cpu": "ECSServiceAverageCPUUtilization",
+        "memory": "ECSServiceAverageMemoryUtilization",
+        "requests_per_target": "ALBRequestCountPerTarget",
+    }
+
+    for i, metric in enumerate(config.metrics):
+        policy_key = f"{service.name}_scaling_{i}"
+        metric_name = metric_mapping.get(metric.type)
+
+        if not metric_name:
+            continue
+
+        policy_config: dict = {
+            "predefined_metric_specification": {"predefined_metric_type": metric_name},
+            "target_value": metric.target_value,
+            "scale_in_cooldown": config.scale_in_cooldown,
+            "scale_out_cooldown": config.scale_out_cooldown,
+        }
+
+        # For ALB requests, we need to specify the resource label
+        if metric.type == "requests_per_target":
+            policy_config["predefined_metric_specification"]["resource_label"] = (
+                f"${{aws_lb_target_group.{service.name}_tg.arn_suffix}}"
+            )
+
+        resources.aws_appautoscaling_policy[policy_key] = AppAutoscalingPolicy(
+            name=get_name(f"{service.name}-scaling-{metric.type}"),
+            resource_id=f"${{aws_appautoscaling_target.{target_key}.resource_id}}",
+            target_tracking_scaling_policy_configuration=policy_config,
+        )

@@ -58,6 +58,38 @@ class HealthCheckConfig(BaseModel):
     port: Optional[int] = Field(default=None)
 
 
+class AutoScalingMetricConfig(BaseModel):
+    """Auto-scaling metric configuration for x-composey."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["cpu", "memory", "requests_per_target"] = Field(
+        default="cpu",
+        description="Metric to scale on",
+    )
+    target: float = Field(
+        default=70.0,
+        gt=0,
+        le=100,
+        description="Target value (percentage for cpu/memory, count for requests)",
+    )
+
+
+class AutoScalingConfig(BaseModel):
+    """Auto-scaling configuration for x-composey."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metrics: list[AutoScalingMetricConfig] = Field(
+        default_factory=lambda: [
+            AutoScalingMetricConfig(type="cpu", target=70.0),
+            AutoScalingMetricConfig(type="memory", target=80.0),
+        ],
+    )
+    scale_in_cooldown: int = Field(default=300, ge=0)
+    scale_out_cooldown: int = Field(default=60, ge=0)
+
+
 class XComposey(BaseModel):
     """
     The `x-composey` block on a service.
@@ -80,6 +112,11 @@ class XComposey(BaseModel):
     health_check: Optional[HealthCheckConfig] = Field(
         default=None,
         description="Health check configuration. Defaults to HTTP / on the ingress port.",
+    )
+    auto_scaling: Optional[AutoScalingConfig] = Field(
+        default=None,
+        description="Auto-scaling configuration. When min_scale != max_scale, "
+        "auto-scaling is enabled. Defaults to CPU 70% and Memory 80%.",
     )
 
     @model_validator(mode="before")

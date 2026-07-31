@@ -32,6 +32,58 @@ class RateSchedule(BaseModel):
 Schedule = Annotated[Union[CronSchedule, RateSchedule], Field(discriminator="kind")]
 
 
+class AutoScalingMetric(BaseModel):
+    """
+    A metric to use for auto-scaling decisions.
+
+    Cloud-neutral abstraction: different clouds support different metrics for
+    auto-scaling. The semantic model defines common ones; backends map them to
+    cloud-specific metric names.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["cpu", "memory", "requests_per_target"] = Field(
+        description="The metric type to scale on"
+    )
+    target_value: float = Field(
+        default=70.0,
+        gt=0,
+        le=100,
+        description="Target value for the metric (percentage for cpu/memory, "
+        "count for requests_per_target)",
+    )
+
+
+class AutoScalingConfig(BaseModel):
+    """
+    Auto-scaling configuration for a service.
+
+    When min_scale != max_scale, auto-scaling is enabled. This configuration
+    controls which metrics drive scaling decisions and their thresholds.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    metrics: list[AutoScalingMetric] = Field(
+        default_factory=lambda: [
+            AutoScalingMetric(type="cpu", target_value=70.0),
+            AutoScalingMetric(type="memory", target_value=80.0),
+        ],
+        description="Metrics to use for auto-scaling decisions. Default: CPU 70%, Memory 80%",
+    )
+    scale_in_cooldown: int = Field(
+        default=300,
+        ge=0,
+        description="Seconds to wait before scaling in (reducing instances) after a scale-out",
+    )
+    scale_out_cooldown: int = Field(
+        default=60,
+        ge=0,
+        description="Seconds to wait before another scale-out after a scale-out",
+    )
+
+
 class HealthCheck(BaseModel):
     """
     How to determine if a service instance is healthy.
@@ -138,6 +190,11 @@ class Service(BaseModel):
     )
     min_scale: int = Field(default=1, description="Minimum number of instances")
     max_scale: int = Field(default=1, description="Maximum number of instances")
+    auto_scaling: Optional[AutoScalingConfig] = Field(
+        default=None,
+        description="Auto-scaling configuration. When min_scale != max_scale, "
+        "defaults to CPU 70% and Memory 80% targets if not specified.",
+    )
     schedule: Optional[Schedule] = Field(
         default=None, description="When to run this service, if it is a scheduled task"
     )

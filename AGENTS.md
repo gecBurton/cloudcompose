@@ -2,13 +2,17 @@
 
 ## Project Overview
 
-Composey is a Docker Compose to Terraform compiler that provides a PaaS-like deployment experience for AWS. It transforms annotated Docker Compose files into AWS infrastructure (ECS, RDS, ElastiCache, S3, etc.).
+Composey is a Docker Compose to Terraform compiler that provides a PaaS-like deployment experience for AWS and Azure. It transforms annotated Docker Compose files into cloud infrastructure using intent-based abstractions.
 
 **Architecture**: 4-stage compiler pipeline
 1. **Parse**: Sanitize and load Compose files via `docker compose config`
 2. **Normalize**: Transform Compose into a cloud-agnostic semantic model
-3. **Infer**: Map semantic intent + environment context to AWS resources
+3. **Infer**: Map semantic intent + environment context to cloud resources (AWS/Azure)
 4. **Generate**: Produce deterministic, canonical Terraform JSON
+
+**Supported Clouds**:
+- **AWS**: ECS Fargate, RDS, ElastiCache, S3, ALB, CloudFront
+- **Azure**: Container Apps, PostgreSQL Flexible Server, Blob Storage, Key Vault
 
 ## Quick Start
 
@@ -35,8 +39,14 @@ composey/
 │   ├── __init__.py        # Main compile_application() function
 │   ├── parser.py          # Stage 1: Parse Docker Compose
 │   ├── normalizer.py      # Stage 2: Normalize to semantic model
-│   ├── inference.py       # Stage 3: Infer AWS resources (being refactored)
-│   ├── generator.py       # Stage 4: Generate Terraform JSON
+│   ├── inference/         # Stage 3: Infer cloud resources
+│   │   ├── __init__.py    # AWS inference orchestration
+│   │   ├── azure/         # Azure inference (Container Apps, Flexible Server)
+│   │   ├── _compute.py    # ECS/Container App resources
+│   │   ├── _managed.py    # RDS/Flexible Server resources
+│   │   └── ...            # Other inference modules
+│   ├── generator.py       # Stage 4a: Generate Terraform JSON for AWS
+│   ├── generator_azure.py # Stage 4b: Generate Terraform JSON for Azure
 │   ├── connections.py     # Connection string resolution
 │   └── explain.py         # Inference reporting (--explain flag)
 ├── models/
@@ -44,15 +54,10 @@ composey/
 │   ├── semantic.py        # Cloud-agnostic semantic model
 │   ├── environment.py     # Environment configuration models
 │   ├── aws.py             # AWS resource models
+│   ├── azure.py           # Azure resource models (NEW)
 │   └── terraform.py       # Terraform manifest model
-├── constants.py           # Centralized constants (NEW)
-└── exceptions.py          # Custom exceptions (NEW)
-
-tests/
-├── conftest.py            # Pytest fixtures and configuration
-├── utils.py               # Test utilities
-├── unit/                  # Unit tests
-└── integration/           # Integration tests (LocalStack, Golden, Validation)
+├── constants.py           # Centralized constants
+└── exceptions.py          # Custom exceptions
 ```
 
 ## Development Guidelines

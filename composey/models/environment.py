@@ -88,12 +88,59 @@ class AwsEnvironment(BaseEnvironment):
     )
 
 
+class AzureEnvironment(BaseEnvironment):
+    """
+    Target context for Azure: Container Apps Environment, VNet, and
+    Flexible Server configuration.
+    """
+
+    target: Literal["azure"] = "azure"
+    region: str = Field(default="eastus", description="The Azure region")
+
+    # Container Apps Environment
+    container_apps_environment_name: str = Field(
+        description="Name of the Container Apps Environment"
+    )
+    log_analytics_workspace_id: str = Field(
+        description="Log Analytics Workspace ID for Container Apps"
+    )
+
+    # VNet Integration
+    vnet_id: str = Field(description="The VNet ID for Container Apps integration")
+    infrastructure_subnet_id: str = Field(
+        description="Subnet ID for Container Apps infrastructure"
+    )
+
+    # Container Registry (ACR)
+    container_registry_name: Optional[str] = Field(
+        default=None,
+        description="Azure Container Registry name for built images",
+    )
+
+    # PostgreSQL Flexible Server (optional - creates new if not provided)
+    postgresql_server_id: Optional[str] = Field(
+        default=None,
+        description="Existing PostgreSQL Flexible Server ID (creates new if not set)",
+    )
+
+    # Managed Identity (system-assigned is default, but user-assigned can be specified)
+    user_assigned_identity_id: Optional[str] = Field(
+        default=None,
+        description="User-assigned managed identity ID (uses system-assigned if not set)",
+    )
+
+    azure_endpoint: Optional[str] = Field(
+        default=None,
+        description="Optional custom endpoint for Azure APIs (e.g., for testing)",
+    )
+
+
 # Every supported compilation target, keyed by the `target` field of its
 # environment file. Adding a cloud means adding an entry here.
 TARGETS: Dict[str, Type[BaseEnvironment]] = {
     "aws": AwsEnvironment,
+    "azure": AzureEnvironment,
 }
-
 DEFAULT_TARGET = "aws"
 
 

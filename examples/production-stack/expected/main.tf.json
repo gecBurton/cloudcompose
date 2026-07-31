@@ -19,8 +19,8 @@
   },
   "resource": {
     "aws_appautoscaling_policy": {
-      "web_cpu_scaling": {
-        "name": "prod-production-stack-web-cpu-scaling",
+      "web_scaling_0": {
+        "name": "prod-production-stack-web-scaling-cpu",
         "policy_type": "TargetTrackingScaling",
         "resource_id": "${aws_appautoscaling_target.web_asg_target.resource_id}",
         "scalable_dimension": "ecs:service:DesiredCount",
@@ -29,11 +29,13 @@
           "predefined_metric_specification": {
             "predefined_metric_type": "ECSServiceAverageCPUUtilization"
           },
+          "scale_in_cooldown": 300,
+          "scale_out_cooldown": 60,
           "target_value": 70.0
         }
       },
-      "web_mem_scaling": {
-        "name": "prod-production-stack-web-mem-scaling",
+      "web_scaling_1": {
+        "name": "prod-production-stack-web-scaling-memory",
         "policy_type": "TargetTrackingScaling",
         "resource_id": "${aws_appautoscaling_target.web_asg_target.resource_id}",
         "scalable_dimension": "ecs:service:DesiredCount",
@@ -42,6 +44,8 @@
           "predefined_metric_specification": {
             "predefined_metric_type": "ECSServiceAverageMemoryUtilization"
           },
+          "scale_in_cooldown": 300,
+          "scale_out_cooldown": 60,
           "target_value": 80.0
         }
       }

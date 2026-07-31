@@ -1,12 +1,12 @@
-"""Test Azure Redis Cache inference."""
+"""Test Azure Blob Storage inference."""
 
 from composey.compiler.inference.azure import infer
 from composey.models.environment import AzureEnvironment
 from composey.models.semantic import Application, Service
 
 
-def test_redis_cache_is_created():
-    """A cache service creates an Azure Redis Cache."""
+def test_storage_account_is_created():
+    """An object-storage service creates an Azure Storage Account."""
     env = AzureEnvironment(
         name="prod",
         region="eastus",
@@ -20,9 +20,9 @@ def test_redis_cache_is_created():
         name="myapp",
         services=[
             Service(
-                name="cache",
-                image="redis:7",
-                capability="cache",
+                name="storage",
+                image="minio/minio",
+                capability="object-storage",
                 size="small",
             )
         ],
@@ -30,15 +30,17 @@ def test_redis_cache_is_created():
 
     resources = infer(app, env)
 
-    assert "cache_redis" in resources.azurerm_redis_cache
-    cache = resources.azurerm_redis_cache["cache_redis"]
-    assert cache.sku_name == "Standard"
-    assert cache.family == "C"
-    assert cache.capacity == 1
+    assert "storage_storage" in resources.azurerm_storage_account
+    account = resources.azurerm_storage_account["storage_storage"]
+    assert account.account_tier == "Standard"
+    assert account.account_replication_type == "LRS"
+    assert account.account_kind == "StorageV2"
+    assert account.enable_https_traffic_only is True
+    assert account.min_tls_version == "TLS1_2"
 
 
-def test_redis_cache_size_mapping():
-    """Different sizes map to appropriate SKUs."""
+def test_storage_container_is_created():
+    """A default container is created in the storage account."""
     env = AzureEnvironment(
         name="prod",
         region="eastus",
@@ -48,33 +50,28 @@ def test_redis_cache_size_mapping():
         infrastructure_subnet_id="/subscriptions/123/subnets/prod",
     )
 
-    # Test medium size
     app = Application(
         name="myapp",
         services=[
             Service(
-                name="cache",
-                image="redis:7",
-                capability="cache",
+                name="assets",
+                image="minio/minio",
+                capability="object-storage",
                 size="medium",
             )
         ],
     )
 
     resources = infer(app, env)
-    cache = resources.azurerm_redis_cache["cache_redis"]
-    assert cache.capacity == 2  # 3 GB
 
-    # Test large size (Premium)
-    app.services[0].size = "large"
-    resources = infer(app, env)
-    cache = resources.azurerm_redis_cache["cache_redis"]
-    assert cache.sku_name == "Premium"
-    assert cache.family == "P"
+    assert "assets_container" in resources.azurerm_storage_container
+    container = resources.azurerm_storage_container["assets_container"]
+    assert container.name == "assets"
+    assert container.container_access_type == "private"
 
 
-def test_redis_connection_is_returned():
-    """Cache services return connections for wiring."""
+def test_storage_connection_is_returned():
+    """Storage services return connections for wiring."""
     env = AzureEnvironment(
         name="prod",
         region="eastus",
@@ -88,9 +85,9 @@ def test_redis_connection_is_returned():
         name="myapp",
         services=[
             Service(
-                name="cache",
-                image="redis:7",
-                capability="cache",
+                name="uploads",
+                image="minio/minio",
+                capability="object-storage",
                 size="small",
             ),
             Service(
@@ -101,12 +98,12 @@ def test_redis_connection_is_returned():
             ),
         ],
         relationships=[
-            {"client": "web", "server": "cache"},
+            {"client": "web", "server": "uploads"},
         ],
     )
 
     resources = infer(app, env)
 
-    # Connection should be created
-    # (we'd need to check this through the connections dict in a full test)
-    assert "cache_redis" in resources.azurerm_redis_cache
+    # Storage account and container should be created
+    assert "uploads_storage" in resources.azurerm_storage_account
+    assert "uploads_container" in resources.azurerm_storage_container

@@ -16,6 +16,8 @@ from composey.models.azure import (
     KeyVault,
     PostgreSQLFlexibleDatabase,
     PostgreSQLFlexibleServer,
+    StorageAccount,
+    StorageContainer,
 )
 from composey.models.environment import AzureEnvironment
 from composey.models.semantic import Application as SemanticApp
@@ -62,7 +64,11 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
     cache_connections = _infer_caches(resources, app, env, get_name, tags)
     connections.update(cache_connections)
 
-    # Step 7: Infer container apps
+    # Step 7: Infer storage resources
+    storage_connections = _infer_storage(resources, app, env, get_name, tags)
+    connections.update(storage_connections)
+
+    # Step 8: Infer container apps
     _infer_container_apps(resources, app, env, get_name, tags, identity_id, connections)
 
     return resources
@@ -279,6 +285,56 @@ def _infer_caches(
             host=f"${{azurerm_redis_cache.{cache_key}.hostname}}",
             port=DefaultPorts.REDIS,
             password=f"${{azurerm_redis_cache.{cache_key}.primary_access_key}}",
+        )
+
+    return connections
+
+
+def _infer_storage(
+    resources: AzureResources,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    get_name: Callable[[str], str],
+    tags: dict[str, str] | None,
+) -> dict[str, Connection]:
+    """Infer Azure Blob Storage accounts and containers.
+
+    Returns a mapping of service name to Connection for use in wiring.
+    """
+    connections: dict[str, Connection] = {}
+
+    storage_services = [s for s in app.services if s.capability == "object-storage"]
+
+    for service in storage_services:
+        # Create storage account
+        account_key = f"{service.name}_storage"
+        account_name = get_name(service.name).replace("_", "").lower()[:24]
+
+        resources.azurerm_storage_account[account_key] = StorageAccount(
+            name=account_name,
+            resource_group_name=env.name,
+            location=env.region,
+            account_tier="Standard",
+            account_replication_type="LRS",
+            account_kind="StorageV2",
+            min_tls_version="TLS1_2",
+            enable_https_traffic_only=True,
+            tags=tags,
+        )
+
+        # Create default container
+        container_key = f"{service.name}_container"
+        resources.azurerm_storage_container[container_key] = StorageContainer(
+            name=service.name,
+            storage_account_name=f"${{azurerm_storage_account.{account_key}.name}}",
+            container_access_type="private",
+        )
+
+        # Connection uses storage account name and key
+        connections[service.name] = Connection(
+            host=f"${{azurerm_storage_account.{account_key}.primary_blob_endpoint}}",
+            name=f"${{azurerm_storage_account.{account_key}.name}}",
+            addressed_by="name",
         )
 
     return connections

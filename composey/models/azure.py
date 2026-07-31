@@ -176,6 +176,48 @@ class RoleAssignment(BaseModel):
     principal_id: str
 
 
+class StorageAccount(BaseModel):
+    """Azure Storage Account for Blob Storage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+
+    account_tier: str = Field(
+        default="Standard",
+        description="Standard or Premium",
+    )
+    account_replication_type: str = Field(
+        default="LRS",
+        description="LRS, GRS, RAGRS, ZRS, GZRS, or RAGZRS",
+    )
+    account_kind: str = Field(
+        default="StorageV2",
+        description="StorageV2, Storage, or BlobStorage",
+    )
+
+    # Security
+    min_tls_version: str = "TLS1_2"
+    enable_https_traffic_only: bool = True
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class StorageContainer(BaseModel):
+    """Container within an Azure Storage Account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    storage_account_name: str
+    container_access_type: str = Field(
+        default="private",
+        description="private, blob, or container",
+    )
+
+
 class RedisCache(BaseModel):
     """Azure Cache for Redis."""
 
@@ -242,6 +284,8 @@ class AzureResources(BaseModel):
     )
     azurerm_role_assignment: Dict[str, RoleAssignment] = Field(default_factory=dict)
     azurerm_redis_cache: Dict[str, RedisCache] = Field(default_factory=dict)
+    azurerm_storage_account: Dict[str, StorageAccount] = Field(default_factory=dict)
+    azurerm_storage_container: Dict[str, StorageContainer] = Field(default_factory=dict)
 
     # Docker provider resources (same as AWS)
     docker_image: Dict[str, Any] = Field(default_factory=dict)

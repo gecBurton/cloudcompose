@@ -13,6 +13,7 @@ an error rather than a silent one.
 import pytest
 
 from composey.compiler.normalizer import normalize
+from composey.exceptions import StorageError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Service as DockerService
 from composey.models.compose import VolumeDefinition
@@ -26,17 +27,17 @@ def _normalize(volumes, image="web:latest"):
 
 
 def test_a_named_volume_is_refused():
-    with pytest.raises(ValueError, match=r"mounts named volume\(s\) db-data"):
+    with pytest.raises(StorageError, match=r"mounts named volume\(s\) db-data"):
         _normalize([VolumeDefinition(type="volume", source="db-data", target="/data")])
 
 
 def test_the_error_says_what_to_do_instead():
-    with pytest.raises(ValueError, match="minio"):
+    with pytest.raises(StorageError, match="minio"):
         _normalize(["media:/data/storage"])
 
 
 def test_every_named_volume_is_listed():
-    with pytest.raises(ValueError, match="assets, media"):
+    with pytest.raises(StorageError, match="assets, media"):
         _normalize(["media:/data/media", "assets:/data/assets"])
 
 
@@ -66,5 +67,5 @@ def test_local_only_mounts_are_ignored(volumes):
 
 
 def test_a_bind_mount_alongside_a_named_volume_still_fails():
-    with pytest.raises(ValueError, match="media"):
+    with pytest.raises(StorageError, match="media"):
         _normalize(["./src:/code/src", "media:/data"])

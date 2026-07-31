@@ -9,6 +9,7 @@ as a cache.
 import pytest
 
 from composey.compiler.normalizer import _infer_capability, normalize
+from composey.exceptions import IngressError, ValidationError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Port as DockerPort
 from composey.models.compose import Service as DockerService
@@ -92,19 +93,21 @@ def test_capability_override_beats_inference():
 
 
 def test_unknown_capability_is_rejected_by_name():
-    with pytest.raises(ValueError, match="service 'thing' has an invalid x-composey"):
+    with pytest.raises(
+        ValidationError, match="service 'thing' has an invalid x-composey"
+    ):
         _normalize(capability="databse")
 
 
 def test_misspelled_key_is_rejected_rather_than_ignored():
     # The failure this validation exists for: `capabilty` was silently dropped,
     # and the service deployed as whatever the compiler guessed.
-    with pytest.raises(ValueError, match="capabilty"):
+    with pytest.raises(ValidationError, match="capabilty"):
         _normalize(capabilty="database")
 
 
 def test_misspelled_public_is_rejected():
-    with pytest.raises(ValueError, match="publik"):
+    with pytest.raises(ValidationError, match="publik"):
         _normalize(publik=True)
 
 
@@ -119,7 +122,7 @@ def test_misspelled_public_is_rejected():
     ],
 )
 def test_out_of_range_values_are_rejected(settings):
-    with pytest.raises(ValueError, match="invalid x-composey"):
+    with pytest.raises(ValidationError, match="invalid x-composey"):
         _normalize(**settings)
 
 
@@ -165,5 +168,5 @@ def test_two_services_may_both_be_public_on_distinct_paths():
 def test_two_services_on_the_same_path_are_rejected():
     app = _public_app(frontend={"ingress": {}}, backend={"ingress": {}})
 
-    with pytest.raises(ValueError, match="both serve"):
+    with pytest.raises(IngressError, match="both serve"):
         normalize(app, "p")

@@ -2,6 +2,12 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from composey.constants import (
+    ALB_DATA_SOURCE_KEY,
+    CLOUDFRONT_PROVIDER_ALIAS,
+    CLOUDFRONT_SCOPE_REGION,
+)
+
 
 class TerraformLifecycle(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -309,15 +315,15 @@ class CloudwatchEventTarget(BaseModel):
     ecs_target: Optional[Dict[str, Any]] = None
 
 
-# Key of the `data.aws_lb` block used to resolve the shared ALB's DNS name.
-# Shared between inference (which references it) and generation (which emits it).
-ALB_DATA_SOURCE_KEY = "shared_alb"
+# Re-export constants for backward compatibility
+__all__ = [
+    "ALB_DATA_SOURCE_KEY",
+    "CLOUDFRONT_PROVIDER_ALIAS",
+    "CLOUDFRONT_SCOPE_REGION",
+    "CLOUDFRONT_PROVIDER_REF",
+]
 
-# AWS requires WAFv2 web ACLs scoped to CLOUDFRONT to live in us-east-1,
-# regardless of where the rest of the application is deployed. They are
-# therefore created through a dedicated aliased provider.
-CLOUDFRONT_SCOPE_REGION = "us-east-1"
-CLOUDFRONT_PROVIDER_ALIAS = "us_east_1"
+# Provider reference for CloudFront-scoped resources
 CLOUDFRONT_PROVIDER_REF = f"aws.{CLOUDFRONT_PROVIDER_ALIAS}"
 
 

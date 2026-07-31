@@ -2,6 +2,7 @@ import pytest
 
 from composey.compiler.inference import _eventbridge_expression
 from composey.compiler.normalizer import _parse_schedule, normalize
+from composey.exceptions import ScheduleError, ValidationError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Service as DockerService
 from composey.models.semantic import CronSchedule, RateSchedule
@@ -52,7 +53,7 @@ def test_intervals_are_stored_cloud_neutrally(raw, value, unit):
     "raw", ["", "0 2 * *", "0 2 * * * * *", "hourly", "every fortnight"]
 )
 def test_unparseable_schedules_are_rejected(raw):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         _parse_schedule(raw)
 
 
@@ -86,7 +87,7 @@ def test_aws_expressions_round_trip_unchanged(raw):
 def test_schedule_constraining_both_day_fields_is_rejected():
     # Standard cron allows it, EventBridge does not. Fail with an explanation
     # rather than emitting Terraform that AWS will refuse.
-    with pytest.raises(ValueError, match="day-of-month and day-of-week"):
+    with pytest.raises(ScheduleError, match="day-of-month and day-of-week"):
         parse_and_render("0 2 1 * MON")
 
 

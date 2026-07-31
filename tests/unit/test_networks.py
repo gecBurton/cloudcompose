@@ -13,6 +13,7 @@ import pytest
 
 from composey.compiler import compile_to_terraform
 from composey.compiler.normalizer import normalize
+from composey.exceptions import NetworkError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import NetworkDefinition
 from composey.models.compose import Service as DockerService
@@ -119,12 +120,12 @@ def test_networks_are_sorted_for_determinism():
 
 
 def test_too_many_networks_is_rejected():
-    with pytest.raises(ValueError, match="joins 6 networks"):
+    with pytest.raises(NetworkError, match="joins 6 networks"):
         _normalize({"web": [f"net{i}" for i in range(6)]})
 
 
 def test_external_networks_are_rejected():
-    with pytest.raises(ValueError, match="declared external"):
+    with pytest.raises(NetworkError, match="declared external"):
         _normalize(
             {"web": ["shared"]},
             {"shared": NetworkDefinition(external=True)},

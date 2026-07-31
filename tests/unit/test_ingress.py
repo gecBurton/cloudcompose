@@ -10,8 +10,10 @@ import json
 import pytest
 
 from composey.compiler.generator import generate
-from composey.compiler.inference import _path_patterns, _priority_band, infer
+from composey.compiler.inference import _path_patterns, infer
+from composey.compiler.inference._common import _priority_band
 from composey.compiler.normalizer import normalize
+from composey.exceptions import ValidationError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Port as DockerPort
 from composey.models.compose import Service as DockerService
@@ -203,5 +205,5 @@ def test_bare_ingress_key_declares_a_default_route():
 
 def test_the_public_shorthand_is_gone():
     # One way to declare a route, not two.
-    with pytest.raises(ValueError, match="public"):
+    with pytest.raises(ValidationError, match="public"):
         _normalized(web=(80, {"public": True}))

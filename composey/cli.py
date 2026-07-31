@@ -1,15 +1,18 @@
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Optional
 
 import typer
+from importlib.metadata import version
 from rich.console import Console
 
 from .compiler import compile_application
 from .compiler.explain import explain, render
 from .compiler.normalizer import normalize
 from .compiler.parser import parse
+from .exceptions import ComposeyError
 from .models.environment import load_environment
 
 app = typer.Typer(
@@ -18,9 +21,17 @@ app = typer.Typer(
 console = Console()
 
 
+def _get_version() -> str:
+    """Get the version from package metadata."""
+    try:
+        return version("composey")
+    except Exception:
+        return "unknown"
+
+
 def version_callback(value: bool):
     if value:
-        console.print("composey 0.1.0 (pre-alpha)")
+        console.print(f"composey {_get_version()} (pre-alpha)")
         raise typer.Exit()
 
 
@@ -102,9 +113,7 @@ def main(
         docker_app = parse(str(compose_file))
         semantic = normalize(docker_app, project_name)
 
-        # Report anything the compiler could not decide. Removing the port
-        # convention made a missing ingress more likely, and a warning nobody
-        # sees is no better than the silence it replaced.
+        # Report anything the compiler could not decide.
         warnings = [d for d in explain(docker_app, semantic) if d.source == "warning"]
         for warning in warnings:
             console.print(f"[yellow]warning[/] {warning.subject}: {warning.decision}")
@@ -122,8 +131,7 @@ def main(
         with open(output_file, "w") as f:
             f.write(tf_json)
 
-        # Copy any Docker build contexts next to the manifest so `terraform apply`
-        # (run from the output dir) can resolve their relative paths.
+        # Copy any Docker build contexts next to the manifest
         compose_dir = compose_file.absolute().parent
         docker_images = json.loads(tf_json).get("resource", {}).get("docker_image", {})
         for image in docker_images.values():
@@ -142,8 +150,17 @@ def main(
 
     except typer.Exit:
         raise
+    except ComposeyError as e:
+        # User-facing errors: show clean message without stack trace
+        console.print(f"[bold red]Error:[/] {e.message}")
+        if e.details:
+            console.print(f"[dim]{e.details}[/]")
+        raise typer.Exit(code=1)
     except Exception as e:
-        console.print(f"[bold red]Error during compilation:[/] {e}")
+        # Unexpected errors: show message, optionally full traceback
+        console.print(f"[bold red]Unexpected error:[/] {e}")
+        if os.getenv("COMPOSEY_DEBUG"):
+            raise
         raise typer.Exit(code=1)
 
 

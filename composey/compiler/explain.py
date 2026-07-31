@@ -279,11 +279,6 @@ def _ingress_decisions(
     if public:
         decisions = []
         for service in public:
-            # Exposure can only be declared, so the interesting distinction is
-            # which parts of the route were spelled out and which took defaults.
-            spelled_out = (
-                docker_app.services[service.name].x_composey_raw.get("ingress") or {}
-            )
             decisions.append(
                 Decision(
                     service.name,
@@ -292,14 +287,19 @@ def _ingress_decisions(
                     "declared",
                 )
             )
+            health_path = (
+                service.ingress.health_check.path
+                if service.ingress.health_check
+                else "/"
+            )
             decisions.append(
                 Decision(
                     service.name,
-                    f"healthy when {service.ingress.health_path} returns 2xx/3xx",
+                    f"healthy when {health_path} returns 2xx/3xx",
                     "declared"
-                    if "health_path" in spelled_out
-                    else "default health path — set ingress.health_path if wrong",
-                    "declared" if "health_path" in spelled_out else "default",
+                    if service.ingress.health_check
+                    else "default health path — set health_check.path if wrong",
+                    "declared" if service.ingress.health_check else "default",
                 )
             )
         return decisions

@@ -114,7 +114,9 @@ def infer_scheduled_tasks(
                     "launch_type": "FARGATE",
                     "network_configuration": {
                         "subnets": env.private_subnets,
-                        "security_groups": security_group_ids(service.networks),
+                        "security_groups": security_group_ids(
+                            service.network_isolation_segments
+                        ),
                         "assign_public_ip": False,
                     },
                 },

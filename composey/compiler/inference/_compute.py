@@ -478,7 +478,7 @@ def _create_ecs_service(
         health_check_grace_period_seconds=service.startup_grace_period,
         network_configuration={
             "subnets": env.private_subnets,
-            "security_groups": security_group_ids(service.networks),
+            "security_groups": security_group_ids(service.network_isolation_segments),
             "assign_public_ip": False,
         },
         service_registries=(
@@ -518,7 +518,7 @@ def _handle_ingress(
         target_type="ip",
         health_check={
             "enabled": True,
-            "path": ingress.health_path,
+            "path": ingress.health_check.path if ingress.health_check else "/",
             "matcher": "200-399",
         },
         tags=tags,

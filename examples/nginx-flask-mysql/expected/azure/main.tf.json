@@ -1,0 +1,164 @@
+{
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 3.0"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "docker": {},
+    "random": {}
+  },
+  "data": {
+    "azurerm_client_config": {
+      "current": {}
+    }
+  },
+  "resource": {
+    "azurerm_container_app_environment": {
+      "main": {
+        "name": "prod-env",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "log_analytics_workspace_id": "/subscriptions/123/workspaces/prod",
+        "infrastructure_subnet_id": "/subscriptions/123/subnets/prod",
+        "internal_load_balancer_enabled": false
+      }
+    },
+    "azurerm_container_app": {
+      "backend": {
+        "name": "prod-nginx-flask-mysql-backend",
+        "resource_group_name": "prod",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "revision_mode": "Single",
+        "template": {
+          "containers": [
+            {
+              "name": "backend",
+              "image": "flask-backend:latest",
+              "resources": {
+                "cpu": 0.25,
+                "memory": "0.5Gi"
+              },
+              "env": [
+                {
+                  "name": "DATABASE_HOST",
+                  "value": "db"
+                },
+                {
+                  "name": "DB_URL",
+                  "value": "postgresql://composey:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/example"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "min_replicas": 1,
+            "max_replicas": 1
+          }
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        }
+      },
+      "proxy": {
+        "name": "prod-nginx-flask-mysql-proxy",
+        "resource_group_name": "prod",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "revision_mode": "Single",
+        "template": {
+          "containers": [
+            {
+              "name": "proxy",
+              "image": "nginx-proxy:latest",
+              "resources": {
+                "cpu": 0.25,
+                "memory": "0.5Gi"
+              },
+              "env": []
+            }
+          ],
+          "scale": {
+            "min_replicas": 1,
+            "max_replicas": 1,
+            "rules": [
+              {
+                "name": "http-default",
+                "custom": {
+                  "type": "http",
+                  "metadata": {
+                    "concurrentRequests": "100"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 80,
+          "transport": "auto",
+          "traffic_weight": {
+            "latest_revision": true,
+            "percentage": 100
+          }
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        }
+      }
+    },
+    "azurerm_postgresql_flexible_server": {
+      "main": {
+        "name": "prod-nginx-flask-mysql-pg",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "version": "14",
+        "sku_name": "B_Standard_B1ms",
+        "storage_mb": 32768,
+        "administrator_login": "composey",
+        "administrator_password": "${random_password.postgres_admin.result}",
+        "delegated_subnet_id": "/subscriptions/123/subnets/prod",
+        "public_network_access_enabled": false
+      }
+    },
+    "azurerm_postgresql_flexible_server_database": {
+      "db_db": {
+        "name": "example",
+        "server_id": "${azurerm_postgresql_flexible_server.main.id}",
+        "charset": "UTF8",
+        "collation": "en_US.utf8"
+      }
+    },
+    "azurerm_key_vault": {
+      "main": {
+        "name": "prod-nginx-flask-mysql-kv",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "sku_name": "standard",
+        "soft_delete_retention_days": 7,
+        "purge_protection_enabled": false
+      }
+    },
+    "random_password": {
+      "postgres_admin": {
+        "length": 20,
+        "special": false
+      }
+    }
+  }
+}

@@ -160,7 +160,9 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
 
     # Random resources
     if resources.random_password:
-        result["random_password"] = resources.random_password
+        result["random_password"] = {
+            k: _clean_model(v) for k, v in resources.random_password.items()
+        }
 
     return result
 

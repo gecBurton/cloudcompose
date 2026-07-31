@@ -14,6 +14,8 @@ from composey.models.azure import (
     ContainerAppEnvironment,
     ContainerRegistry,
     KeyVault,
+    MySQLFlexibleDatabase,
+    MySQLFlexibleServer,
     PostgreSQLFlexibleDatabase,
     PostgreSQLFlexibleServer,
     StorageAccount,
@@ -165,30 +167,35 @@ def _infer_databases(
     get_name: Callable[[str], str],
     tags: dict[str, str] | None,
 ) -> dict[str, Connection]:
-    """Infer PostgreSQL Flexible Server databases.
+    """Infer PostgreSQL and MySQL Flexible Server databases.
 
     Returns a mapping of service name to Connection for use in wiring.
     """
-    from composey.constants import DATABASE_DEFAULT_USERNAME
+    from composey.constants import DATABASE_DEFAULT_USERNAME, DefaultPorts
 
     connections: dict[str, Connection] = {}
 
-    # Check if we need to create a database server
-    db_services = [s for s in app.services if s.capability == "database"]
+    # Separate PostgreSQL and MySQL services
+    pg_services = []
+    mysql_services = []
 
-    if not db_services:
-        return connections
+    for s in app.services:
+        if s.capability != "database":
+            continue
+        # Determine engine from image name
+        image_lower = s.image.lower()
+        if "mysql" in image_lower and "postgres" not in image_lower:
+            mysql_services.append(s)
+        else:
+            # Default to PostgreSQL (including postgres, postgresql, pgvector, etc.)
+            pg_services.append(s)
 
-    # For simplicity, create one flexible server per app
-    # In production, might want to share across apps
-    server_name = get_name("pg")
+    # Create PostgreSQL server if needed
+    if pg_services and not env.postgresql_server_id:
+        server_name = get_name("pg")
+        admin_password_key = "postgres_admin"
+        resources.random_password[admin_password_key] = RandomPassword(length=20)
 
-    # Generate admin password
-    admin_password_key = "postgres_admin"
-    resources.random_password[admin_password_key] = RandomPassword(length=20)
-
-    # Create server if not using existing
-    if not env.postgresql_server_id:
         resources.azurerm_postgresql_flexible_server["main"] = PostgreSQLFlexibleServer(
             name=server_name,
             resource_group_name=env.name,
@@ -196,15 +203,14 @@ def _infer_databases(
             administrator_login=DATABASE_DEFAULT_USERNAME,
             administrator_password=f"${{random_password.{admin_password_key}.result}}",
             version="14",
-            sku_name="B_Standard_B1ms",  # Burstable, small
+            sku_name="B_Standard_B1ms",
             storage_mb=32768,
             delegated_subnet_id=env.infrastructure_subnet_id,
             public_network_access_enabled=False,
             tags=tags,
         )
 
-        # Create databases for each database service
-        for service in db_services:
+        for service in pg_services:
             db_key = f"{service.name}_db"
             resources.azurerm_postgresql_flexible_server_database[db_key] = (
                 PostgreSQLFlexibleDatabase(
@@ -213,18 +219,48 @@ def _infer_databases(
                 )
             )
 
-            # Store connection info
             connections[service.name] = Connection(
                 host="${azurerm_postgresql_flexible_server.main.fqdn}",
-                port=5432,
+                port=DefaultPorts.POSTGRES,
                 username=DATABASE_DEFAULT_USERNAME,
                 password=f"${{random_password.{admin_password_key}.result}}",
                 database=service.database_name or service.name,
             )
-    else:
-        # Use existing server - create connection to it
-        # This would need additional configuration
-        pass
+
+    # Create MySQL server if needed
+    if mysql_services:
+        server_name = get_name("mysql")
+        admin_password_key = "mysql_admin"
+        resources.random_password[admin_password_key] = RandomPassword(length=20)
+
+        resources.azurerm_mysql_flexible_server["main"] = MySQLFlexibleServer(
+            name=server_name,
+            resource_group_name=env.name,
+            location=env.region,
+            administrator_login=DATABASE_DEFAULT_USERNAME,
+            administrator_password=f"${{random_password.{admin_password_key}.result}}",
+            version="8.0",
+            sku_name="B_Standard_B1ms",
+            storage_mb=32768,
+            delegated_subnet_id=env.infrastructure_subnet_id,
+            public_network_access_enabled=False,
+            tags=tags,
+        )
+
+        for service in mysql_services:
+            db_key = f"{service.name}_db"
+            resources.azurerm_mysql_flexible_database[db_key] = MySQLFlexibleDatabase(
+                name=service.database_name or service.name,
+                server_id="${azurerm_mysql_flexible_server.main.id}",
+            )
+
+            connections[service.name] = Connection(
+                host="${azurerm_mysql_flexible_server.main.fqdn}",
+                port=DefaultPorts.MYSQL,
+                username=DATABASE_DEFAULT_USERNAME,
+                password=f"${{random_password.{admin_password_key}.result}}",
+                database=service.database_name or service.name,
+            )
 
     return connections
 

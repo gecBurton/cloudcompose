@@ -123,6 +123,46 @@ class PostgreSQLFlexibleDatabase(BaseModel):
     collation: str = "en_US.utf8"
 
 
+class MySQLFlexibleServer(BaseModel):
+    """Azure Database for MySQL - Flexible Server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+
+    # Version and SKU
+    version: str = Field(default="8.0", description="MySQL version")
+    sku_name: str = Field(default="B_Standard_B1ms", description="SKU name")
+    storage_mb: int = Field(default=32768, description="Storage in MB (32GB)")
+
+    # Authentication
+    administrator_login: str
+    administrator_password: str
+
+    # Networking
+    delegated_subnet_id: Optional[str] = None
+    private_dns_zone_id: Optional[str] = None
+    public_network_access_enabled: bool = False
+
+    # High availability
+    high_availability: Optional[Dict[str, str]] = None
+
+    tags: Optional[Dict[str, str]] = None
+
+
+class MySQLFlexibleDatabase(BaseModel):
+    """Database within a MySQL Flexible Server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    server_id: str
+    charset: str = "utf8mb4"
+    collation: str = "utf8mb4_unicode_ci"
+
+
 class KeyVault(BaseModel):
     """Azure Key Vault for secrets."""
 
@@ -277,6 +317,12 @@ class AzureResources(BaseModel):
     azurerm_postgresql_flexible_server_database: Dict[
         str, PostgreSQLFlexibleDatabase
     ] = Field(default_factory=dict)
+    azurerm_mysql_flexible_server: Dict[str, MySQLFlexibleServer] = Field(
+        default_factory=dict
+    )
+    azurerm_mysql_flexible_database: Dict[str, MySQLFlexibleDatabase] = Field(
+        default_factory=dict
+    )
     azurerm_key_vault: Dict[str, KeyVault] = Field(default_factory=dict)
     azurerm_key_vault_secret: Dict[str, KeyVaultSecret] = Field(default_factory=dict)
     azurerm_user_assigned_identity: Dict[str, UserAssignedIdentity] = Field(

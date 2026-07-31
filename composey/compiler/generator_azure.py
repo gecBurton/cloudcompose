@@ -93,6 +93,18 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             for k, v in resources.azurerm_postgresql_flexible_server_database.items()
         }
 
+    if resources.azurerm_mysql_flexible_server:
+        result["azurerm_mysql_flexible_server"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_mysql_flexible_server.items()
+        }
+
+    if resources.azurerm_mysql_flexible_database:
+        result["azurerm_mysql_flexible_database"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_mysql_flexible_database.items()
+        }
+
     if resources.azurerm_key_vault:
         result["azurerm_key_vault"] = {
             k: _clean_model(v) for k, v in resources.azurerm_key_vault.items()

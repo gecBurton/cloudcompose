@@ -48,13 +48,23 @@ class VolumeDefinition(BaseModel):
     read_only: bool = False
 
 
+class HealthCheckConfig(BaseModel):
+    """Health check configuration for x-composey."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["http", "tcp"] = Field(default="http")
+    path: str = Field(default="/")
+    port: Optional[int] = Field(default=None)
+
+
 class XComposey(BaseModel):
     """
     The `x-composey` block on a service.
 
     Validated with `extra="forbid"` on purpose. An override you can misspell is
     not an override: before this existed, `capabilty: database` was silently
-    dropped and the service was deployed as whatever the compiler guessed.
+    dropped and the service deployed as whatever the compiler guessed.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -66,6 +76,10 @@ class XComposey(BaseModel):
     ingress: Optional[Ingress] = Field(
         default=None,
         description="How this service is reached from outside: path, port, health",
+    )
+    health_check: Optional[HealthCheckConfig] = Field(
+        default=None,
+        description="Health check configuration. Defaults to HTTP / on the ingress port.",
     )
 
     @model_validator(mode="before")

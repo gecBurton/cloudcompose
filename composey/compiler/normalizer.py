@@ -13,12 +13,12 @@ from composey.constants import (
     BIND_SOURCE_PREFIXES,
     CAPABILITY_IMAGES,
     CRON_WRAPPER_PATTERN,
-    DATABASE_NAME_MAX_LENGTH,
     DATABASE_NAME_ALLOWED_CHARS,
-    database_name_variables,
+    DATABASE_NAME_MAX_LENGTH,
     DEFAULT_NETWORK_NAME,
     MAX_NETWORKS_PER_SERVICE,
     RATE_PATTERN,
+    database_name_variables,
 )
 from composey.exceptions import (
     NetworkError,
@@ -185,29 +185,33 @@ def _named_volume_source(volume: Union[str, VolumeDefinition]) -> Optional[str]:
     return source
 
 
-def _networks_for(name: str, service: DockerService, reserved: int = 0) -> list[str]:
-    """The networks a service is attached to.
+def _network_segments_for(
+    name: str, service: DockerService, reserved: int = 0
+) -> list[str]:
+    """The network isolation segments a service belongs to.
 
-    Compose already answers who may talk to whom: services sharing a network can
-    reach each other, and services on disjoint networks cannot. Unlike
-    depends_on, which describes startup order and constrains nothing, this is
-    enforced locally.
+    Docker networks become cloud-agnostic isolation segments. Services sharing a
+    segment can reach each other; services in disjoint segments cannot.
+    These map to:
+    - AWS: Security groups
+    - GCP: VPC connector memberships
+    - Azure: VNet integration / private endpoints
     """
-    networks = sorted(service.networks or {}) or [DEFAULT_NETWORK_NAME]
+    segments = sorted(service.networks or {}) or [DEFAULT_NETWORK_NAME]
 
     # A publicly reachable service also gets a dedicated group for the load
     # balancer, which counts against the same quota.
-    if len(networks) + reserved > MAX_NETWORKS_PER_SERVICE:
+    if len(segments) + reserved > MAX_NETWORKS_PER_SERVICE:
         raise NetworkError(
-            f"service {name!r} joins {len(networks)} networks ({', '.join(networks)})",
+            f"service {name!r} joins {len(segments)} network segments ({', '.join(segments)})",
             details=(
                 f"At most {MAX_NETWORKS_PER_SERVICE - reserved} are supported here, "
-                f"because each becomes a security group and AWS attaches no more than "
-                f"{MAX_NETWORKS_PER_SERVICE} to one network interface"
+                f"because each becomes a security group (AWS) or equivalent "
+                f"isolation mechanism and clouds have limits on attachments."
             ),
         )
 
-    return networks
+    return segments
 
 
 def _reject_unsupported_networks(app: DockerApplication) -> None:
@@ -248,7 +252,9 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
     for s_name, docker_service in app.services.items():
         settings = _settings_for(s_name, docker_service)
         ingress = settings.exposure
-        networks = _networks_for(s_name, docker_service, reserved=1 if ingress else 0)
+        network_segments = _network_segments_for(
+            s_name, docker_service, reserved=1 if ingress else 0
+        )
 
         # Handle services without ports safely
         primary_port = docker_service.ports[0].target if docker_service.ports else None
@@ -306,7 +312,7 @@ def normalize(app: DockerApplication, project_name: str) -> SemanticApplication:
                 schedule=schedule,
                 cdn_enabled=settings.cdn,
                 ingress=ingress,
-                networks=networks,
+                network_isolation_segments=network_segments,
                 env=docker_service.environment,
                 config=docker_service.platform_env,
                 secrets=secret_names,

@@ -113,14 +113,14 @@ def _normalize(networks_per_service: dict, top_level: dict | None = None):
     return normalize(docker_app, "app")
 
 
-def test_networks_are_sorted_for_determinism():
+def test_network_segments_are_sorted_for_determinism():
     app = _normalize({"web": ["zebra", "alpha"]})
 
-    assert app.services[0].networks == ["alpha", "zebra"]
+    assert app.services[0].network_isolation_segments == ["alpha", "zebra"]
 
 
-def test_too_many_networks_is_rejected():
-    with pytest.raises(NetworkError, match="joins 6 networks"):
+def test_too_many_network_segments_is_rejected():
+    with pytest.raises(NetworkError, match="joins 6 network segments"):
         _normalize({"web": [f"net{i}" for i in range(6)]})
 
 

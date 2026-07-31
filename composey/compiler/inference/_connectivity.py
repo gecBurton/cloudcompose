@@ -28,11 +28,13 @@ def infer_networking(
 ) -> None:
     """Infer security groups and network rules for the application.
 
-    Creates one security group per compose network. Services sharing a network
-    can reach each other, and services on disjoint networks cannot, which is
-    what Compose already enforces locally.
+    Creates one security group per network isolation segment. Services sharing a
+    segment can reach each other, and services on disjoint segments cannot.
+    This maps to AWS security groups; other clouds use equivalent mechanisms.
     """
-    networks = sorted({n for service in app.services for n in service.networks})
+    networks = sorted(
+        {n for service in app.services for n in service.network_isolation_segments}
+    )
 
     for network in networks:
         key = _sg_key(network)
@@ -106,10 +108,10 @@ def infer_service_discovery(
     return namespace
 
 
-def security_group_ids(service_networks: list[str]) -> list[str]:
-    """Get Terraform references to security groups for given networks."""
+def security_group_ids(service_segments: list[str]) -> list[str]:
+    """Get Terraform references to security groups for given network segments."""
     return [
-        f"${{aws_security_group.{_sg_key(n)}.id}}" for n in sorted(service_networks)
+        f"${{aws_security_group.{_sg_key(n)}.id}}" for n in sorted(service_segments)
     ]
 
 

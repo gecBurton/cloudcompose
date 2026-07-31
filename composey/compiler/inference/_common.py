@@ -32,17 +32,17 @@ def calculate_listener_priorities(app: "SemanticApp") -> dict[str, int]:
     listener, so they cannot simply start at 1. Each application gets a band
     derived from its name, and its routes are ordered within that band by path
     specificity, longest first, so that /api/admin is matched before /api.
+
+    Note: This is AWS-specific. GCP URL Maps use path specificity order,
+    not numeric priority. This function is in the AWS inference module for
+    that reason - other clouds will use different ordering mechanisms.
     """
     band = _priority_band(app.name)
     ordered = sorted(app.public_services, key=lambda s: (-len(s.ingress.path), s.name))
 
     priorities: dict[str, int] = {}
     for offset, service in enumerate(ordered):
-        priorities[service.name] = (
-            service.ingress.priority
-            if service.ingress.priority is not None
-            else band + offset
-        )
+        priorities[service.name] = band + offset
     return priorities
 
 

@@ -32,6 +32,31 @@ class RateSchedule(BaseModel):
 Schedule = Annotated[Union[CronSchedule, RateSchedule], Field(discriminator="kind")]
 
 
+class HealthCheck(BaseModel):
+    """
+    How to determine if a service instance is healthy.
+
+    Cloud-neutral abstraction: different clouds support different health check
+    types (HTTP, TCP, gRPC), so the semantic model must not assume HTTP only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["http", "tcp"] = Field(
+        default="http",
+        description="The health check protocol. HTTP for HTTP/HTTPS endpoints, "
+        "TCP for raw TCP sockets.",
+    )
+    path: Optional[str] = Field(
+        default="/",
+        description="Path to poll for HTTP health checks. Ignored for TCP.",
+    )
+    port: Optional[int] = Field(
+        default=None,
+        description="Port to check. Defaults to the service's port.",
+    )
+
+
 class Ingress(BaseModel):
     """
     How a service is reached from outside.
@@ -40,6 +65,15 @@ class Ingress(BaseModel):
     questions — reachable, on which port, at what path, and judged healthy how —
     and answered all of them by looking at whether a published port happened to
     be 80 or 443.
+
+    Note: Rule priority/ordering is NOT in the semantic model. Different clouds
+    order routes differently:
+    - AWS ALB: numeric priority (we derive from path specificity)
+    - GCP URL Maps: path specificity order (longest match wins)
+    - Azure Front Door: rule set order
+
+    The backend is responsible for translating path declarations to the target
+    cloud's routing mechanism.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -51,15 +85,9 @@ class Ingress(BaseModel):
         default=None,
         description="Container port to route to. Defaults to the service's port.",
     )
-    health_path: str = Field(
-        default="/", description="Path polled to decide whether an instance is healthy"
-    )
-    priority: Optional[int] = Field(
-        default=None,
-        ge=1,
-        le=50000,
-        description="Rule evaluation order on a shared load balancer. Derived "
-        "from the application and path when unset.",
+    health_check: HealthCheck = Field(
+        default_factory=HealthCheck,
+        description="How to check if the service is healthy",
     )
 
 
@@ -122,10 +150,12 @@ class Service(BaseModel):
         "internal: reachable by other services in the application, but not "
         "exposed.",
     )
-    networks: list[str] = Field(
+    network_isolation_segments: list[str] = Field(
         default_factory=list,
-        description="Networks this service is attached to. Two services can "
-        "reach each other exactly when they share one, as in Compose.",
+        description="Network isolation segments this service belongs to. Services "
+        "sharing a segment can reach each other; services in disjoint segments "
+        "cannot. Mapped to cloud-specific isolation mechanisms (AWS security "
+        "groups, GCP VPC connectors, Azure private endpoints).",
     )
     env: dict[str, str] = Field(
         default_factory=dict,

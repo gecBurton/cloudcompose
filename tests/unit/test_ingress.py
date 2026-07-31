@@ -64,7 +64,10 @@ def test_health_check_path_is_honoured():
     # Both real projects serve /api/healthcheck; a hardcoded / would have failed
     # every health check and cycled the tasks forever.
     manifest = _compile(
-        Application(name="app", services=[_service("web", health_path="/api/health")])
+        Application(
+            name="app",
+            services=[_service("web", health_check={"path": "/api/health"})],
+        )
     )
 
     group = manifest["resource"]["aws_lb_target_group"]["web_tg"]
@@ -116,13 +119,6 @@ def test_priority_is_stable_across_runs():
     # hash. Python's builtin hash() of a string would break this.
     assert _priority_band("alpha") == _priority_band("alpha")
     assert 1 <= _priority_band("alpha") <= 50000
-
-
-def test_priority_can_be_declared():
-    app = Application(name="app", services=[_service("web", priority=42)])
-
-    rules = _compile(app)["resource"]["aws_lb_listener_rule"]
-    assert rules["web_listener_rule"]["priority"] == 42
 
 
 @pytest.mark.parametrize(

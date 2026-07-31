@@ -141,7 +141,7 @@ def _infer_database(
         ),
         allocated_storage=20,
         db_subnet_group_name=f"${{aws_db_subnet_group.{sng_key}.name}}",
-        vpc_security_group_ids=security_group_ids(service.networks),
+        vpc_security_group_ids=security_group_ids(service.network_isolation_segments),
         skip_final_snapshot=discard,
         final_snapshot_identifier=None
         if discard
@@ -188,7 +188,7 @@ def _infer_cache(
         node_type=CACHE_NODE_TYPES.get(service.size, CACHE_NODE_TYPES["small"]),
         num_cache_nodes=1,
         subnet_group_name=f"${{aws_elasticache_subnet_group.{sng_key}.name}}",
-        security_group_ids=security_group_ids(service.networks),
+        security_group_ids=security_group_ids(service.network_isolation_segments),
         tags=tags,
     )
 

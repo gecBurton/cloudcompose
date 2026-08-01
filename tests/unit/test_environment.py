@@ -36,9 +36,9 @@ def test_target_defaults_to_aws(tmp_path):
 
 
 def test_unsupported_target_names_the_supported_ones(tmp_path):
-    path = _write(tmp_path, {"target": "gcp", **AWS_SETTINGS})
+    path = _write(tmp_path, {"target": "unknown-provider", **AWS_SETTINGS})
 
-    with pytest.raises(ValueError, match="unsupported target 'gcp'.*aws"):
+    with pytest.raises(ValueError, match="unsupported target 'unknown-provider'"):
         load_environment(path)
 
 

@@ -244,7 +244,7 @@ def compare_across_clouds():
     print()
 
     aws_total = sum(results["AWS"]["resources"].values())
-    azure_total = sum(results["Azure"]["resources"].values())
+    azure_total = sum(results["Azure"]["resources"].values())  # noqa: F841
     gcp_total = sum(results["GCP"]["resources"].values())
 
     finding = (

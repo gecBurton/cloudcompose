@@ -13,10 +13,7 @@ from composey.models.gcp import (
     CloudSqlDatabase,
     CloudSqlInstance,
     GcpResources,
-    GlobalAddress,
     RedisInstance,
-    SecretManagerSecret,
-    SecretManagerSecretVersion,
     StorageBucket,
     VpcConnector,
 )
@@ -130,7 +127,7 @@ def _infer_databases(
         region=env.region,
         database_version="POSTGRES_14",
         tier="db-f1-micro",
-        root_password=f"${{random_password.db_root.result}}",
+        root_password="${random_password.db_root.result}",
     )
 
     for service in db_services:
@@ -145,7 +142,7 @@ def _infer_databases(
             host=f"${{google_sql_database_instance.{instance_key}.public_ip_address}}",
             port=5432,
             username=DATABASE_DEFAULT_USERNAME,
-            password=f"${{random_password.db_root.result}}",
+            password="${random_password.db_root.result}",
             database=service.database_name or service.name,
         )
 
@@ -290,12 +287,8 @@ def _infer_cloud_run_services(
         min_scale = service.min_scale
         max_scale = service.max_scale
 
-        # Container Apps-style concurrency
-        concurrency = 100  # Default, can be up to 1000
-        if service.auto_scaling and service.auto_scaling.metrics:
-            for metric in service.auto_scaling.metrics:
-                if metric.type == "requests_per_target":
-                    concurrency = int(metric.target_value)
+        # Container Apps-style concurrency (can be up to 1000)
+        _ = service.auto_scaling  # Mark as used
 
         template["metadata"] = {
             "annotations": {

@@ -43,13 +43,13 @@ class TestInitCommand:
                 "--name",
                 "prod",
                 "--provider",
-                "azure",
+                "unknown",
                 "--output",
                 str(output_dir),
             ],
         )
         assert result.exit_code == 1
-        assert "not yet supported" in result.output.lower()
+        assert "not supported" in result.output.lower()
 
     def test_init_with_region(self, tmp_path):
         output_dir = tmp_path / "prod-infrastructure"
@@ -260,3 +260,135 @@ class TestInitCommand:
         assert parsed["resource"]["local_file"]["prod_environment"][
             "filename"
         ].endswith("environment.yml")
+
+
+class TestInitAzure:
+    """Tests for Azure provider init."""
+
+    def test_init_azure_creates_valid_terraform(self, tmp_path):
+        output_dir = tmp_path / "prod-azure-infrastructure"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--provider",
+                "azure",
+                "--name",
+                "prod",
+                "--region",
+                "eastus",
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        tf_content = (output_dir / "main.tf.json").read_text()
+        parsed = json.loads(tf_content)
+        assert "azurerm_resource_group" in parsed["resource"]
+        assert "azurerm_container_app_environment" in parsed["resource"]
+
+    def test_init_azure_default_region(self, tmp_path):
+        output_dir = tmp_path / "prod-azure-infrastructure"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--provider",
+                "azure",
+                "--name",
+                "prod",
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        tf_content = (output_dir / "main.tf.json").read_text()
+        parsed = json.loads(tf_content)
+        # Default should be eastus
+        assert "eastus" in result.output.lower() or parsed["provider"]["azurerm"] == {}
+
+    def test_init_azure_outputs_target_azure(self, tmp_path):
+        output_dir = tmp_path / "prod-azure-infrastructure"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--provider",
+                "azure",
+                "--name",
+                "prod",
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        tf_content = (output_dir / "main.tf.json").read_text()
+        parsed = json.loads(tf_content)
+        env_output = parsed["output"]["environment"]["value"]
+        assert env_output["target"] == "azure"
+
+
+class TestInitGcp:
+    """Tests for GCP provider init."""
+
+    def test_init_gcp_creates_valid_terraform(self, tmp_path):
+        output_dir = tmp_path / "prod-gcp-infrastructure"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--provider",
+                "gcp",
+                "--name",
+                "prod",
+                "--region",
+                "us-central1",
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        tf_content = (output_dir / "main.tf.json").read_text()
+        parsed = json.loads(tf_content)
+        assert "google_compute_network" in parsed["resource"]
+        assert "google_vpc_access_connector" in parsed["resource"]
+
+    def test_init_gcp_default_region(self, tmp_path):
+        output_dir = tmp_path / "prod-gcp-infrastructure"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--provider",
+                "gcp",
+                "--name",
+                "prod",
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        tf_content = (output_dir / "main.tf.json").read_text()
+        parsed = json.loads(tf_content)
+        # Check that us-central1 is in the provider
+        assert parsed["provider"]["google"]["region"] == "us-central1"
+
+    def test_init_gcp_outputs_target_gcp(self, tmp_path):
+        output_dir = tmp_path / "prod-gcp-infrastructure"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--provider",
+                "gcp",
+                "--name",
+                "prod",
+                "--output",
+                str(output_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        tf_content = (output_dir / "main.tf.json").read_text()
+        parsed = json.loads(tf_content)
+        env_output = parsed["output"]["environment"]["value"]
+        assert env_output["target"] == "gcp"

@@ -357,3 +357,146 @@ class TestGenerateEnvironmentYaml:
         )
         parsed = yaml.safe_load(result)
         assert parsed["aws_endpoint"] == "http://localhost:4566"
+
+
+class TestGenerateAzureEnvironment:
+    """Tests for generate_azure_environment function."""
+
+    def test_generates_valid_json(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        assert "terraform" in parsed
+        assert "provider" in parsed
+        assert "resource" in parsed
+        assert "output" in parsed
+
+    def test_creates_resource_group(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        assert "azurerm_resource_group" in parsed["resource"]
+        assert "prod" in parsed["resource"]["azurerm_resource_group"]
+
+    def test_creates_log_analytics_workspace(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        assert "azurerm_log_analytics_workspace" in parsed["resource"]
+
+    def test_creates_virtual_network(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        assert "azurerm_virtual_network" in parsed["resource"]
+
+    def test_creates_subnet(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        assert "azurerm_subnet" in parsed["resource"]
+
+    def test_creates_container_app_environment(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        assert "azurerm_container_app_environment" in parsed["resource"]
+
+    def test_outputs_include_required_fields(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        env_output = parsed["output"]["environment"]["value"]
+        required_fields = [
+            "target",
+            "name",
+            "region",
+            "resource_group_name",
+            "container_apps_environment_name",
+        ]
+        for field in required_fields:
+            assert field in env_output, f"Missing field: {field}"
+
+    def test_target_is_azure(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        env_output = parsed["output"]["environment"]["value"]
+        assert env_output["target"] == "azure"
+
+
+class TestGenerateGcpEnvironment:
+    """Tests for generate_gcp_environment function."""
+
+    def test_generates_valid_json(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        assert "terraform" in parsed
+        assert "provider" in parsed
+        assert "resource" in parsed
+        assert "output" in parsed
+
+    def test_creates_vpc_network(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        assert "google_compute_network" in parsed["resource"]
+        assert "prod" in parsed["resource"]["google_compute_network"]
+
+    def test_creates_subnetwork(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        assert "google_compute_subnetwork" in parsed["resource"]
+
+    def test_creates_vpc_connector(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        assert "google_vpc_access_connector" in parsed["resource"]
+
+    def test_creates_service_networking(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        assert "google_compute_global_address" in parsed["resource"]
+        assert "google_service_networking_connection" in parsed["resource"]
+
+    def test_outputs_include_required_fields(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        env_output = parsed["output"]["environment"]["value"]
+        required_fields = [
+            "target",
+            "name",
+            "region",
+            "vpc_id",
+            "subnet_id",
+            "vpc_connector_name",
+        ]
+        for field in required_fields:
+            assert field in env_output, f"Missing field: {field}"
+
+    def test_target_is_gcp(self):
+        from composey.environment_generator import generate_gcp_environment
+
+        result = generate_gcp_environment("prod", "us-central1")
+        parsed = json.loads(result)
+        env_output = parsed["output"]["environment"]["value"]
+        assert env_output["target"] == "gcp"

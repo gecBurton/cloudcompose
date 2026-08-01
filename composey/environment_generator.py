@@ -491,3 +491,308 @@ def generate_environment_yaml(
         config["aws_endpoint"] = aws_endpoint
 
     return yaml.dump(config, default_flow_style=False, sort_keys=False)
+
+
+def generate_azure_environment(
+    name: str,
+    location: str,
+    vnet_cidr: str = "10.0.0.0/16",
+    tags: Optional[Dict[str, str]] = None,
+    retain_data_on_destroy: bool = True,
+) -> str:
+    """
+    Generate Terraform JSON for a shared Azure environment.
+
+    Creates:
+    - Resource Group
+    - Log Analytics Workspace
+    - Virtual Network with subnet
+    - Container Apps Environment
+
+    Args:
+        name: Environment name (e.g., "prod", "staging")
+        location: Azure region
+        vnet_cidr: CIDR block for the VNet
+        tags: Default tags applied to all resources
+        retain_data_on_destroy: Whether destroying the stack preserves data
+
+    Returns:
+        Terraform JSON string for the environment
+    """
+    if tags is None:
+        tags = {}
+
+    # Terraform-safe resource name
+    tf_name = _tf_name(name)
+
+    # Build the Terraform manifest
+    terraform: Dict[str, Any] = {
+        "required_version": ">= 1.5",
+        "required_providers": {
+            "azurerm": {
+                "source": "hashicorp/azurerm",
+                "version": "~> 3.0",
+            },
+            "local": {
+                "source": "hashicorp/local",
+                "version": "~> 2.4",
+            },
+        },
+    }
+
+    provider: Dict[str, Any] = {
+        "azurerm": {
+            "features": {},
+        }
+    }
+
+    data_sources: Dict[str, Any] = {
+        "azurerm_client_config": {
+            "current": {},
+        }
+    }
+
+    resources: Dict[str, Any] = {}
+
+    # Resource Group
+    resources["azurerm_resource_group"] = {
+        tf_name: {
+            "name": name,
+            "location": location,
+            "tags": {**tags, "Environment": name},
+        }
+    }
+
+    # Log Analytics Workspace
+    resources["azurerm_log_analytics_workspace"] = {
+        tf_name: {
+            "name": f"{name}-logs",
+            "location": location,
+            "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+            "sku": "PerGB2018",
+            "retention_in_days": 30,
+            "tags": {**tags, "Environment": name},
+        }
+    }
+
+    # Virtual Network
+    resources["azurerm_virtual_network"] = {
+        tf_name: {
+            "name": f"{name}-vnet",
+            "location": location,
+            "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+            "address_space": [vnet_cidr],
+            "tags": {**tags, "Environment": name},
+        }
+    }
+
+    # Subnet for Container Apps
+    resources["azurerm_subnet"] = {
+        f"{tf_name}_infrastructure": {
+            "name": "infrastructure",
+            "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+            "virtual_network_name": f"${{azurerm_virtual_network.{tf_name}.name}}",
+            "address_prefixes": [_cidrsubnet(vnet_cidr, 5, 0)],  # /21 subnet
+        }
+    }
+
+    # Container Apps Environment
+    resources["azurerm_container_app_environment"] = {
+        tf_name: {
+            "name": f"{name}-env",
+            "location": location,
+            "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+            "log_analytics_workspace_id": f"${{azurerm_log_analytics_workspace.{tf_name}.id}}",
+            "infrastructure_subnet_id": f"${{azurerm_subnet.{tf_name}_infrastructure.id}}",
+            "tags": {**tags, "Environment": name},
+        }
+    }
+
+    # local_file for environment.yml output
+    environment_config = {
+        "target": "azure",
+        "name": name,
+        "region": location,
+        "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+        "container_apps_environment_name": f"${{azurerm_container_app_environment.{tf_name}.name}}",
+        "log_analytics_workspace_id": f"${{azurerm_log_analytics_workspace.{tf_name}.id}}",
+        "vnet_id": f"${{azurerm_virtual_network.{tf_name}.id}}",
+        "infrastructure_subnet_id": f"${{azurerm_subnet.{tf_name}_infrastructure.id}}",
+        "retain_data_on_destroy": retain_data_on_destroy,
+    }
+
+    if tags:
+        environment_config["tags"] = tags
+
+    resources["local_file"] = {
+        f"{tf_name}_environment": {
+            "filename": "${path.module}/environment.yml",
+            "content": json.dumps(environment_config),
+            "file_permission": "0644",
+        }
+    }
+
+    # Outputs
+    outputs: Dict[str, Any] = {
+        "environment": {
+            "description": "Values matching composey's Environment model.",
+            "value": environment_config,
+        },
+    }
+
+    manifest: Dict[str, Any] = {
+        "terraform": terraform,
+        "provider": provider,
+        "data": data_sources,
+        "resource": resources,
+        "output": outputs,
+    }
+
+    return json.dumps(manifest, indent=2)
+
+
+def generate_gcp_environment(
+    name: str,
+    region: str,
+    vpc_cidr: str = "10.0.0.0/16",
+    tags: Optional[Dict[str, str]] = None,
+    retain_data_on_destroy: bool = True,
+) -> str:
+    """
+    Generate Terraform JSON for a shared GCP environment.
+
+    Creates:
+    - VPC Network
+    - Subnet
+    - Cloud Run domain mapping (optional)
+    - Service networking connection for Cloud SQL
+
+    Args:
+        name: Environment name (e.g., "prod", "staging")
+        region: GCP region
+        vpc_cidr: CIDR block for the VPC
+        tags: Default labels applied to all resources (as map)
+        retain_data_on_destroy: Whether destroying the stack preserves data
+
+    Returns:
+        Terraform JSON string for the environment
+    """
+    if tags is None:
+        tags = {}
+
+    # Terraform-safe resource name
+    tf_name = _tf_name(name)
+
+    # Build the Terraform manifest
+    terraform: Dict[str, Any] = {
+        "required_version": ">= 1.5",
+        "required_providers": {
+            "google": {
+                "source": "hashicorp/google",
+                "version": "~> 5.0",
+            },
+            "local": {
+                "source": "hashicorp/local",
+                "version": "~> 2.4",
+            },
+        },
+    }
+
+    provider: Dict[str, Any] = {
+        "google": {
+            "region": region,
+        }
+    }
+
+    resources: Dict[str, Any] = {}
+
+    # VPC Network
+    resources["google_compute_network"] = {
+        tf_name: {
+            "name": f"{name}-vpc",
+            "auto_create_subnetworks": False,
+        }
+    }
+
+    # Subnet
+    resources["google_compute_subnetwork"] = {
+        tf_name: {
+            "name": f"{name}-subnet",
+            "region": region,
+            "network": f"${{google_compute_network.{tf_name}.id}}",
+            "ip_cidr_range": vpc_cidr,
+            "private_ip_google_access": True,
+        }
+    }
+
+    # VPC Connector for Cloud Run (Serverless VPC Access)
+    resources["google_vpc_access_connector"] = {
+        tf_name: {
+            "name": f"{name}-connector",
+            "region": region,
+            "network": f"${{google_compute_network.{tf_name}.id}}",
+            "ip_cidr_range": _cidrsubnet(vpc_cidr, 4, 1),  # /20 subnet from /16
+            "min_throughput": 200,
+            "max_throughput": 400,
+        }
+    }
+
+    # Service networking connection for Cloud SQL
+    resources["google_compute_global_address"] = {
+        f"{tf_name}_service_networking": {
+            "name": f"{name}-service-networking",
+            "purpose": "VPC_PEERING",
+            "address_type": "INTERNAL",
+            "prefix_length": 16,
+            "network": f"${{google_compute_network.{tf_name}.id}}",
+        }
+    }
+
+    resources["google_service_networking_connection"] = {
+        tf_name: {
+            "network": f"${{google_compute_network.{tf_name}.id}}",
+            "service": "servicenetworking.googleapis.com",
+            "reserved_peering_ranges": [
+                f"${{google_compute_global_address.{tf_name}_service_networking.name}}"
+            ],
+        }
+    }
+
+    # local_file for environment.yml output
+    environment_config = {
+        "target": "gcp",
+        "name": name,
+        "region": region,
+        "vpc_id": f"${{google_compute_network.{tf_name}.id}}",
+        "subnet_id": f"${{google_compute_subnetwork.{tf_name}.id}}",
+        "vpc_connector_name": f"${{google_vpc_access_connector.{tf_name}.name}}",
+        "retain_data_on_destroy": retain_data_on_destroy,
+    }
+
+    if tags:
+        environment_config["labels"] = tags
+
+    resources["local_file"] = {
+        f"{tf_name}_environment": {
+            "filename": "${path.module}/environment.yml",
+            "content": json.dumps(environment_config),
+            "file_permission": "0644",
+        }
+    }
+
+    # Outputs
+    outputs: Dict[str, Any] = {
+        "environment": {
+            "description": "Values matching composey's Environment model.",
+            "value": environment_config,
+        },
+    }
+
+    manifest: Dict[str, Any] = {
+        "terraform": terraform,
+        "provider": provider,
+        "resource": resources,
+        "output": outputs,
+    }
+
+    return json.dumps(manifest, indent=2)

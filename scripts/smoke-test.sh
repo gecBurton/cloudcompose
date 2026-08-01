@@ -134,7 +134,7 @@ if [[ "${1:-}" == "--destroy-only" ]]; then
     rm -rf "$BUILD_DIR"   # nothing to destroy from; skip it in cleanup
     echo "  NOTE: no $BUILD_DIR/main.tf.json — skipping the app stack."
     echo "        To destroy it too, first run:"
-    echo "          uv run composey -f \$COMPOSE -e $ENV_DIR/environment.yml -p $PROJECT -o $BUILD_DIR"
+    echo "          uv run composey main -f \$COMPOSE -e $ENV_DIR/environment.yml -p $PROJECT -o $BUILD_DIR"
   fi
 
   exit 0   # the EXIT trap does the actual destroying
@@ -158,7 +158,7 @@ log "Environment up. ALB: $ALB_DNS"
 # --- 2. Compile the app ------------------------------------------------------
 log "Compiling $COMPOSE with composey…"
 cd "$ROOT"
-uv run composey -f "$COMPOSE" -e "$ENV_DIR/environment.yml" -p "$PROJECT" -o "$BUILD_DIR"
+uv run composey main -f "$COMPOSE" -e "$ENV_DIR/environment.yml" -p "$PROJECT" -o "$BUILD_DIR"
 
 # --- 3. Deploy the app -------------------------------------------------------
 log "Deploying app '$PROJECT'…"

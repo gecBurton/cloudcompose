@@ -11,7 +11,11 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from .environment_generator import generate_aws_environment
+from .environment_generator import (
+    generate_aws_environment,
+    generate_azure_environment,
+    generate_gcp_environment,
+)
 from .exceptions import ComposeyError
 
 console = Console()
@@ -38,7 +42,7 @@ def register_init_commands(app: typer.Typer) -> None:
             None,
             "--region",
             "-r",
-            help="Cloud region (default: eu-west-2 for AWS)",
+            help="Cloud region (default: eu-west-2 for AWS, eastus for Azure, us-central1 for GCP)",
         ),
         output: Optional[Path] = typer.Option(
             None,
@@ -49,27 +53,37 @@ def register_init_commands(app: typer.Typer) -> None:
         vpc_cidr: str = typer.Option(
             "10.0.0.0/16",
             "--vpc-cidr",
-            help="CIDR block for the VPC",
+            help="CIDR block for the VPC/VNet",
         ),
         az_count: int = typer.Option(
             2,
             "--az-count",
-            help="Number of availability zones to spread subnets across",
+            help="Number of availability zones (AWS only)",
         ),
         create_alb: bool = typer.Option(
             True,
             "--create-alb/--no-alb",
-            help="Create a shared ALB and listener",
+            help="Create a shared ALB (AWS only)",
         ),
         certificate_arn: Optional[str] = typer.Option(
             None,
             "--certificate-arn",
-            help="ACM certificate ARN for HTTPS listener (HTTP only if not set)",
+            help="ACM certificate ARN for HTTPS (AWS only)",
         ),
         aws_endpoint: Optional[str] = typer.Option(
             None,
             "--aws-endpoint",
             help="Custom endpoint for AWS services (e.g., LocalStack)",
+        ),
+        azure_endpoint: Optional[str] = typer.Option(
+            None,
+            "--azure-endpoint",
+            help="Custom endpoint for Azure services",
+        ),
+        gcp_endpoint: Optional[str] = typer.Option(
+            None,
+            "--gcp-endpoint",
+            help="Custom endpoint for GCP services",
         ),
         retain_data: bool = typer.Option(
             True,
@@ -85,36 +99,42 @@ def register_init_commands(app: typer.Typer) -> None:
         """
         Initialize a shared infrastructure environment.
 
-        Creates the VPC, subnets, ALB, ECS Cluster, and other shared resources
+        Creates the VPC, subnets, ALB/Container Apps Environment, and other shared resources
         that multiple applications can use. This is typically run once by a
         platform team, and then developers deploy apps with `composey up`.
 
         Examples:
 
-            # Create a production environment with defaults
+            # AWS: Create a production environment with defaults
             composey init --name prod
 
-            # Create a staging environment with custom settings
-            composey init --name staging --region us-west-2 --az-count 3
+            # Azure: Create a staging environment
+            composey init --provider azure --name staging --region eastus
 
-            # Create a dev environment without an ALB (compute-only)
-            composey init --name dev --no-alb
+            # GCP: Create a dev environment
+            composey init --provider gcp --name dev --region us-central1
 
-            # Create with HTTPS (requires ACM certificate)
+            # AWS: Create with HTTPS (requires ACM certificate)
             composey init --name prod --certificate-arn arn:aws:acm:...
         """
         # Validate provider
-        supported_providers = ["aws"]  # Azure and GCP coming soon
-        if provider.lower() not in supported_providers:
+        supported_providers = ["aws", "azure", "gcp"]
+        provider_lower = provider.lower()
+        if provider_lower not in supported_providers:
             console.print(
-                f"[bold red]Error:[/] Provider '{provider}' is not yet supported. "
+                f"[bold red]Error:[/] Provider '{provider}' is not supported. "
                 f"Supported: {', '.join(supported_providers)}"
             )
             raise typer.Exit(code=1)
 
         # Set defaults based on provider
         if region is None:
-            region = "eu-west-2"  # Match bootstrap default
+            if provider_lower == "aws":
+                region = "eu-west-2"
+            elif provider_lower == "azure":
+                region = "eastus"
+            elif provider_lower == "gcp":
+                region = "us-central1"
 
         # Determine output directory
         if output is None:
@@ -135,12 +155,13 @@ def register_init_commands(app: typer.Typer) -> None:
         console.print(f"[dim]Region:[/] {region}")
         console.print(f"[dim]Output:[/] {output}")
         console.print(f"[dim]VPC CIDR:[/] {vpc_cidr}")
-        console.print(f"[dim]AZ Count:[/] {az_count}")
-        console.print(f"[dim]Create ALB:[/] {create_alb}")
+        if provider_lower == "aws":
+            console.print(f"[dim]AZ Count:[/] {az_count}")
+            console.print(f"[dim]Create ALB:[/] {create_alb}")
 
         try:
             # Generate Terraform for shared infrastructure
-            if provider.lower() == "aws":
+            if provider_lower == "aws":
                 terraform_json = generate_aws_environment(
                     name=name,
                     region=region,
@@ -152,10 +173,26 @@ def register_init_commands(app: typer.Typer) -> None:
                     tags=parsed_tags,
                     retain_data_on_destroy=retain_data,
                 )
+            elif provider_lower == "azure":
+                terraform_json = generate_azure_environment(
+                    name=name,
+                    location=region,
+                    vnet_cidr=vpc_cidr,
+                    tags=parsed_tags,
+                    retain_data_on_destroy=retain_data,
+                )
+            elif provider_lower == "gcp":
+                terraform_json = generate_gcp_environment(
+                    name=name,
+                    region=region,
+                    vpc_cidr=vpc_cidr,
+                    tags=parsed_tags,
+                    retain_data_on_destroy=retain_data,
+                )
             else:
                 raise ComposeyError(
                     f"Provider '{provider}' generation not implemented",
-                    details="Only AWS is currently supported for environment initialization.",
+                    details="This provider is not yet supported for environment initialization.",
                 )
 
             # Create output directory

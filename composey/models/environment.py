@@ -135,11 +135,61 @@ class AzureEnvironment(BaseEnvironment):
     )
 
 
+class GcpEnvironment(BaseEnvironment):
+    """
+    Target context for GCP: Cloud Run, VPC, and Cloud SQL configuration.
+    """
+
+    target: Literal["gcp"] = "gcp"
+    region: str = Field(default="us-central1", description="The GCP region")
+    project_id: str = Field(description="The GCP project ID")
+
+    # VPC Configuration
+    vpc_id: Optional[str] = Field(
+        default=None,
+        description="VPC ID for Cloud Run VPC access (optional - uses default if not set)",
+    )
+    subnet_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Subnet IDs for VPC connector (optional)",
+    )
+
+    # Cloud SQL (optional - creates new if not provided)
+    cloud_sql_instance_id: Optional[str] = Field(
+        default=None,
+        description="Existing Cloud SQL instance ID (creates new if not set)",
+    )
+
+    # Artifact Registry (optional)
+    artifact_registry_repository: Optional[str] = Field(
+        default=None,
+        description="Artifact Registry repository name for built images",
+    )
+
+    # Load Balancer / Cloud CDN (optional)
+    load_balancer_ip: Optional[str] = Field(
+        default=None,
+        description="Existing global static IP for load balancer (creates new if not set)",
+    )
+
+    # Service Account (optional - uses default compute service account if not set)
+    service_account_email: Optional[str] = Field(
+        default=None,
+        description="Service account email for Cloud Run (uses default if not set)",
+    )
+
+    gcp_endpoint: Optional[str] = Field(
+        default=None,
+        description="Optional custom endpoint for GCP APIs (e.g., for testing)",
+    )
+
+
 # Every supported compilation target, keyed by the `target` field of its
 # environment file. Adding a cloud means adding an entry here.
 TARGETS: Dict[str, Type[BaseEnvironment]] = {
     "aws": AwsEnvironment,
     "azure": AzureEnvironment,
+    "gcp": GcpEnvironment,
 }
 DEFAULT_TARGET = "aws"
 

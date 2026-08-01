@@ -15,7 +15,9 @@ class TestInitCommand:
     def test_init_requires_name(self):
         result = runner.invoke(app, ["init"])
         assert result.exit_code != 0
-        assert "--name" in result.output or "required" in result.output.lower()
+        # Check for error message (with or without ANSI color codes)
+        output = result.output.replace("\x1b[", "").lower()
+        assert "--name" in output or "required" in output or "missing" in output
 
     def test_init_with_name_creates_files(self, tmp_path):
         output_dir = tmp_path / "prod-infrastructure"

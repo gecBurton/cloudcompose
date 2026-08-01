@@ -8,6 +8,7 @@ import typer
 from importlib.metadata import version
 from rich.console import Console
 
+from .cli_env import register_init_commands
 from .compiler import compile_application
 from .compiler.explain import explain, render
 from .compiler.normalizer import normalize
@@ -19,6 +20,9 @@ app = typer.Typer(
     help="Docker Compose to Terraform compiler for a PaaS-like experience on AWS.",
 )
 console = Console()
+
+# Register environment initialization commands
+register_init_commands(app)
 
 
 def _get_version() -> str:

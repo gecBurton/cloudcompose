@@ -50,6 +50,32 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose-v2
 
+      - name: Install Azure CLI
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+      - name: Register Azure Resource Providers
+        env:
+          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          # Login with service principal
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+          
+          # Register required resource providers
+          echo "Registering required Azure resource providers..."
+          az provider register --namespace Microsoft.OperationalInsights --wait
+          az provider register --namespace Microsoft.ContainerInstance --wait
+          az provider register --namespace Microsoft.App --wait
+          az provider register --namespace Microsoft.Network --wait
+          echo "Resource providers registered."
+
       - name: Smoke test ${{ inputs.example }}
         env:
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
@@ -58,8 +84,6 @@ jobs:
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          # Disable resource provider registration (SP doesn't have permission)
-          ARM_RESOURCE_PROVIDER_REGISTRATIONS: none
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
           STATE_LOCATION: eastus

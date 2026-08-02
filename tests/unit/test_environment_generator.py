@@ -427,11 +427,29 @@ class TestGenerateAzureEnvironment:
             "target",
             "name",
             "region",
-            "resource_group_name",
             "container_apps_environment_name",
         ]
         for field in required_fields:
             assert field in env_output, f"Missing field: {field}"
+
+    def test_generated_environment_validates_against_model(self):
+        """
+        The generated environment.yml is fed straight back into AzureEnvironment,
+        which forbids extra keys. Without this, a stray key only surfaces after a
+        real Azure apply.
+        """
+        from composey.environment_generator import generate_azure_environment
+        from composey.models.environment import AzureEnvironment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        env_output = dict(parsed["output"]["environment"]["value"])
+        # Terraform interpolations are resolved at apply time; stand in for them.
+        for key, value in env_output.items():
+            if isinstance(value, str) and value.startswith("${"):
+                env_output[key] = f"resolved-{key}"
+
+        AzureEnvironment.model_validate(env_output)
 
     def test_target_is_azure(self):
         from composey.environment_generator import generate_azure_environment

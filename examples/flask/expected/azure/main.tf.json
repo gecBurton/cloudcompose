@@ -33,8 +33,8 @@
         "name": "prod-env",
         "resource_group_name": "prod",
         "location": "eastus",
-        "log_analytics_workspace_id": "/subscriptions/123/workspaces/prod",
-        "infrastructure_subnet_id": "/subscriptions/123/subnets/prod",
+        "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
+        "infrastructure_subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure",
         "internal_load_balancer_enabled": false
       }
     },
@@ -45,14 +45,12 @@
         "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
-          "containers": [
+          "container": [
             {
               "name": "backend",
               "image": "prodacr.azurecr.io/backend:latest",
-              "resources": {
-                "cpu": 0.25,
-                "memory": "0.5Gi"
-              },
+              "cpu": 0.25,
+              "memory": "0.5Gi",
               "args": [
                 "npm",
                 "run",
@@ -86,21 +84,14 @@
               ]
             }
           ],
-          "scale": {
-            "min_replicas": 1,
-            "max_replicas": 1,
-            "rules": [
-              {
-                "name": "http-default",
-                "custom": {
-                  "type": "http",
-                  "metadata": {
-                    "concurrentRequests": "100"
-                  }
-                }
-              }
-            ]
-          }
+          "min_replicas": 1,
+          "max_replicas": 1,
+          "http_scale_rule": [
+            {
+              "name": "http-default",
+              "concurrent_requests": "100"
+            }
+          ]
         },
         "ingress": {
           "external_enabled": true,
@@ -127,21 +118,17 @@
         "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
-          "containers": [
+          "container": [
             {
               "name": "frontend",
               "image": "prodacr.azurecr.io/frontend:latest",
-              "resources": {
-                "cpu": 0.25,
-                "memory": "0.5Gi"
-              },
+              "cpu": 0.25,
+              "memory": "0.5Gi",
               "env": []
             }
           ],
-          "scale": {
-            "min_replicas": 1,
-            "max_replicas": 1
-          }
+          "min_replicas": 1,
+          "max_replicas": 1
         },
         "identity": {
           "type": "SystemAssigned"
@@ -173,7 +160,7 @@
         "storage_mb": 32768,
         "administrator_login": "composey",
         "administrator_password": "${random_password.postgres_admin.result}",
-        "delegated_subnet_id": "/subscriptions/123/subnets/prod",
+        "delegated_subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure",
         "public_network_access_enabled": false
       }
     },

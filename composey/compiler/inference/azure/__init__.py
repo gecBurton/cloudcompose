@@ -404,14 +404,13 @@ def _infer_container_apps(
         if service.ingress and min_replicas == 0:
             min_replicas = 1
 
-        # Build container spec
+        # Build container spec. cpu and memory sit directly on the container;
+        # azurerm has no nested "resources" block.
         container_spec = {
             "name": service.name,
             "image": _get_container_image(service, env),
-            "resources": {
-                "cpu": _get_cpu_cores(service),
-                "memory": _get_memory_gb(service),
-            },
+            "cpu": _get_cpu_cores(service),
+            "memory": _get_memory_gb(service),
         }
 
         if service.command:
@@ -451,49 +450,36 @@ def _infer_container_apps(
                 },
             }
 
-        # Build scale rules
-        scale_rules = []
+        # Build scale rules. azurerm models HTTP scaling as its own
+        # http_scale_rule block with a concurrent_requests string, not as a
+        # generic custom rule.
+        http_scale_rules = []
         if service.auto_scaling and service.auto_scaling.metrics:
             for metric in service.auto_scaling.metrics:
                 if metric.type == "http" or metric.type == "requests_per_target":
-                    # HTTP scaling rule
-                    scale_rules.append(
+                    http_scale_rules.append(
                         {
                             "name": "http-rule",
-                            "custom": {
-                                "type": "http",
-                                "metadata": {
-                                    "concurrentRequests": str(int(metric.target_value)),
-                                },
-                            },
+                            "concurrent_requests": str(int(metric.target_value)),
                         }
                     )
 
         # If no HTTP rule but has ingress, add default HTTP scaling
-        if service.ingress and not any(
-            r["custom"]["type"] == "http" for r in scale_rules
-        ):
-            scale_rules.append(
-                {
-                    "name": "http-default",
-                    "custom": {
-                        "type": "http",
-                        "metadata": {"concurrentRequests": "100"},
-                    },
-                }
+        if service.ingress and not http_scale_rules:
+            http_scale_rules.append(
+                {"name": "http-default", "concurrent_requests": "100"}
             )
 
-        # Build template
+        # Build template. Replica counts live directly on the template; there is
+        # no "scale" block in the provider schema.
         template = {
-            "containers": [container_spec],
-            "scale": {
-                "min_replicas": min_replicas,
-                "max_replicas": max_replicas,
-            },
+            "container": [container_spec],
+            "min_replicas": min_replicas,
+            "max_replicas": max_replicas,
         }
 
-        if scale_rules:
-            template["scale"]["rules"] = scale_rules
+        if http_scale_rules:
+            template["http_scale_rule"] = http_scale_rules
 
         # Identity config
         identity_config = None

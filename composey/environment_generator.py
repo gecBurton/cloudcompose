@@ -608,6 +608,21 @@ def generate_azure_environment(
             "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
             "virtual_network_name": f"${{azurerm_virtual_network.{tf_name}.name}}",
             "address_prefixes": [_cidrsubnet(vnet_cidr, 5, 0)],  # /21 subnet
+            # Container Apps refuses to build an environment on an undelegated
+            # subnet: ManagedEnvironmentSubnetDelegationError.
+            "delegation": [
+                {
+                    "name": "container-apps",
+                    "service_delegation": [
+                        {
+                            "name": "Microsoft.App/environments",
+                            "actions": [
+                                "Microsoft.Network/virtualNetworks/subnets/join/action"
+                            ],
+                        }
+                    ],
+                }
+            ],
         }
     }
 

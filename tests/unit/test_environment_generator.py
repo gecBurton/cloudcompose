@@ -401,6 +401,15 @@ class TestGenerateAzureEnvironment:
         parsed = json.loads(result)
         assert "azurerm_subnet" in parsed["resource"]
 
+    def test_subnet_is_delegated_to_container_apps(self):
+        from composey.environment_generator import generate_azure_environment
+
+        result = generate_azure_environment("prod", "eastus")
+        parsed = json.loads(result)
+        subnet = parsed["resource"]["azurerm_subnet"]["prod_infrastructure"]
+        delegation = subnet["delegation"][0]["service_delegation"][0]
+        assert delegation["name"] == "Microsoft.App/environments"
+
     def test_creates_container_app_environment(self):
         from composey.environment_generator import generate_azure_environment
 

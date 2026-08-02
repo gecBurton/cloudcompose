@@ -554,6 +554,21 @@ def generate_azure_environment(
 
     resources: Dict[str, Any] = {}
 
+    # Register required Azure Resource Providers
+    # This ensures namespaces are registered before creating resources
+    resources["null_resource"] = {
+        f"{tf_name}_register_providers": {
+            "provisioner": [
+                {
+                    "local-exec": {
+                        "command": "az provider register --namespace Microsoft.OperationalInsights --wait && az provider register --namespace Microsoft.ContainerInstance --wait && az provider register --namespace Microsoft.App --wait && az provider register --namespace Microsoft.Network --wait",
+                        "interpreter": ["/bin/sh", "-c"],
+                    }
+                }
+            ],
+        }
+    }
+
     # Resource Group
     resources["azurerm_resource_group"] = {
         tf_name: {

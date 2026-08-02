@@ -36,6 +36,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Azure Login (OIDC)
+        id: azure-login
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -66,6 +67,9 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           ARM_USE_OIDC: true
+          # OIDC token from GitHub for Terraform
+          ARM_OIDC_REQUEST_TOKEN: ${{ github.token }}
+          ARM_OIDC_REQUEST_URL: ${{ github.event.repository.html_url }}/oidc/token
           # Disable resource provider registration (SP doesn't have permission)
           ARM_RESOURCE_PROVIDER_REGISTRATIONS: none
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed

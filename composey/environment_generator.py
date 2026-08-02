@@ -543,7 +543,6 @@ def generate_azure_environment(
     provider: Dict[str, Any] = {
         "azurerm": {
             "features": {},
-            "resource_provider_registrations": "none",
         }
     }
 

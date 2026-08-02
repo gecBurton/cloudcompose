@@ -50,6 +50,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose-v2
 
+      - name: Install Azure CLI
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
       - name: Register Azure Resource Providers
         env:
           ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}

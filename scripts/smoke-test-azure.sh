@@ -39,6 +39,18 @@ TF="terraform"
 log()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\n\033[1;31mFAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# --- Azure authentication ----------------------------------------------------
+# Terraform's own credential discovery is left alone deliberately. In CI the
+# ARM_CLIENT_ID/SECRET/TENANT_ID environment variables authenticate as the
+# service principal; on a developer machine none are set and Terraform falls
+# back to `az login`.
+#
+# Do not force ARM_USE_CLI=true here. The azurerm *backend* rejects a CLI
+# session owned by a service principal outright ("Authenticating using the
+# Azure CLI is only supported as a User"), even though the provider tolerates
+# it — so forcing CLI auth breaks remote state in CI while appearing to work
+# locally.
+
 # --- Remote state ------------------------------------------------------------
 # State on a CI runner is ephemeral. When STATE_RG is set we use an Azure Blob
 # Storage backend so a leaked run stays destroyable from any machine.
@@ -91,11 +103,6 @@ cleanup() {
   log "Tearing down (exit status $status)…"
   local leaked=0
   
-  # Ensure we use Azure CLI auth for teardown
-  export ARM_USE_CLI=true
-  export ARM_USE_MSI=false
-  unset ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID 2>/dev/null || true
-  
   if [[ -d "$BUILD_DIR" ]]; then
     (cd "$BUILD_DIR" && eval "$TF destroy -auto-approve") \
       || { leaked=1; echo "WARNING: app destroy failed — CHECK THE CONSOLE for orphaned resources."; }
@@ -140,11 +147,6 @@ uv run composey init --provider azure --name "$NAME" --region "$STATE_LOCATION" 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"
 
-# Ensure we use Azure CLI auth, not SP env vars
-export ARM_USE_CLI=true
-export ARM_USE_MSI=false
-unset ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID 2>/dev/null || true
-
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"
 
@@ -160,11 +162,6 @@ uv run composey main -f "$COMPOSE" -e "$ENV_DIR/environment.yml" -p "$PROJECT" -
 log "Deploying app '$PROJECT' to Azure…"
 write_backend "$BUILD_DIR" "acceptance/$NAME/$PROJECT.tfstate"
 cd "$BUILD_DIR"
-
-# Ensure we use Azure CLI auth, not SP env vars
-export ARM_USE_CLI=true
-export ARM_USE_MSI=false
-unset ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID 2>/dev/null || true
 
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"

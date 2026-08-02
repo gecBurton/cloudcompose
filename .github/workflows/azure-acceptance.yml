@@ -18,9 +18,7 @@ on:
           - nginx-flask-mysql
 
 permissions:
-  id-token: write   # required for OIDC federation to Azure
   contents: read
-  actions: read
 
 # Never run two acceptance jobs at once: they share the bootstrap environment
 # name space and would tear down each other's resources.
@@ -35,19 +33,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
-
-      - name: Azure Login (OIDC)
-        id: azure-login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Verify Azure CLI login
-        run: |
-          az account show
-          echo "Azure CLI is authenticated"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v4
@@ -68,8 +53,11 @@ jobs:
       - name: Smoke test ${{ inputs.example }}
         env:
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
-          # Azure CLI should be authenticated from azure/login step
-          # Terraform will use Azure CLI credentials automatically
+          # Azure authentication for Terraform (Service Principal with Client Secret)
+          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           # Disable resource provider registration (SP doesn't have permission)
           ARM_RESOURCE_PROVIDER_REGISTRATIONS: none
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed

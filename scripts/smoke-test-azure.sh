@@ -72,6 +72,11 @@ cleanup() {
 
   log "Tearing down (exit status $status)…"
   local leaked=0
+  
+  # Ensure Terraform uses Azure CLI authentication for teardown
+  export ARM_USE_CLI=true
+  export ARM_USE_OIDC=false
+  
   if [[ -d "$BUILD_DIR" ]]; then
     (cd "$BUILD_DIR" && eval "$TF destroy -auto-approve") \
       || { leaked=1; echo "WARNING: app destroy failed — CHECK THE CONSOLE for orphaned resources."; }
@@ -115,6 +120,11 @@ uv run composey init --provider azure --name "$NAME" --region "$STATE_LOCATION" 
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"
+
+# Ensure Terraform uses Azure CLI authentication
+export ARM_USE_CLI=true
+export ARM_USE_OIDC=false
+
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"
 
@@ -130,6 +140,11 @@ uv run composey main -f "$COMPOSE" -e "$ENV_DIR/environment.yml" -p "$PROJECT" -
 log "Deploying app '$PROJECT' to Azure…"
 write_backend "$BUILD_DIR" "acceptance/$NAME/$PROJECT.tfstate"
 cd "$BUILD_DIR"
+
+# Ensure Terraform uses Azure CLI authentication
+export ARM_USE_CLI=true
+export ARM_USE_OIDC=false
+
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"
 

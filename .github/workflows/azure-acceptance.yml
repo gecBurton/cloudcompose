@@ -44,6 +44,11 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Verify Azure CLI login
+        run: |
+          az account show
+          echo "Azure CLI is authenticated"
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -60,22 +65,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose-v2
 
-      - name: Get OIDC Token for Terraform
-        id: oidc-token
-        run: |
-          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')
-          echo "oidc-token=$TOKEN" >> $GITHUB_OUTPUT
-        
       - name: Smoke test ${{ inputs.example }}
         env:
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
-          # Azure authentication for Terraform via OIDC
-          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          ARM_USE_OIDC: true
-          ARM_OIDC_TOKEN: ${{ steps.oidc-token.outputs.oidc-token }}
+          # Azure CLI should be authenticated from azure/login step
+          # Terraform will use Azure CLI credentials automatically
           # Disable resource provider registration (SP doesn't have permission)
           ARM_RESOURCE_PROVIDER_REGISTRATIONS: none
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed

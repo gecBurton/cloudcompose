@@ -1,0 +1,53 @@
+name: Azure Auth Test 2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.10.0"
+          terraform_wrapper: false
+
+      - name: Test Terraform Azure auth with tfvars
+        run: |
+          # Write credentials to terraform.tfvars (sensitive, but for testing)
+          cat > terraform.tfvars <<EOF
+          client_id       = "${{ vars.AZURE_CLIENT_ID }}"
+          client_secret   = "${{ secrets.AZURE_CLIENT_SECRET }}"
+          tenant_id       = "${{ vars.AZURE_TENANT_ID }}"
+          subscription_id = "${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          EOF
+          
+          cat > main.tf <<'EOF'
+          variable "client_id" {}
+          variable "client_secret" {}
+          variable "tenant_id" {}
+          variable "subscription_id" {}
+          
+          provider "azurerm" {
+            features {}
+            client_id       = var.client_id
+            client_secret   = var.client_secret
+            tenant_id       = var.tenant_id
+            subscription_id = var.subscription_id
+          }
+          
+          data "azurerm_client_config" "current" {}
+          
+          output "subscription_id" {
+            value = data.azurerm_client_config.current.subscription_id
+          }
+          EOF
+          
+          terraform init
+          terraform apply -auto-approve

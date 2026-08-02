@@ -20,6 +20,7 @@ on:
 permissions:
   id-token: write   # required for OIDC federation to Azure
   contents: read
+  actions: read
 
 # Never run two acceptance jobs at once: they share the bootstrap environment
 # name space and would tear down each other's resources.
@@ -59,17 +60,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose-v2
 
+      - name: Get OIDC Token for Terraform
+        id: oidc-token
+        run: |
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')
+          echo "oidc-token=$TOKEN" >> $GITHUB_OUTPUT
+        
       - name: Smoke test ${{ inputs.example }}
         env:
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
-          # Azure authentication for Terraform
+          # Azure authentication for Terraform via OIDC
           ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           ARM_USE_OIDC: true
-          # OIDC token from GitHub for Terraform
-          ARM_OIDC_REQUEST_TOKEN: ${{ github.token }}
-          ARM_OIDC_REQUEST_URL: ${{ github.event.repository.html_url }}/oidc/token
+          ARM_OIDC_TOKEN: ${{ steps.oidc-token.outputs.oidc-token }}
           # Disable resource provider registration (SP doesn't have permission)
           ARM_RESOURCE_PROVIDER_REGISTRATIONS: none
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed

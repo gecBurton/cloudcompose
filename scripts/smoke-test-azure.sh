@@ -73,6 +73,11 @@ cleanup() {
   log "Tearing down (exit status $status)…"
   local leaked=0
   
+  # Ensure we use Azure CLI auth for teardown
+  export ARM_USE_CLI=true
+  export ARM_USE_MSI=false
+  unset ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID 2>/dev/null || true
+  
   if [[ -d "$BUILD_DIR" ]]; then
     (cd "$BUILD_DIR" && eval "$TF destroy -auto-approve") \
       || { leaked=1; echo "WARNING: app destroy failed — CHECK THE CONSOLE for orphaned resources."; }
@@ -117,6 +122,11 @@ uv run composey init --provider azure --name "$NAME" --region "$STATE_LOCATION" 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"
 
+# Ensure we use Azure CLI auth, not SP env vars
+export ARM_USE_CLI=true
+export ARM_USE_MSI=false
+unset ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID 2>/dev/null || true
+
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"
 
@@ -132,6 +142,11 @@ uv run composey main -f "$COMPOSE" -e "$ENV_DIR/environment.yml" -p "$PROJECT" -
 log "Deploying app '$PROJECT' to Azure…"
 write_backend "$BUILD_DIR" "acceptance/$NAME/$PROJECT.tfstate"
 cd "$BUILD_DIR"
+
+# Ensure we use Azure CLI auth, not SP env vars
+export ARM_USE_CLI=true
+export ARM_USE_MSI=false
+unset ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID 2>/dev/null || true
 
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"

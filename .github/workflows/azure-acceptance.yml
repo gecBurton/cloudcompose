@@ -1,0 +1,85 @@
+name: Azure Acceptance
+
+# On-demand real-Azure smoke test: deploys an example end to end, asserts it, and
+# always tears it down. Runs in CI (stable networking) rather than on a laptop.
+# Requires Azure credentials configured as GitHub secrets (see ci/README.md).
+on:
+  workflow_dispatch:
+    inputs:
+      example:
+        description: Example to smoke test
+        type: choice
+        default: hello
+        options:
+          - hello
+          - flask
+          - flask-redis
+          - flask-s3
+          - nginx-flask-mysql
+
+permissions:
+  id-token: write   # required for OIDC federation to Azure
+  contents: read
+
+# Never run two acceptance jobs at once: they share the bootstrap environment
+# name space and would tear down each other's resources.
+concurrency:
+  group: azure-acceptance
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    # Bound the blast radius of a hang.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.10.0"
+          terraform_wrapper: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-v2
+
+      - name: Smoke test ${{ inputs.example }}
+        env:
+          NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
+          # Keeps Terraform state in Azure so a cancelled run can still be destroyed
+          STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
+          STATE_LOCATION: eastus
+        run: |
+          case "${{ inputs.example }}" in
+            hello)
+              export COMPOSE=examples/hello/compose.yml PROJECT=hello \
+                     EXPECT="Server name" ;;
+            flask)
+              export COMPOSE=examples/flask/compose.yml PROJECT=flask \
+                     EXPECT="Hello from Flask" ;;
+            flask-redis)
+              export COMPOSE=examples/flask-redis/compose.yml PROJECT=flaskredis \
+                     EXPECT="Hello from Flask" ;;
+            flask-s3)
+              export COMPOSE=examples/flask-s3/compose.yml PROJECT=flasks3 \
+                     EXPECT="Hello from Flask" ;;
+            nginx-flask-mysql)
+              export COMPOSE=examples/nginx-flask-mysql/compose.yml PROJECT=nginxflask \
+                     EXPECT="Welcome" POLL_TIMEOUT=480 ;;
+          esac
+          scripts/smoke-test-azure.sh

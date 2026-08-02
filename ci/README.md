@@ -80,3 +80,68 @@ same compose file and project name; the command prints the exact invocation.
 ```bash
 cd ci && aws-vault exec personal -- terraform destroy
 ```
+
+---
+
+# CI acceptance role (GitHub OIDC → Azure)
+
+Similar setup for the **Azure Acceptance** workflow (`.github/workflows/azure-acceptance.yml`).
+
+## Prerequisites
+
+- Azure CLI installed and logged in: `az login`
+- An Azure subscription
+
+## Create Azure Service Principal for OIDC
+
+```bash
+# Create a resource group for CI resources
+az group create --name composey-acceptance --location eastus
+
+# Create a service principal for GitHub Actions
+az ad sp create-for-rbac \
+  --name "composey-acceptance-ci" \
+  --role "Contributor" \
+  --scopes /subscriptions/{subscription-id}/resourceGroups/composey-acceptance
+```
+
+## Configure Federated Credentials (OIDC)
+
+In Azure Portal:
+1. Go to **Azure AD → App registrations → composey-acceptance-ci**
+2. **Certificates & secrets → Federated credentials**
+3. Add credential:
+   - **Scenario**: GitHub Actions deploying Azure resources
+   - **Organization**: gecBurton
+   - **Repository**: composey
+   - **Entity type**: Branch
+   - **Branch**: main (and/or pull_request)
+
+## Wire it into GitHub
+
+Repo → **Settings → Secrets and variables → Actions → Variables**, add:
+
+| Name | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | Service principal app ID |
+| `AZURE_TENANT_ID` | Azure AD tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_STATE_RESOURCE_GROUP` | `composey-acceptance` (or your RG name) |
+
+## Run
+
+Repo → **Actions → Azure Acceptance → Run workflow** → choose an example.
+
+## Recovering a leaked run
+
+```bash
+STATE_RG=composey-acceptance NAME=ci42 PROJECT=hello \
+  az login && scripts/smoke-test-azure.sh --destroy-only
+```
+
+## Teardown
+
+```bash
+az group delete --name composey-acceptance --yes
+az ad sp delete --id <service-principal-app-id>
+```

@@ -1,0 +1,59 @@
+name: Azure Auth Test 4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Azure CLI
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+      - name: Get access token and test Terraform
+        env:
+          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          # Login and check role assignment
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          
+          echo "=== Checking role assignment ==="
+          az role assignment list --assignee "$ARM_CLIENT_ID" --all
+          
+          # Get access token
+          echo "=== Getting access token ==="
+          ACCESS_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
+          echo "Token obtained (first 20 chars): ${ACCESS_TOKEN:0:20}..."
+          
+          # Test with ARM_ACCESS_TOKEN
+          export ARM_ACCESS_TOKEN="$ACCESS_TOKEN"
+          export ARM_SUBSCRIPTION_ID="$ARM_SUBSCRIPTION_ID"
+          
+          cat > main.tf <<'TFCODE'
+          provider "azurerm" {
+            features {}
+            use_msi = false
+            use_cli = false
+          }
+          
+          data "azurerm_client_config" "current" {}
+          
+          output "subscription_id" {
+            value = data.azurerm_client_config.current.subscription_id
+          }
+          TFCODE
+          
+          terraform init
+          terraform apply -auto-approve

@@ -93,6 +93,7 @@ jobs:
           ARM_TENANT_ID: ""
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
+          STATE_ACCOUNT: ${{ vars.AZURE_STATE_ACCOUNT }}
           STATE_LOCATION: eastus
         run: |
           case "${{ inputs.example }}" in

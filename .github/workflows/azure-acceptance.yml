@@ -61,6 +61,11 @@ jobs:
       - name: Smoke test ${{ inputs.example }}
         env:
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
+          # Azure authentication for Terraform
+          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          ARM_USE_OIDC: true
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
           STATE_LOCATION: eastus

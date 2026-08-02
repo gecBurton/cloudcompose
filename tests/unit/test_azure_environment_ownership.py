@@ -57,7 +57,9 @@ def test_app_stack_does_not_manage_the_container_apps_environment():
 
 def test_container_apps_environment_is_referenced_as_a_data_source(tmp_path):
     compose = tmp_path / "compose.yml"
-    compose.write_text("services:\n  web:\n    image: nginx\n    ports:\n      - '80'\n")
+    compose.write_text(
+        "services:\n  web:\n    image: nginx\n    ports:\n      - '80'\n"
+    )
 
     parsed = json.loads(compile_to_terraform(str(compose), _env(), "myapp"))
 

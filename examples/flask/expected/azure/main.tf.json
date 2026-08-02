@@ -104,7 +104,7 @@
         "registry": [
           {
             "server": "prodacr.azurecr.io",
-            "identity": "${azurerm_container_app.main.identity[0].principal_id}"
+            "identity": "System"
           }
         ]
       },
@@ -132,7 +132,7 @@
         "registry": [
           {
             "server": "prodacr.azurecr.io",
-            "identity": "${azurerm_container_app.main.identity[0].principal_id}"
+            "identity": "System"
           }
         ]
       }

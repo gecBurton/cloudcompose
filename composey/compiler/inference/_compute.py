@@ -341,8 +341,7 @@ def _handle_secrets(
     exec_role_key: str,
 ) -> list[dict]:
     """Handle compose secrets and create Secrets Manager resources."""
-    from composey.constants import IAM_POLICY_VERSION
-    from composey.constants import SECRETS_PLACEHOLDER_VALUE
+    from composey.constants import IAM_POLICY_VERSION, SECRETS_PLACEHOLDER_VALUE
 
     container_secrets = []
 
@@ -402,8 +401,7 @@ def _handle_platform_config(
     container_secrets: list[dict],
 ) -> None:
     """Handle platform-supplied configuration (env vars not valued in compose file)."""
-    from composey.constants import IAM_POLICY_VERSION
-    from composey.constants import SECRETS_PLACEHOLDER_VALUE
+    from composey.constants import IAM_POLICY_VERSION, SECRETS_PLACEHOLDER_VALUE
 
     if not service.config:
         return

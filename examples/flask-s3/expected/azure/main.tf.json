@@ -99,7 +99,7 @@
     },
     "azurerm_storage_account": {
       "blobs_storage": {
-        "name": "prod-flask-s3-blobs",
+        "name": "prodflasks3blobs",
         "resource_group_name": "prod",
         "location": "eastus",
         "account_tier": "Standard",

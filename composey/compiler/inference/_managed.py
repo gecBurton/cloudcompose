@@ -8,9 +8,9 @@ import json
 from typing import Callable
 
 from composey.constants import (
+    CACHE_NODE_TYPES,
     DATABASE_DEFAULT_USERNAME,
     DB_INSTANCE_CLASSES,
-    CACHE_NODE_TYPES,
     DefaultPorts,
 )
 from composey.models.aws import (

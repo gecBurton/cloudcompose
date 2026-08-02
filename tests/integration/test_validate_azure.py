@@ -26,28 +26,9 @@ AZURE_EXAMPLES = [
     "nginx-flask-mysql",
 ]
 
-# Examples whose generated names break Azure's per-resource naming rules. These
-# are real compiler bugs, not test scaffolding: Azure constrains each resource
-# type differently and the compiler applies ad-hoc fixups per call site.
-#
-#   flask              azurerm_container_registry allows alphanumerics only,
-#                      but get_name() keeps the dashes.
-#   flask-s3           azurerm_storage_account allows lowercase alphanumerics
-#                      only, 3-24 chars; dashes survive here too.
-#   nginx-flask-mysql  azurerm_key_vault is capped at 24 chars and
-#                      "prod-nginx-flask-mysql-kv" is 25.
-NAMING_BUGS = {
-    "flask": "container registry name keeps dashes (alphanumeric only)",
-    "flask-s3": "storage account name keeps dashes (lowercase alphanumeric only)",
-    "nginx-flask-mysql": "key vault name exceeds the 24-character limit",
-}
-
 
 @pytest.mark.parametrize("example_name", AZURE_EXAMPLES)
 def test_terraform_validate_azure(example_name, terraform_base, mock_azure_prod_env):
-    if example_name in NAMING_BUGS:
-        pytest.xfail(NAMING_BUGS[example_name])
-
     root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     compose_path = os.path.join(root_dir, "examples", example_name, "compose.yml")
 

@@ -7,6 +7,11 @@ module makes opinionated choices that fit Azure's model.
 
 from typing import Callable
 
+from composey.compiler.inference.azure.naming import (
+    container_registry_name,
+    key_vault_name,
+    storage_account_name,
+)
 from composey.models.aws import RandomPassword
 from composey.models.azure import (
     AzureResources,
@@ -111,7 +116,7 @@ def _infer_key_vault(
     """Create Key Vault for secrets."""
     kv_key = "main"
     resources.azurerm_key_vault[kv_key] = KeyVault(
-        name=get_name("kv").replace("_", "-"),
+        name=key_vault_name(env.name, app.name),
         resource_group_name=env.name,
         location=env.region,
         tenant_id="${data.azurerm_client_config.current.tenant_id}",
@@ -134,7 +139,9 @@ def _infer_container_registry(
     if not needs_registry:
         return
 
-    registry_name = env.container_registry_name or get_name("acr").replace("_", "")
+    registry_name = env.container_registry_name or container_registry_name(
+        env.name, app.name
+    )
 
     resources.azurerm_container_registry["main"] = ContainerRegistry(
         name=registry_name,
@@ -330,7 +337,7 @@ def _infer_storage(
     for service in storage_services:
         # Create storage account
         account_key = f"{service.name}_storage"
-        account_name = get_name(service.name).replace("_", "").lower()[:24]
+        account_name = storage_account_name(env.name, app.name, service.name)
 
         resources.azurerm_storage_account[account_key] = StorageAccount(
             name=account_name,
@@ -389,7 +396,7 @@ def _infer_container_apps(
         # azurerm has no nested "resources" block.
         container_spec = {
             "name": service.name,
-            "image": _get_container_image(service, env),
+            "image": _get_container_image(service, app, env),
             "cpu": _get_cpu_cores(service),
             "memory": _get_memory_gb(service),
         }
@@ -473,15 +480,22 @@ def _infer_container_apps(
             # Use system-assigned identity
             identity_config = {"type": "SystemAssigned"}
 
-        # Registry config
+        # Registry config. The server has to be the registry that actually gets
+        # created, which is not always the one named on the environment.
+        #
+        # "System" is the literal the provider expects for a system-assigned
+        # identity. Naming the app's own principal_id here instead was a
+        # self-reference — the container app cannot depend on itself, and it
+        # only pointed at an undeclared azurerm_container_app.main anyway.
         registry_config = None
-        if service.build_context and env.container_registry_name:
+        if service.build_context:
+            registry = env.container_registry_name or container_registry_name(
+                env.name, app.name
+            )
             registry_config = [
                 {
-                    "server": f"{env.container_registry_name}.azurecr.io",
-                    "identity": "${azurerm_container_app.main.identity[0].principal_id}"
-                    if not identity_id
-                    else identity_id,
+                    "server": f"{registry}.azurecr.io",
+                    "identity": identity_id or "System",
                 }
             ]
 
@@ -497,11 +511,14 @@ def _infer_container_apps(
         )
 
 
-def _get_container_image(service, env: AzureEnvironment) -> str:
+def _get_container_image(service, app: SemanticApp, env: AzureEnvironment) -> str:
     """Get the container image reference."""
     if service.build_context:
-        # Image from ACR
-        registry = env.container_registry_name or f"{env.name}{env.name}acr"
+        # Must resolve to the registry _infer_container_registry creates, so
+        # both go through the same naming function.
+        registry = env.container_registry_name or container_registry_name(
+            env.name, app.name
+        )
         return f"{registry}.azurecr.io/{service.name}:latest"
     return service.image
 

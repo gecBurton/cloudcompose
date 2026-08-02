@@ -25,24 +25,20 @@
   "data": {
     "azurerm_client_config": {
       "current": {}
-    }
-  },
-  "resource": {
+    },
     "azurerm_container_app_environment": {
       "main": {
         "name": "prod-env",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
-        "infrastructure_subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure",
-        "internal_load_balancer_enabled": false
+        "resource_group_name": "prod"
       }
-    },
+    }
+  },
+  "resource": {
     "azurerm_container_app": {
       "web": {
         "name": "prod-flask-redis-web",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [

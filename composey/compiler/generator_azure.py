@@ -48,6 +48,17 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
             "azurerm_client_config": {
                 "current": {},
             },
+            # The Container Apps Environment belongs to the platform stack, not
+            # to the application. Look it up rather than declaring it: two
+            # stacks that both manage it fight over the same resource, and the
+            # app stack loses with "already exists - to be managed via
+            # Terraform this resource needs to be imported into the State".
+            "azurerm_container_app_environment": {
+                "main": {
+                    "name": env.container_apps_environment_name,
+                    "resource_group_name": env.name,
+                },
+            },
         },
         "resource": _build_resources(resources),
     }

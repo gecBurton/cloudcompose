@@ -13,7 +13,6 @@ from composey.models.azure import (
     CdnEndpoint,
     CdnProfile,
     ContainerApp,
-    ContainerAppEnvironment,
     ContainerRegistry,
     KeyVault,
     MySQLFlexibleDatabase,
@@ -49,10 +48,10 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
 
     tags = env.tags if env.tags else None
 
-    # Step 1: Create Container Apps Environment (if not using existing)
-    _infer_container_app_environment(resources, app, env, get_name, tags)
+    # The Container Apps Environment is deliberately not inferred: it is
+    # platform-owned and referenced through a data source. See generator_azure.py.
 
-    # Step 2: Create managed identity (or use existing)
+    # Step 1: Create managed identity (or use existing)
     identity_id = _infer_managed_identity(resources, app, env, get_name, tags)
 
     # Step 3: Create Key Vault for secrets
@@ -79,24 +78,6 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
     _infer_cdn(resources, app, env, get_name, tags)
 
     return resources
-
-
-def _infer_container_app_environment(
-    resources: AzureResources,
-    app: SemanticApp,
-    env: AzureEnvironment,
-    get_name: Callable[[str], str],
-    tags: dict[str, str] | None,
-) -> None:
-    """Create the Container Apps Environment."""
-    resources.azurerm_container_app_environment["main"] = ContainerAppEnvironment(
-        name=env.container_apps_environment_name,
-        resource_group_name=env.name,  # Use environment name as RG
-        location=env.region,
-        log_analytics_workspace_id=env.log_analytics_workspace_id,
-        infrastructure_subnet_id=env.infrastructure_subnet_id,
-        tags=tags,
-    )
 
 
 def _infer_managed_identity(
@@ -507,7 +488,7 @@ def _infer_container_apps(
         resources.azurerm_container_app[service.name] = ContainerApp(
             name=get_name(service.name),
             resource_group_name=env.name,
-            container_app_environment_id="${azurerm_container_app_environment.main.id}",
+            container_app_environment_id="${data.azurerm_container_app_environment.main.id}",
             template=template,
             ingress=ingress_config,
             identity=identity_config,

@@ -53,9 +53,17 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
         run: |
-          cat > test.tf <<'EOF'
+          echo "ARM_CLIENT_ID: ${ARM_CLIENT_ID:0:8}..."
+          echo "ARM_TENANT_ID: ${ARM_TENANT_ID:0:8}..."
+          echo "ARM_SUBSCRIPTION_ID: ${ARM_SUBSCRIPTION_ID:0:8}..."
+          
+          cat > test.tf <<TFEOF
           provider "azurerm" {
             features {}
+            client_id       = "$ARM_CLIENT_ID"
+            client_secret   = "$ARM_CLIENT_SECRET"
+            tenant_id       = "$ARM_TENANT_ID"
+            subscription_id = "$ARM_SUBSCRIPTION_ID"
           }
           
           data "azurerm_client_config" "current" {}
@@ -63,7 +71,7 @@ jobs:
           output "subscription_id" {
             value = data.azurerm_client_config.current.subscription_id
           }
-          EOF
+          TFEOF
           
           terraform init
           terraform apply -auto-approve

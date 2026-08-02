@@ -143,5 +143,11 @@
         "special": false
       }
     }
+  },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.proxy.ingress[0].fqdn}"
+    }
   }
 }

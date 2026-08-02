@@ -27,6 +27,22 @@ def _env() -> AzureEnvironment:
     )
 
 
+# Ingress is declared, not inferred from a published port.
+_INGRESS_COMPOSE = """\
+services:
+  web:
+    image: nginx
+    ports:
+      - 80:80
+    networks:
+      - public
+    x-composey:
+      ingress: {}
+networks:
+  public:
+"""
+
+
 def _app() -> Application:
     return Application(
         name="myapp",
@@ -56,3 +72,29 @@ def test_container_apps_environment_is_referenced_as_a_data_source(tmp_path):
         app["container_app_environment_id"]
         == "${data.azurerm_container_app_environment.main.id}"
     )
+
+
+def test_ingress_service_publishes_its_fqdn(tmp_path):
+    """
+    Unlike AWS, where the hostname belongs to the environment's shared load
+    balancer, a Container App carries its own. Without this output nothing
+    downstream — the smoke test included — can find the deployed application.
+    """
+    compose = tmp_path / "compose.yml"
+    compose.write_text(_INGRESS_COMPOSE)
+
+    parsed = json.loads(compile_to_terraform(str(compose), _env(), "myapp"))
+
+    assert (
+        parsed["output"]["fqdn"]["value"]
+        == "${azurerm_container_app.web.ingress[0].fqdn}"
+    )
+
+
+def test_no_fqdn_output_without_ingress(tmp_path):
+    compose = tmp_path / "compose.yml"
+    compose.write_text("services:\n  worker:\n    image: busybox\n")
+
+    parsed = json.loads(compile_to_terraform(str(compose), _env(), "myapp"))
+
+    assert "output" not in parsed

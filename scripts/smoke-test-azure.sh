@@ -167,21 +167,15 @@ eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"
 
 # --- 4. Get Container App FQDN and poll -------------------------------------
-# Get the FQDN from the deployed container app
-CONTAINER_APP_FQDN="$(eval "$TF output -raw fqdn 2>/dev/null || echo ''")"
+# `terraform output -raw` prints its "No outputs found" warning on stdout, so a
+# missing output is captured as the hostname rather than as an empty string.
+# The previous state-show fallback could not have covered for that either: it
+# addressed azurerm_container_app.main, but apps are keyed by service name.
+# Insist on a value that looks like a hostname instead.
+CONTAINER_APP_FQDN="$(eval "$TF output -raw fqdn" 2>/dev/null || true)"
 
-# If no explicit output, try to get it from the first container app resource
-if [[ -z "$CONTAINER_APP_FQDN" ]]; then
-  log "No explicit FQDN output, checking for container_app resource..."
-  # Try to extract FQDN from terraform state
-  # eval only the terraform invocation; the pipeline stays outside it, which is
-  # what the escaping here previously got wrong badly enough to unbalance the
-  # script's quoting.
-  CONTAINER_APP_FQDN="$(eval "$TF state show 'azurerm_container_app.main'" 2>/dev/null \
-    | grep 'fqdn' | head -1 | awk '{print $3}' | tr -d '"' || true)"
-fi
-
-[[ -n "$CONTAINER_APP_FQDN" ]] || fail "No Container App FQDN found"
+[[ "$CONTAINER_APP_FQDN" =~ ^[A-Za-z0-9.-]+$ ]] \
+  || fail "app stack published no usable fqdn output (got: ${CONTAINER_APP_FQDN:-<empty>})"
 log "Container App FQDN: $CONTAINER_APP_FQDN"
 
 url="https://$CONTAINER_APP_FQDN$HTTP_PATH"

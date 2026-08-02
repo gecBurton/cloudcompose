@@ -63,12 +63,33 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
         "resource": _build_resources(resources),
     }
 
+    # On AWS the public hostname belongs to the environment's shared load
+    # balancer, so the environment stack publishes it. A Container App carries
+    # its own ingress hostname, so it has to be published here or nothing
+    # downstream can reach the deployed application.
+    fqdn = _ingress_fqdn(resources)
+    if fqdn:
+        terraform["output"] = {
+            "fqdn": {
+                "description": "Public hostname of the ingress-enabled service.",
+                "value": fqdn,
+            }
+        }
+
     # Add custom endpoint if specified (for testing)
     if env.azure_endpoint:
         terraform["provider"]["azurerm"]["features"] = {}
         # Note: endpoint override would go here if needed
 
     return json.dumps(terraform, indent=2)
+
+
+def _ingress_fqdn(resources: AzureResources) -> str | None:
+    """Terraform reference to the hostname of the externally reachable app."""
+    for key, app in resources.azurerm_container_app.items():
+        if app.ingress:
+            return f"${{azurerm_container_app.{key}.ingress[0].fqdn}}"
+    return None
 
 
 def _build_resources(resources: AzureResources) -> dict[str, Any]:

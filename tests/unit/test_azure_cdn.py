@@ -1,48 +1,14 @@
-"""Test Azure CDN inference."""
+"""
+Test Azure CDN inference.
+
+Azure CDN is currently unsupported: see TestCdnIsUnsupported. The tests that
+asserted a profile and endpoint were created have been removed rather than
+updated — they described output the Azure API rejects outright.
+"""
 
 from composey.compiler.inference.azure import infer
 from composey.models.environment import AzureEnvironment
 from composey.models.semantic import Application, Ingress, Service
-
-
-def test_cdn_profile_is_created_for_cdn_enabled_service():
-    """A service with cdn_enabled creates a CDN profile and endpoint."""
-    env = AzureEnvironment(
-        name="prod",
-        region="eastus",
-        container_apps_environment_name="prod-env",
-        log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
-        vnet_id="/subscriptions/123/vnets/prod",
-        infrastructure_subnet_id="/subscriptions/123/subnets/prod",
-    )
-
-    app = Application(
-        name="myapp",
-        services=[
-            Service(
-                name="web",
-                image="myapp/web:latest",
-                capability="container",
-                port=8080,
-                ingress=Ingress(path="/"),
-                cdn_enabled=True,
-            )
-        ],
-    )
-
-    resources = infer(app, env)
-
-    # CDN profile should be created
-    assert "main" in resources.azurerm_cdn_profile
-    profile = resources.azurerm_cdn_profile["main"]
-    assert profile.sku == "Standard_Microsoft"
-
-    # CDN endpoint should be created
-    assert "web_cdn" in resources.azurerm_cdn_endpoint
-    endpoint = resources.azurerm_cdn_endpoint["web_cdn"]
-    assert endpoint.is_https_allowed is True
-    assert endpoint.is_http_allowed is False
-    assert endpoint.optimization_type == "GeneralWebDelivery"
 
 
 def test_no_cdn_created_without_cdn_enabled():
@@ -77,46 +43,64 @@ def test_no_cdn_created_without_cdn_enabled():
     assert not resources.azurerm_cdn_endpoint
 
 
-def test_single_cdn_profile_for_multiple_services():
-    """Multiple CDN-enabled services share a single CDN profile."""
-    env = AzureEnvironment(
-        name="prod",
-        region="eastus",
-        container_apps_environment_name="prod-env",
-        log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
-        vnet_id="/subscriptions/123/vnets/prod",
-        infrastructure_subnet_id="/subscriptions/123/subnets/prod",
-    )
+class TestCdnIsUnsupported:
+    """
+    The classic CDN these resources modelled no longer accepts new profiles
+    ("Azure CDN from Microsoft (classic) no longer support new profile
+    creation"), so compiling them produced an apply that failed after
+    everything else had been built. Front Door is the replacement and is not
+    implemented yet.
+    """
 
-    app = Application(
-        name="myapp",
-        services=[
-            Service(
-                name="web",
-                image="myapp/web:latest",
-                capability="container",
-                port=8080,
-                ingress=Ingress(path="/"),
-                cdn_enabled=True,
-            ),
-            Service(
-                name="api",
-                image="myapp/api:latest",
-                capability="container",
-                port=8080,
-                ingress=Ingress(path="/api"),
-                cdn_enabled=True,
-            ),
-        ],
-    )
+    def _app_with_cdn(self):
+        from composey.models.semantic import Application, Ingress, Service
 
-    resources = infer(app, env)
+        return Application(
+            name="myapp",
+            services=[
+                Service(
+                    name="web",
+                    image="nginx",
+                    capability="container",
+                    ingress=Ingress(port=80),
+                    cdn_enabled=True,
+                )
+            ],
+        )
 
-    # Single profile
-    assert len(resources.azurerm_cdn_profile) == 1
-    assert "main" in resources.azurerm_cdn_profile
+    def _env(self):
+        from composey.models.environment import AzureEnvironment
 
-    # Two endpoints
-    assert len(resources.azurerm_cdn_endpoint) == 2
-    assert "web_cdn" in resources.azurerm_cdn_endpoint
-    assert "api_cdn" in resources.azurerm_cdn_endpoint
+        return AzureEnvironment(
+            name="prod",
+            region="uksouth",
+            container_apps_environment_name="prod-env",
+            log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
+            vnet_id="/subscriptions/123/vnets/prod",
+            infrastructure_subnet_id="/subscriptions/123/subnets/prod",
+        )
+
+    def test_no_cdn_resources_are_emitted(self):
+        from composey.compiler.inference.azure import infer
+
+        resources = infer(self._app_with_cdn(), self._env())
+
+        assert not resources.azurerm_cdn_profile
+        assert not resources.azurerm_cdn_endpoint
+
+    def test_the_request_is_not_dropped_silently(self):
+        import warnings as _w
+
+        from composey.compiler.inference.azure import infer
+
+        with _w.catch_warnings(record=True) as caught:
+            _w.simplefilter("always")
+            infer(self._app_with_cdn(), self._env())
+
+        assert any("CDN is not supported" in str(c.message) for c in caught)
+
+    def test_the_application_still_deploys(self):
+        from composey.compiler.inference.azure import infer
+
+        resources = infer(self._app_with_cdn(), self._env())
+        assert "web" in resources.azurerm_container_app

@@ -5,6 +5,7 @@ Azure Container Apps is a higher-level service than ECS Fargate, so this
 module makes opinionated choices that fit Azure's model.
 """
 
+import warnings
 from typing import Callable
 
 from composey.compiler.inference.azure.naming import (
@@ -15,8 +16,6 @@ from composey.compiler.inference.azure.naming import (
 from composey.models.aws import RandomPassword
 from composey.models.azure import (
     AzureResources,
-    CdnEndpoint,
-    CdnProfile,
     ContainerApp,
     ContainerRegistry,
     KeyVault,
@@ -607,51 +606,33 @@ def _infer_cdn(
     get_name: Callable[[str], str],
     tags: dict[str, str] | None,
 ) -> None:
-    """Infer Azure CDN for services with cdn_enabled."""
+    """
+    Azure CDN is not currently supported.
+
+    These resources model Azure CDN from Microsoft (classic), which no longer
+    accepts new profiles:
+
+      Code="BadRequest" Message="Azure CDN from Microsoft (classic) no longer
+      support new profile creation."
+
+    So emitting them cannot succeed for anyone. Front Door is the replacement,
+    and porting to it is a real piece of work — azurerm_cdn_frontdoor_profile
+    plus endpoint, origin group, origin and route — not a rename. Until then
+    the request is skipped rather than compiled into an apply that fails after
+    everything else has been built.
+
+    The application still deploys; it is served directly from its Container App
+    ingress, without a CDN in front.
+    """
     cdn_services = [s for s in app.services if s.cdn_enabled and s.ingress]
 
     if not cdn_services:
         return
 
-    # Create single CDN profile for the app
-    profile_key = "main"
-    resources.azurerm_cdn_profile[profile_key] = CdnProfile(
-        name=get_name("cdn"),
-        resource_group_name=env.name,
-        location=env.region,
-        sku="Standard_Microsoft",
-        tags=tags,
+    warnings.warn(
+        "Azure CDN is not supported: the classic CDN these resources model no "
+        "longer accepts new profiles, and Front Door is not implemented yet. "
+        "Ignoring cdn for: " + ", ".join(s.name for s in cdn_services),
+        stacklevel=2,
     )
-
-    # Create endpoint for each CDN-enabled service
-    for service in cdn_services:
-        endpoint_key = f"{service.name}_cdn"
-
-        # Get the Container App FQDN as origin
-        origin_host = f"${{azurerm_container_app.{service.name}.ingress[0].fqdn}}"
-
-        resources.azurerm_cdn_endpoint[endpoint_key] = CdnEndpoint(
-            name=get_name(f"{service.name}-cdn"),
-            profile_name=f"${{azurerm_cdn_profile.{profile_key}.name}}",
-            resource_group_name=env.name,
-            location=env.region,
-            origin_host_header=origin_host,
-            origin=[
-                {
-                    "name": "default",
-                    "host_name": origin_host,
-                    "http_port": 80,
-                    "https_port": 443,
-                }
-            ],
-            is_http_allowed=False,
-            is_https_allowed=True,
-            optimization_type="GeneralWebDelivery",
-            global_delivery_rule={
-                "cache_expiration_action": {
-                    "behavior": "Override",
-                    "duration": "1.00:00:00",  # 1 day cache
-                },
-            },
-            tags=tags,
-        )
+    return

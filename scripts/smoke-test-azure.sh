@@ -24,6 +24,14 @@ HTTP_PATH="${HTTP_PATH:-/}"                            # path to poll
 EXPECT="${EXPECT:-Server name}"                        # string expected in HTTP body
 POLL_TIMEOUT="${POLL_TIMEOUT:-300}"                    # seconds to wait for healthy app
 KEEP="${KEEP:-0}"                                      # 1 = do not destroy afterwards
+# Where the application is deployed. Distinct from STATE_LOCATION: one is the
+# region under test, the other is where the state blob lives, and conflating
+# them meant changing either moved both.
+#
+# Not eastus: this subscription is offer-restricted there for PostgreSQL
+# Flexible Server, which fails with LocationIsOfferRestricted twenty minutes
+# into an apply.
+REGION="${REGION:-uksouth}"                            # region to deploy into
 STATE_RG="${STATE_RG:-}"                               # Resource Group for remote state; empty = local
 STATE_LOCATION="${STATE_LOCATION:-eastus}"             # location of STATE_RG storage
 STATE_ACCOUNT="${STATE_ACCOUNT:-composeyacceptstate}"  # storage account holding state
@@ -163,7 +171,7 @@ fi
 log "Creating Azure environment '$NAME' with composey init env…"
 rm -rf "$ENV_DIR"
 cd "$ROOT"
-uv run composey init --provider azure --name "$NAME" --region "$STATE_LOCATION" --output "$ENV_DIR"
+uv run composey init --provider azure --name "$NAME" --region "$REGION" --output "$ENV_DIR"
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"

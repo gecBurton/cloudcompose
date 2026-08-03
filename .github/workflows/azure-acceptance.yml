@@ -105,6 +105,9 @@ jobs:
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          # Region under test. Not eastus: this subscription is offer-restricted
+          # there for PostgreSQL Flexible Server (LocationIsOfferRestricted).
+          REGION: uksouth
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
           STATE_ACCOUNT: ${{ vars.AZURE_STATE_ACCOUNT }}

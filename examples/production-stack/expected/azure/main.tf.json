@@ -161,40 +161,6 @@
         "minimum_tls_version": "1.2"
       }
     },
-    "azurerm_cdn_profile": {
-      "main": {
-        "name": "prod-production-stack-cdn",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "sku": "Standard_Microsoft"
-      }
-    },
-    "azurerm_cdn_endpoint": {
-      "web_cdn": {
-        "name": "prod-production-stack-web-cdn",
-        "profile_name": "${azurerm_cdn_profile.main.name}",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "origin_host_header": "${azurerm_container_app.web.ingress[0].fqdn}",
-        "origin": [
-          {
-            "name": "default",
-            "host_name": "${azurerm_container_app.web.ingress[0].fqdn}",
-            "http_port": 80,
-            "https_port": 443
-          }
-        ],
-        "is_http_allowed": false,
-        "is_https_allowed": true,
-        "optimization_type": "GeneralWebDelivery",
-        "global_delivery_rule": {
-          "cache_expiration_action": {
-            "behavior": "Override",
-            "duration": "1.00:00:00"
-          }
-        }
-      }
-    },
     "random_password": {
       "postgres_admin": {
         "length": 20,

@@ -20,6 +20,7 @@ on:
           - hello
           - web-api
           - minio-s3
+          - production-stack
 
 permissions:
   contents: read
@@ -33,8 +34,10 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    # Bound the blast radius of a hang.
-    timeout-minutes: 90
+    # Bound the blast radius of a hang. Generous because teardown of a
+    # Container Apps environment alone takes ~26 minutes, and a job killed
+    # mid-teardown leaves live resources behind.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
 
@@ -78,6 +81,15 @@ jobs:
           az provider register --namespace Microsoft.ContainerInstance --wait
           az provider register --namespace Microsoft.App --wait
           az provider register --namespace Microsoft.Network --wait
+          # Needed by examples with managed backing services. Already
+          # registered on a mature subscription; a fresh one fails at apply.
+          az provider register --namespace Microsoft.DBforPostgreSQL --wait
+          az provider register --namespace Microsoft.DBforMySQL --wait
+          az provider register --namespace Microsoft.Cache --wait
+          az provider register --namespace Microsoft.Cdn --wait
+          az provider register --namespace Microsoft.KeyVault --wait
+          az provider register --namespace Microsoft.ContainerRegistry --wait
+          az provider register --namespace Microsoft.Storage --wait
           echo "Resource providers registered."
           
           # Verify login persisted
@@ -108,6 +120,11 @@ jobs:
             minio-s3)
               export COMPOSE=examples/minio-s3/compose.yml PROJECT=minios3 \
                      EXPECT="Server name" ;;
+            production-stack)
+              # Postgres and the CDN endpoint are both slow to provision, so
+              # this is the longest run by some margin.
+              export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
+                     EXPECT="Welcome to nginx" POLL_TIMEOUT=480 ;;
             *)
               echo "::error::no smoke-test configuration for '${{ inputs.example }}'"
               exit 1 ;;

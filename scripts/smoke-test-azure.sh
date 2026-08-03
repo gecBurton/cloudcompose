@@ -86,6 +86,23 @@ state_hint() {
   echo "    STATE_RG=$STATE_RG NAME=$NAME PROJECT=$PROJECT scripts/smoke-test-azure.sh --destroy-only"
 }
 
+# Called only when both stacks destroyed cleanly. State that describes no
+# resources is worse than useless: --destroy-only against it reports success
+# having done nothing, which is the failure mode the backend exists to prevent.
+# A failed teardown keeps its state, because that is the recovery path.
+#
+# The account has blob versioning and 30-day soft delete, so this is reversible
+# if a destroy reported success while leaving something behind.
+purge_state() {
+  [[ -n "$STATE_RG" && -n "$STATE_ACCOUNT" ]] || return 0
+  az storage blob delete-batch \
+    --account-name "$STATE_ACCOUNT" \
+    --source "$STATE_CONTAINER" \
+    --pattern "acceptance/$NAME/*" \
+    --auth-mode login >/dev/null 2>&1 \
+    || echo "  NOTE: could not remove state under acceptance/$NAME/ — harmless, prune later."
+}
+
 # --- Teardown ----------------------------------------------------------------
 CLEANED=0
 cleanup() {
@@ -112,7 +129,11 @@ cleanup() {
       || { leaked=1; echo "WARNING: environment destroy failed — CHECK RESOURCE GROUP manually."; }
   fi
 
-  (( leaked == 1 )) && state_hint
+  if (( leaked == 1 )); then
+    state_hint
+  else
+    purge_state
+  fi
   exit $status
 }
 trap cleanup EXIT INT TERM

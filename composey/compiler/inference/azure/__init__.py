@@ -585,7 +585,7 @@ def _infer_cdn(
             resource_group_name=env.name,
             location=env.region,
             origin_host_header=origin_host,
-            origins=[
+            origin=[
                 {
                     "name": "default",
                     "host_name": origin_host,

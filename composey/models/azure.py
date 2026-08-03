@@ -286,7 +286,9 @@ class CdnEndpoint(BaseModel):
 
     # Origin configuration
     origin_host_header: str
-    origins: List[Dict[str, Any]]
+    # Named "origin": the provider's block is singular, and Terraform JSON
+    # spells repeated blocks as a list under the singular name.
+    origin: List[Dict[str, Any]]
 
     # HTTPS
     is_http_allowed: bool = False

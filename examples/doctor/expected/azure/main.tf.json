@@ -1,0 +1,198 @@
+{
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 3.0"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "docker": {},
+    "random": {}
+  },
+  "data": {
+    "azurerm_client_config": {
+      "current": {}
+    },
+    "azurerm_container_app_environment": {
+      "main": {
+        "name": "prod-env",
+        "resource_group_name": "prod"
+      }
+    }
+  },
+  "resource": {
+    "azurerm_container_app": {
+      "doctor": {
+        "name": "prod-doctor-doctor",
+        "resource_group_name": "prod",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "revision_mode": "Single",
+        "template": {
+          "container": [
+            {
+              "name": "doctor",
+              "image": "prodacr.azurecr.io/doctor:latest",
+              "cpu": 0.25,
+              "memory": "0.5Gi",
+              "env": [
+                {
+                  "name": "BUCKET_NAME",
+                  "value": "blobs"
+                },
+                {
+                  "name": "DATABASE_URL",
+                  "value": "postgres://user@db:5432/app"
+                },
+                {
+                  "name": "DB_HOST",
+                  "value": "db"
+                },
+                {
+                  "name": "REDIS_URL",
+                  "value": "redis://cache:6379"
+                },
+                {
+                  "name": "DB_URL",
+                  "value": "postgresql://composey:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/doctor_db"
+                },
+                {
+                  "name": "CACHE_URL",
+                  "value": "postgresql://None:${azurerm_redis_cache.cache_redis.primary_access_key}@${azurerm_redis_cache.cache_redis.hostname}:6379/None"
+                },
+                {
+                  "name": "BLOBS_URL",
+                  "value": "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
+                }
+              ]
+            }
+          ],
+          "min_replicas": 1,
+          "max_replicas": 1,
+          "http_scale_rule": [
+            {
+              "name": "http-default",
+              "concurrent_requests": "100"
+            }
+          ]
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 80,
+          "transport": "auto",
+          "traffic_weight": {
+            "latest_revision": true,
+            "percentage": 100
+          }
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "registry": [
+          {
+            "server": "prodacr.azurecr.io",
+            "identity": "System"
+          }
+        ]
+      }
+    },
+    "azurerm_container_registry": {
+      "main": {
+        "name": "prodacr",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "sku": "Standard",
+        "admin_enabled": true
+      }
+    },
+    "azurerm_postgresql_flexible_server": {
+      "main": {
+        "name": "prod-doctor-pg",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "version": "14",
+        "sku_name": "B_Standard_B1ms",
+        "storage_mb": 32768,
+        "administrator_login": "composey",
+        "administrator_password": "${random_password.postgres_admin.result}",
+        "delegated_subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure",
+        "public_network_access_enabled": false
+      }
+    },
+    "azurerm_postgresql_flexible_server_database": {
+      "db_db": {
+        "name": "doctor_db",
+        "server_id": "${azurerm_postgresql_flexible_server.main.id}",
+        "charset": "UTF8",
+        "collation": "en_US.utf8"
+      }
+    },
+    "azurerm_key_vault": {
+      "main": {
+        "name": "prod-doctor-kv",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "sku_name": "standard",
+        "soft_delete_retention_days": 7,
+        "purge_protection_enabled": false
+      }
+    },
+    "azurerm_redis_cache": {
+      "cache_redis": {
+        "name": "prod-doctor-cache",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "sku_name": "Standard",
+        "family": "C",
+        "capacity": 1,
+        "redis_version": "6",
+        "enable_non_ssl_port": false,
+        "minimum_tls_version": "1.2"
+      }
+    },
+    "azurerm_storage_account": {
+      "blobs_storage": {
+        "name": "proddoctorblobs",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "account_tier": "Standard",
+        "account_replication_type": "LRS",
+        "account_kind": "StorageV2",
+        "min_tls_version": "TLS1_2",
+        "enable_https_traffic_only": true
+      }
+    },
+    "azurerm_storage_container": {
+      "blobs_container": {
+        "name": "blobs",
+        "storage_account_name": "${azurerm_storage_account.blobs_storage.name}",
+        "container_access_type": "private"
+      }
+    },
+    "random_password": {
+      "postgres_admin": {
+        "length": 20,
+        "special": false
+      }
+    }
+  },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.doctor.ingress[0].fqdn}"
+    }
+  }
+}

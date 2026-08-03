@@ -1,0 +1,109 @@
+{
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 3.0"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "docker": {},
+    "random": {}
+  },
+  "data": {
+    "azurerm_client_config": {
+      "current": {}
+    },
+    "azurerm_container_app_environment": {
+      "main": {
+        "name": "prod-env",
+        "resource_group_name": "prod"
+      }
+    }
+  },
+  "resource": {
+    "azurerm_container_app": {
+      "web": {
+        "name": "prod-build-webapp-web",
+        "resource_group_name": "prod",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "revision_mode": "Single",
+        "template": {
+          "container": [
+            {
+              "name": "web",
+              "image": "prodacr.azurecr.io/web:latest",
+              "cpu": 0.25,
+              "memory": "0.5Gi",
+              "env": []
+            }
+          ],
+          "min_replicas": 1,
+          "max_replicas": 1,
+          "http_scale_rule": [
+            {
+              "name": "http-default",
+              "concurrent_requests": "100"
+            }
+          ]
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 80,
+          "transport": "auto",
+          "traffic_weight": {
+            "latest_revision": true,
+            "percentage": 100
+          }
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "registry": [
+          {
+            "server": "prodacr.azurecr.io",
+            "identity": "System"
+          }
+        ]
+      }
+    },
+    "azurerm_container_registry": {
+      "main": {
+        "name": "prodacr",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "sku": "Standard",
+        "admin_enabled": true
+      }
+    },
+    "azurerm_key_vault": {
+      "main": {
+        "name": "prod-build-webapp-kv",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "sku_name": "standard",
+        "soft_delete_retention_days": 7,
+        "purge_protection_enabled": false
+      }
+    }
+  },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    }
+  }
+}

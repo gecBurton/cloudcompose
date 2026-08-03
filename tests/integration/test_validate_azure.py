@@ -19,7 +19,15 @@ from composey.compiler import compile_to_terraform
 
 # Mirrors AZURE_EXAMPLES in test_azure_golden.py.
 AZURE_EXAMPLES = [
+    # Deployable on Azure (offered by the acceptance workflow).
     "hello",
+    "web-api",
+    "minio-s3",
+    "production-stack",
+    # Compile-only: these need a container build, or name a local-only image,
+    # so they are golden/validate coverage rather than smoke-test candidates.
+    "build-webapp",
+    "doctor",
     "flask",
     "flask-redis",
     "flask-s3",

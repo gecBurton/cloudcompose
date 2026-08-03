@@ -6,16 +6,20 @@ name: Azure Acceptance
 on:
   workflow_dispatch:
     inputs:
+      # Only examples that can actually deploy belong here. The flask family
+      # was adapted from awesome-compose without its `build:` sections, so it
+      # names images like "flask-app" that exist on a developer's machine and
+      # in no registry — Azure resolves those against Docker Hub and refuses
+      # them. Those examples still earn their keep as compile-only golden
+      # tests; they are not smoke-testable anywhere.
       example:
         description: Example to smoke test
         type: choice
         default: hello
         options:
           - hello
-          - flask
-          - flask-redis
-          - flask-s3
-          - nginx-flask-mysql
+          - web-api
+          - minio-s3
 
 permissions:
   contents: read
@@ -98,17 +102,14 @@ jobs:
             hello)
               export COMPOSE=examples/hello/compose.yml PROJECT=hello \
                      EXPECT="Server name" ;;
-            flask)
-              export COMPOSE=examples/flask/compose.yml PROJECT=flask \
-                     EXPECT="Hello from Flask" ;;
-            flask-redis)
-              export COMPOSE=examples/flask-redis/compose.yml PROJECT=flaskredis \
-                     EXPECT="Hello from Flask" ;;
-            flask-s3)
-              export COMPOSE=examples/flask-s3/compose.yml PROJECT=flasks3 \
-                     EXPECT="Hello from Flask" ;;
-            nginx-flask-mysql)
-              export COMPOSE=examples/nginx-flask-mysql/compose.yml PROJECT=nginxflask \
-                     EXPECT="Welcome" POLL_TIMEOUT=480 ;;
+            web-api)
+              export COMPOSE=examples/web-api/compose.yml PROJECT=webapi \
+                     EXPECT="Server name" ;;
+            minio-s3)
+              export COMPOSE=examples/minio-s3/compose.yml PROJECT=minios3 \
+                     EXPECT="Server name" ;;
+            *)
+              echo "::error::no smoke-test configuration for '${{ inputs.example }}'"
+              exit 1 ;;
           esac
           scripts/smoke-test-azure.sh

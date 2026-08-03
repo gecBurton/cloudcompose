@@ -23,6 +23,8 @@ from composey.constants import (
 from composey.exceptions import (
     NetworkError,
     StorageError,
+)
+from composey.exceptions import (
     ValidationError as ComposeyValidationError,
 )
 
@@ -31,12 +33,20 @@ from ..models.compose import Service as DockerService
 from ..models.compose import VolumeDefinition, XComposey
 from ..models.semantic import (
     Application as SemanticApplication,
+)
+from ..models.semantic import (
     AutoScalingConfig as SemanticAutoScalingConfig,
+)
+from ..models.semantic import (
     AutoScalingMetric as SemanticAutoScalingMetric,
+)
+from ..models.semantic import (
     CronSchedule,
     RateSchedule,
     Relationship,
     Schedule,
+)
+from ..models.semantic import (
     Service as SemanticService,
 )
 

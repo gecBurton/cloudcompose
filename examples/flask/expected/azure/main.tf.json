@@ -25,34 +25,28 @@
   "data": {
     "azurerm_client_config": {
       "current": {}
-    }
-  },
-  "resource": {
+    },
     "azurerm_container_app_environment": {
       "main": {
         "name": "prod-env",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "log_analytics_workspace_id": "/subscriptions/123/workspaces/prod",
-        "infrastructure_subnet_id": "/subscriptions/123/subnets/prod",
-        "internal_load_balancer_enabled": false
+        "resource_group_name": "prod"
       }
-    },
+    }
+  },
+  "resource": {
     "azurerm_container_app": {
       "backend": {
         "name": "prod-flask-backend",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
-          "containers": [
+          "container": [
             {
               "name": "backend",
               "image": "prodacr.azurecr.io/backend:latest",
-              "resources": {
-                "cpu": 0.25,
-                "memory": "0.5Gi"
-              },
+              "cpu": 0.25,
+              "memory": "0.5Gi",
               "args": [
                 "npm",
                 "run",
@@ -86,21 +80,14 @@
               ]
             }
           ],
-          "scale": {
-            "min_replicas": 1,
-            "max_replicas": 1,
-            "rules": [
-              {
-                "name": "http-default",
-                "custom": {
-                  "type": "http",
-                  "metadata": {
-                    "concurrentRequests": "100"
-                  }
-                }
-              }
-            ]
-          }
+          "min_replicas": 1,
+          "max_replicas": 1,
+          "http_scale_rule": [
+            {
+              "name": "http-default",
+              "concurrent_requests": "100"
+            }
+          ]
         },
         "ingress": {
           "external_enabled": true,
@@ -117,31 +104,27 @@
         "registry": [
           {
             "server": "prodacr.azurecr.io",
-            "identity": "${azurerm_container_app.main.identity[0].principal_id}"
+            "identity": "System"
           }
         ]
       },
       "frontend": {
         "name": "prod-flask-frontend",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
-          "containers": [
+          "container": [
             {
               "name": "frontend",
               "image": "prodacr.azurecr.io/frontend:latest",
-              "resources": {
-                "cpu": 0.25,
-                "memory": "0.5Gi"
-              },
+              "cpu": 0.25,
+              "memory": "0.5Gi",
               "env": []
             }
           ],
-          "scale": {
-            "min_replicas": 1,
-            "max_replicas": 1
-          }
+          "min_replicas": 1,
+          "max_replicas": 1
         },
         "identity": {
           "type": "SystemAssigned"
@@ -149,7 +132,7 @@
         "registry": [
           {
             "server": "prodacr.azurecr.io",
-            "identity": "${azurerm_container_app.main.identity[0].principal_id}"
+            "identity": "System"
           }
         ]
       }
@@ -173,7 +156,7 @@
         "storage_mb": 32768,
         "administrator_login": "composey",
         "administrator_password": "${random_password.postgres_admin.result}",
-        "delegated_subnet_id": "/subscriptions/123/subnets/prod",
+        "delegated_subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure",
         "public_network_access_enabled": false
       }
     },
@@ -201,6 +184,12 @@
         "length": 20,
         "special": false
       }
+    }
+  },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.backend.ingress[0].fqdn}"
     }
   }
 }

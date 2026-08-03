@@ -7,13 +7,17 @@ module makes opinionated choices that fit Azure's model.
 
 from typing import Callable
 
+from composey.compiler.inference.azure.naming import (
+    container_registry_name,
+    key_vault_name,
+    storage_account_name,
+)
 from composey.models.aws import RandomPassword
 from composey.models.azure import (
     AzureResources,
     CdnEndpoint,
     CdnProfile,
     ContainerApp,
-    ContainerAppEnvironment,
     ContainerRegistry,
     KeyVault,
     MySQLFlexibleDatabase,
@@ -49,10 +53,10 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
 
     tags = env.tags if env.tags else None
 
-    # Step 1: Create Container Apps Environment (if not using existing)
-    _infer_container_app_environment(resources, app, env, get_name, tags)
+    # The Container Apps Environment is deliberately not inferred: it is
+    # platform-owned and referenced through a data source. See generator_azure.py.
 
-    # Step 2: Create managed identity (or use existing)
+    # Step 1: Create managed identity (or use existing)
     identity_id = _infer_managed_identity(resources, app, env, get_name, tags)
 
     # Step 3: Create Key Vault for secrets
@@ -79,24 +83,6 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
     _infer_cdn(resources, app, env, get_name, tags)
 
     return resources
-
-
-def _infer_container_app_environment(
-    resources: AzureResources,
-    app: SemanticApp,
-    env: AzureEnvironment,
-    get_name: Callable[[str], str],
-    tags: dict[str, str] | None,
-) -> None:
-    """Create the Container Apps Environment."""
-    resources.azurerm_container_app_environment["main"] = ContainerAppEnvironment(
-        name=env.container_apps_environment_name,
-        resource_group_name=env.name,  # Use environment name as RG
-        location=env.region,
-        log_analytics_workspace_id=env.log_analytics_workspace_id,
-        infrastructure_subnet_id=env.infrastructure_subnet_id,
-        tags=tags,
-    )
 
 
 def _infer_managed_identity(
@@ -130,7 +116,7 @@ def _infer_key_vault(
     """Create Key Vault for secrets."""
     kv_key = "main"
     resources.azurerm_key_vault[kv_key] = KeyVault(
-        name=get_name("kv").replace("_", "-"),
+        name=key_vault_name(env.name, app.name),
         resource_group_name=env.name,
         location=env.region,
         tenant_id="${data.azurerm_client_config.current.tenant_id}",
@@ -153,7 +139,9 @@ def _infer_container_registry(
     if not needs_registry:
         return
 
-    registry_name = env.container_registry_name or get_name("acr").replace("_", "")
+    registry_name = env.container_registry_name or container_registry_name(
+        env.name, app.name
+    )
 
     resources.azurerm_container_registry["main"] = ContainerRegistry(
         name=registry_name,
@@ -349,7 +337,7 @@ def _infer_storage(
     for service in storage_services:
         # Create storage account
         account_key = f"{service.name}_storage"
-        account_name = get_name(service.name).replace("_", "").lower()[:24]
+        account_name = storage_account_name(env.name, app.name, service.name)
 
         resources.azurerm_storage_account[account_key] = StorageAccount(
             name=account_name,
@@ -404,14 +392,13 @@ def _infer_container_apps(
         if service.ingress and min_replicas == 0:
             min_replicas = 1
 
-        # Build container spec
+        # Build container spec. cpu and memory sit directly on the container;
+        # azurerm has no nested "resources" block.
         container_spec = {
             "name": service.name,
-            "image": _get_container_image(service, env),
-            "resources": {
-                "cpu": _get_cpu_cores(service),
-                "memory": _get_memory_gb(service),
-            },
+            "image": _get_container_image(service, app, env),
+            "cpu": _get_cpu_cores(service),
+            "memory": _get_memory_gb(service),
         }
 
         if service.command:
@@ -451,49 +438,36 @@ def _infer_container_apps(
                 },
             }
 
-        # Build scale rules
-        scale_rules = []
+        # Build scale rules. azurerm models HTTP scaling as its own
+        # http_scale_rule block with a concurrent_requests string, not as a
+        # generic custom rule.
+        http_scale_rules = []
         if service.auto_scaling and service.auto_scaling.metrics:
             for metric in service.auto_scaling.metrics:
                 if metric.type == "http" or metric.type == "requests_per_target":
-                    # HTTP scaling rule
-                    scale_rules.append(
+                    http_scale_rules.append(
                         {
                             "name": "http-rule",
-                            "custom": {
-                                "type": "http",
-                                "metadata": {
-                                    "concurrentRequests": str(int(metric.target_value)),
-                                },
-                            },
+                            "concurrent_requests": str(int(metric.target_value)),
                         }
                     )
 
         # If no HTTP rule but has ingress, add default HTTP scaling
-        if service.ingress and not any(
-            r["custom"]["type"] == "http" for r in scale_rules
-        ):
-            scale_rules.append(
-                {
-                    "name": "http-default",
-                    "custom": {
-                        "type": "http",
-                        "metadata": {"concurrentRequests": "100"},
-                    },
-                }
+        if service.ingress and not http_scale_rules:
+            http_scale_rules.append(
+                {"name": "http-default", "concurrent_requests": "100"}
             )
 
-        # Build template
+        # Build template. Replica counts live directly on the template; there is
+        # no "scale" block in the provider schema.
         template = {
-            "containers": [container_spec],
-            "scale": {
-                "min_replicas": min_replicas,
-                "max_replicas": max_replicas,
-            },
+            "container": [container_spec],
+            "min_replicas": min_replicas,
+            "max_replicas": max_replicas,
         }
 
-        if scale_rules:
-            template["scale"]["rules"] = scale_rules
+        if http_scale_rules:
+            template["http_scale_rule"] = http_scale_rules
 
         # Identity config
         identity_config = None
@@ -506,22 +480,29 @@ def _infer_container_apps(
             # Use system-assigned identity
             identity_config = {"type": "SystemAssigned"}
 
-        # Registry config
+        # Registry config. The server has to be the registry that actually gets
+        # created, which is not always the one named on the environment.
+        #
+        # "System" is the literal the provider expects for a system-assigned
+        # identity. Naming the app's own principal_id here instead was a
+        # self-reference — the container app cannot depend on itself, and it
+        # only pointed at an undeclared azurerm_container_app.main anyway.
         registry_config = None
-        if service.build_context and env.container_registry_name:
+        if service.build_context:
+            registry = env.container_registry_name or container_registry_name(
+                env.name, app.name
+            )
             registry_config = [
                 {
-                    "server": f"{env.container_registry_name}.azurecr.io",
-                    "identity": "${azurerm_container_app.main.identity[0].principal_id}"
-                    if not identity_id
-                    else identity_id,
+                    "server": f"{registry}.azurecr.io",
+                    "identity": identity_id or "System",
                 }
             ]
 
         resources.azurerm_container_app[service.name] = ContainerApp(
             name=get_name(service.name),
             resource_group_name=env.name,
-            container_app_environment_id="${azurerm_container_app_environment.main.id}",
+            container_app_environment_id="${data.azurerm_container_app_environment.main.id}",
             template=template,
             ingress=ingress_config,
             identity=identity_config,
@@ -530,11 +511,14 @@ def _infer_container_apps(
         )
 
 
-def _get_container_image(service, env: AzureEnvironment) -> str:
+def _get_container_image(service, app: SemanticApp, env: AzureEnvironment) -> str:
     """Get the container image reference."""
     if service.build_context:
-        # Image from ACR
-        registry = env.container_registry_name or f"{env.name}{env.name}acr"
+        # Must resolve to the registry _infer_container_registry creates, so
+        # both go through the same naming function.
+        registry = env.container_registry_name or container_registry_name(
+            env.name, app.name
+        )
         return f"{registry}.azurecr.io/{service.name}:latest"
     return service.image
 

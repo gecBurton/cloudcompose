@@ -608,6 +608,21 @@ def generate_azure_environment(
             "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
             "virtual_network_name": f"${{azurerm_virtual_network.{tf_name}.name}}",
             "address_prefixes": [_cidrsubnet(vnet_cidr, 5, 0)],  # /21 subnet
+            # Container Apps refuses to build an environment on an undelegated
+            # subnet: ManagedEnvironmentSubnetDelegationError.
+            "delegation": [
+                {
+                    "name": "container-apps",
+                    "service_delegation": [
+                        {
+                            "name": "Microsoft.App/environments",
+                            "actions": [
+                                "Microsoft.Network/virtualNetworks/subnets/join/action"
+                            ],
+                        }
+                    ],
+                }
+            ],
         }
     }
 
@@ -628,7 +643,9 @@ def generate_azure_environment(
         "target": "azure",
         "name": name,
         "region": location,
-        "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+        # No resource_group_name: AzureEnvironment forbids extra keys and the
+        # compiler derives the group from `name`, which is what the resource
+        # group is named.
         "container_apps_environment_name": f"${{azurerm_container_app_environment.{tf_name}.name}}",
         "log_analytics_workspace_id": f"${{azurerm_log_analytics_workspace.{tf_name}.id}}",
         "vnet_id": f"${{azurerm_virtual_network.{tf_name}.id}}",

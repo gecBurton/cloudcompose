@@ -7,13 +7,12 @@ and analyzes differences to identify abstraction gaps.
 
 import json
 import sys
-from typing import Dict, Any
+from typing import Any, Dict
 
 sys.path.insert(0, "/Users/GBurton/PycharmProjects/composey")
 
 from composey.compiler import compile_to_terraform
 from composey.models.environment import AwsEnvironment, AzureEnvironment, GcpEnvironment
-
 
 # Test compose file - representative full-stack app
 COMPOSE_FILE = "/Users/GBurton/PycharmProjects/composey/examples/flask/compose.yml"

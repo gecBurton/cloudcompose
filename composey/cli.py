@@ -1,11 +1,11 @@
 import json
 import os
 import shutil
+from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
 
 import typer
-from importlib.metadata import version
 from rich.console import Console
 
 from .cli_env import register_init_commands

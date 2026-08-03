@@ -25,34 +25,28 @@
   "data": {
     "azurerm_client_config": {
       "current": {}
-    }
-  },
-  "resource": {
+    },
     "azurerm_container_app_environment": {
       "main": {
         "name": "prod-env",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "log_analytics_workspace_id": "/subscriptions/123/workspaces/prod",
-        "infrastructure_subnet_id": "/subscriptions/123/subnets/prod",
-        "internal_load_balancer_enabled": false
+        "resource_group_name": "prod"
       }
-    },
+    }
+  },
+  "resource": {
     "azurerm_container_app": {
       "web": {
         "name": "prod-flask-s3-web",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
-          "containers": [
+          "container": [
             {
               "name": "web",
               "image": "flask-app",
-              "resources": {
-                "cpu": 0.25,
-                "memory": "0.5Gi"
-              },
+              "cpu": 0.25,
+              "memory": "0.5Gi",
               "env": [
                 {
                   "name": "BUCKET_NAME",
@@ -69,21 +63,14 @@
               ]
             }
           ],
-          "scale": {
-            "min_replicas": 1,
-            "max_replicas": 1,
-            "rules": [
-              {
-                "name": "http-default",
-                "custom": {
-                  "type": "http",
-                  "metadata": {
-                    "concurrentRequests": "100"
-                  }
-                }
-              }
-            ]
-          }
+          "min_replicas": 1,
+          "max_replicas": 1,
+          "http_scale_rule": [
+            {
+              "name": "http-default",
+              "concurrent_requests": "100"
+            }
+          ]
         },
         "ingress": {
           "external_enabled": true,
@@ -112,7 +99,7 @@
     },
     "azurerm_storage_account": {
       "blobs_storage": {
-        "name": "prod-flask-s3-blobs",
+        "name": "prodflasks3blobs",
         "resource_group_name": "prod",
         "location": "eastus",
         "account_tier": "Standard",
@@ -128,6 +115,12 @@
         "storage_account_name": "${azurerm_storage_account.blobs_storage.name}",
         "container_access_type": "private"
       }
+    }
+  },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
     }
   }
 }

@@ -82,17 +82,16 @@ jobs:
       - name: Smoke test ${{ inputs.example }}
         env:
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
-          # Use Azure CLI authentication (more reliable than SP env vars)
-          # Terraform will use the Azure CLI credentials from previous step
-          ARM_USE_CLI: true
-          ARM_USE_MSI: false
+          # Authenticate Terraform as the service principal. Not via the Azure
+          # CLI session: the azurerm backend refuses a CLI login owned by a
+          # service principal, so CLI auth cannot reach remote state.
+          ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          # Explicitly unset SP credentials to force CLI auth
-          ARM_CLIENT_ID: ""
-          ARM_CLIENT_SECRET: ""
-          ARM_TENANT_ID: ""
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
+          STATE_ACCOUNT: ${{ vars.AZURE_STATE_ACCOUNT }}
           STATE_LOCATION: eastus
         run: |
           case "${{ inputs.example }}" in

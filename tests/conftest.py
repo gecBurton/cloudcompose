@@ -52,9 +52,21 @@ def mock_azure_prod_env():
         name="prod",
         region="eastus",
         container_apps_environment_name="prod-env",
-        log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
-        vnet_id="/subscriptions/123/vnets/prod",
-        infrastructure_subnet_id="/subscriptions/123/subnets/prod",
+        # Fully-formed resource IDs. The azurerm provider parses these during
+        # `terraform validate`, so abbreviated stand-ins fail before it ever
+        # reaches the schema checks the Azure validate test exists to make.
+        log_analytics_workspace_id=(
+            "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod"
+            "/providers/Microsoft.OperationalInsights/workspaces/prod-logs"
+        ),
+        vnet_id=(
+            "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod"
+            "/providers/Microsoft.Network/virtualNetworks/prod-vnet"
+        ),
+        infrastructure_subnet_id=(
+            "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod"
+            "/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure"
+        ),
         container_registry_name="prodacr",
     )
 

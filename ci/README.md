@@ -105,6 +105,50 @@ az ad sp create-for-rbac \
   --scopes /subscriptions/{subscription-id}/resourceGroups/composey-acceptance
 ```
 
+## Create the Terraform state backend
+
+Acceptance runs keep state in Azure Blob Storage, so a run cancelled mid-flight
+leaves state behind that any machine can destroy from. Shared-key access is
+disabled: Terraform authenticates to the backend with Entra ID
+(`use_azuread_auth`), which means every identity that runs the smoke test — the
+CI service principal and each developer — needs **Storage Blob Data
+Contributor** on the account. Contributor on the resource group is not enough;
+that grants control-plane rights, not data-plane ones.
+
+```bash
+SA=composeyacceptstate   # globally unique, 3-24 lowercase alphanumeric
+
+az storage account create \
+  --name "$SA" \
+  --resource-group composey-acceptance \
+  --location uksouth \
+  --sku Standard_LRS \
+  --kind StorageV2 \
+  --min-tls-version TLS1_2 \
+  --allow-blob-public-access false \
+  --allow-shared-key-access false
+
+# Versioning and soft delete make a corrupted or truncated state recoverable.
+az storage account blob-service-properties update \
+  --account-name "$SA" --resource-group composey-acceptance \
+  --enable-versioning true --enable-delete-retention true --delete-retention-days 30
+
+SCOPE=$(az storage account show -n "$SA" -g composey-acceptance --query id -o tsv)
+
+# The CI service principal, then yourself.
+az role assignment create --assignee <service-principal-object-id> \
+  --role "Storage Blob Data Contributor" --scope "$SCOPE"
+az role assignment create --assignee "$(az ad signed-in-user show --query id -o tsv)" \
+  --role "Storage Blob Data Contributor" --scope "$SCOPE"
+
+# Role assignments take a few seconds to propagate before this succeeds.
+az storage container create --name tfstate --account-name "$SA" --auth-mode login
+```
+
+If `AZURE_STATE_RESOURCE_GROUP` is left unset the workflow still runs, but with
+Terraform state on the runner only — a cancelled run then strands its resources
+with no way to destroy them except by hand, and `--destroy-only` cannot help.
+
 ## Configure Federated Credentials (OIDC)
 
 In Azure Portal:
@@ -127,6 +171,7 @@ Repo → **Settings → Secrets and variables → Actions → Variables**, add:
 | `AZURE_TENANT_ID` | Azure AD tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
 | `AZURE_STATE_RESOURCE_GROUP` | `composey-acceptance` (or your RG name) |
+| `AZURE_STATE_ACCOUNT` | `composeyacceptstate` (the storage account above) |
 
 ## Run
 

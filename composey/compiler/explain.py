@@ -164,6 +164,19 @@ def explain(
     decisions: list[Decision] = []
     by_name = {s.name: s for s in semantic.services}
 
+    # If docker_app is None (using Go parser), we skip docker-specific decisions
+    if docker_app is None:
+        for service in semantic.services:
+            decisions.append(
+                Decision(
+                    service.name,
+                    f"capability: {service.capability}",
+                    "parsed by Go normalizer",
+                    "inferred",
+                )
+            )
+        return decisions
+
     for name, docker_service in docker_app.services.items():
         service = by_name[name]
         raw = docker_service.x_composey_raw

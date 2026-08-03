@@ -10,7 +10,7 @@ import (
 )
 
 // ParseCompose parses a Docker Compose file using compose-go
-func ParseCompose(filePath string) (*models.DockerApplication, error) {
+func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	// Load the compose file using compose-go (no Docker CLI needed!)
 	project, err := loader.Load(types.ConfigDetails{
 		ConfigFiles: []types.ConfigFile{
@@ -21,16 +21,16 @@ func ParseCompose(filePath string) (*models.DockerApplication, error) {
 		return nil, fmt.Errorf("parse compose file: %w", err)
 	}
 
-	app := &models.DockerApplication{
-		Services: make(map[string]models.DockerService),
-		Networks: make(map[string]interface{}),
+	app := &models.ComposeApplication{
+		Services: make(map[string]models.ComposeService),
+		Networks: make(map[string]*models.NetworkDefinition),
 		Volumes:  make(map[string]interface{}),
-		Secrets:  make(map[string]models.DockerSecret),
+		Secrets:  make(map[string]models.ComposeSecret),
 	}
 
 	// Convert services
 	for _, service := range project.Services {
-		s := models.DockerService{
+		s := models.ComposeService{
 			Image:       service.Image,
 			Environment: make(map[string]*string),
 		}
@@ -114,7 +114,10 @@ func ParseCompose(filePath string) (*models.DockerApplication, error) {
 
 	// Convert networks
 	for name, network := range project.Networks {
-		app.Networks[name] = network
+		app.Networks[name] = &models.NetworkDefinition{
+			Name:     network.Name,
+			External: network.External.External,
+		}
 	}
 
 	// Convert volumes
@@ -124,7 +127,7 @@ func ParseCompose(filePath string) (*models.DockerApplication, error) {
 
 	// Convert secrets
 	for name, secret := range project.Secrets {
-		app.Secrets[name] = models.DockerSecret{
+		app.Secrets[name] = models.ComposeSecret{
 			File: secret.File,
 		}
 	}

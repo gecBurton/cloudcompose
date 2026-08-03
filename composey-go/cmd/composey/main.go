@@ -40,9 +40,41 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var normalizeCmd = &cobra.Command{
+	Use:   "normalize <file>",
+	Short: "Parse and normalize a Docker Compose file to semantic model",
+	Long:  "Parse a Docker Compose file and output the cloud-agnostic semantic model as JSON",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		filePath := args[0]
+		projectName := "composey"
+
+		composeApp, err := compiler.ParseCompose(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Parse error: %v\n", err)
+			os.Exit(1)
+		}
+
+		semanticApp, err := compiler.Normalize(composeApp, projectName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Normalize error: %v\n", err)
+			os.Exit(1)
+		}
+
+		output, err := compiler.SemanticToJSON(semanticApp)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "JSON error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println(output)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(normalizeCmd)
 }
 
 func main() {

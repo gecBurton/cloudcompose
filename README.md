@@ -340,3 +340,16 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT License - see [LICENSE](LICENSE)
+
+---
+
+## Project Status
+
+**Current Phase:** Incremental Go migration in progress
+
+- ✅ **Parser & Normalizer:** Go implementation (compose-go library)
+- 🚧 **Inference & Generator:** Python (being ported incrementally)
+
+See [plan.md](plan.md) for details on the migration strategy and timeline.
+
+**Installation:** Currently requires Python 3.14+. Single binary distribution coming after migration completes.

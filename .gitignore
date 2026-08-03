@@ -228,3 +228,21 @@ __marimo__/
 .streamlit/secrets.toml
 build/*/backend_ci.tf
 bootstrap/backend_ci.tf
+
+# Go build artifacts
+composey-go/composey-go
+composey-go/composey-go.exe
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Go compiler cache
+go-build/
+
+# Deprecated code (kept for reference but not tracked)
+# .deprecated/ is tracked in git for rollback purposes

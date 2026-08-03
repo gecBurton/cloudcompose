@@ -441,7 +441,7 @@ Instead of running Python and Go in parallel for months:
 - Or checkout specific files: `git checkout HEAD~1 -- composey/compiler/`
 - Tag current state before migration to make rollback easier
 
-**No separate `.deprecated/` directory needed - git is the rollback mechanism.**
+**Git is the rollback mechanism - no separate backup directory needed.**
 
 ---
 

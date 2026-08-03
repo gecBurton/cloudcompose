@@ -3,7 +3,7 @@
     "required_providers": {
       "azurerm": {
         "source": "hashicorp/azurerm",
-        "version": "~> 3.0"
+        "version": "~> 4.0"
       },
       "docker": {
         "source": "kreuzwerker/docker",
@@ -70,7 +70,7 @@
                 },
                 {
                   "name": "CACHE_URL",
-                  "value": "postgresql://None:${azurerm_redis_cache.cache_redis.primary_access_key}@${azurerm_redis_cache.cache_redis.hostname}:6379/None"
+                  "value": "postgresql://None:${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.cache_redis.hostname}:10000/None"
                 },
                 {
                   "name": "BLOBS_URL",
@@ -149,17 +149,20 @@
         "purge_protection_enabled": false
       }
     },
-    "azurerm_redis_cache": {
+    "azurerm_managed_redis": {
       "cache_redis": {
         "name": "prod-doctor-cache",
         "resource_group_name": "prod",
         "location": "eastus",
-        "sku_name": "Standard",
-        "family": "C",
-        "capacity": 1,
-        "redis_version": "6",
-        "enable_non_ssl_port": false,
-        "minimum_tls_version": "1.2"
+        "sku_name": "Balanced_B0",
+        "high_availability_enabled": false,
+        "default_database": [
+          {
+            "access_keys_authentication_enabled": true,
+            "client_protocol": "Encrypted",
+            "eviction_policy": "AllKeysLRU"
+          }
+        ]
       }
     },
     "azurerm_storage_account": {
@@ -171,7 +174,7 @@
         "account_replication_type": "LRS",
         "account_kind": "StorageV2",
         "min_tls_version": "TLS1_2",
-        "enable_https_traffic_only": true
+        "https_traffic_only_enabled": true
       }
     },
     "azurerm_storage_container": {

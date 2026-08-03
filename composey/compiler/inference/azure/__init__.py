@@ -315,12 +315,12 @@ def _infer_caches(
     get_name: Callable[[str], str],
     tags: dict[str, str] | None,
 ) -> dict[str, Connection]:
-    """Infer Azure Cache for Redis instances.
+    """Infer Azure Managed Redis instances.
 
     Returns a mapping of service name to Connection for use in wiring.
     """
     from composey.constants import DefaultPorts
-    from composey.models.azure import RedisCache
+    from composey.models.azure import ManagedRedis
 
     connections: dict[str, Connection] = {}
 
@@ -329,41 +329,34 @@ def _infer_caches(
     for service in cache_services:
         cache_key = f"{service.name}_redis"
 
-        # Map size to SKU
-        # Basic: Dev/test, no SLA
-        # Standard: Production, replication
-        # Premium: Production, clustering, VNet
+        # Balanced tier: the general-purpose Managed Redis family. B0 is the
+        # smallest, and cheaper than the Basic C0 it replaces.
         size_sku_map = {
-            "small": ("Standard", "C", 1),  # 1 GB
-            "medium": ("Standard", "C", 2),  # 3 GB
-            "large": ("Premium", "P", 1),  # 6 GB with clustering
+            "small": "Balanced_B0",
+            "medium": "Balanced_B1",
+            "large": "Balanced_B3",
         }
-        sku_name, family, capacity = size_sku_map.get(
-            service.size, ("Standard", "C", 1)
-        )
+        sku_name = size_sku_map.get(service.size, "Balanced_B0")
 
-        # VNet injection for Premium tier
-        subnet_id = env.infrastructure_subnet_id if sku_name == "Premium" else None
-
-        resources.azurerm_redis_cache[cache_key] = RedisCache(
+        resources.azurerm_managed_redis[cache_key] = ManagedRedis(
             name=get_name(service.name),
             resource_group_name=env.name,
             location=env.region,
             sku_name=sku_name,
-            family=family,
-            capacity=capacity,
-            redis_version="6",
-            enable_non_ssl_port=False,
-            minimum_tls_version="1.2",
-            subnet_id=subnet_id,
+            # A single-node cache is enough for a cache; replication is a
+            # deliberate production choice, not a default to pay for.
+            high_availability_enabled=False,
             tags=tags,
         )
 
-        # Connection uses primary access key
+        # The access key hangs off the nested database, not the cluster. The
+        # port does too, but Connection.port is an int, so the well-known
+        # Managed Redis port is named directly rather than interpolated.
+        db = f"azurerm_managed_redis.{cache_key}.default_database[0]"
         connections[service.name] = Connection(
-            host=f"${{azurerm_redis_cache.{cache_key}.hostname}}",
-            port=DefaultPorts.REDIS,
-            password=f"${{azurerm_redis_cache.{cache_key}.primary_access_key}}",
+            host=f"${{azurerm_managed_redis.{cache_key}.hostname}}",
+            port=DefaultPorts.AZURE_MANAGED_REDIS,
+            password=f"${{{db}.primary_access_key}}",
         )
 
     return connections
@@ -397,7 +390,7 @@ def _infer_storage(
             account_replication_type="LRS",
             account_kind="StorageV2",
             min_tls_version="TLS1_2",
-            enable_https_traffic_only=True,
+            https_traffic_only_enabled=True,
             tags=tags,
         )
 

@@ -25,7 +25,7 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
             "required_providers": {
                 "azurerm": {
                     "source": "hashicorp/azurerm",
-                    "version": "~> 3.0",
+                    "version": "~> 4.0",
                 },
                 "docker": {
                     "source": "kreuzwerker/docker",
@@ -169,9 +169,9 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_role_assignment.items()
         }
 
-    if resources.azurerm_redis_cache:
-        result["azurerm_redis_cache"] = {
-            k: _clean_model(v) for k, v in resources.azurerm_redis_cache.items()
+    if resources.azurerm_managed_redis:
+        result["azurerm_managed_redis"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_managed_redis.items()
         }
 
     if resources.azurerm_storage_account:

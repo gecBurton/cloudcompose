@@ -30,11 +30,9 @@ def test_redis_cache_is_created():
 
     resources = infer(app, env)
 
-    assert "cache_redis" in resources.azurerm_redis_cache
-    cache = resources.azurerm_redis_cache["cache_redis"]
-    assert cache.sku_name == "Standard"
-    assert cache.family == "C"
-    assert cache.capacity == 1
+    assert "cache_redis" in resources.azurerm_managed_redis
+    cache = resources.azurerm_managed_redis["cache_redis"]
+    assert cache.sku_name == "Balanced_B0"
 
 
 def test_redis_cache_size_mapping():
@@ -62,15 +60,13 @@ def test_redis_cache_size_mapping():
     )
 
     resources = infer(app, env)
-    cache = resources.azurerm_redis_cache["cache_redis"]
-    assert cache.capacity == 2  # 3 GB
+    cache = resources.azurerm_managed_redis["cache_redis"]
+    assert cache.sku_name == "Balanced_B1"
 
-    # Test large size (Premium)
     app.services[0].size = "large"
     resources = infer(app, env)
-    cache = resources.azurerm_redis_cache["cache_redis"]
-    assert cache.sku_name == "Premium"
-    assert cache.family == "P"
+    cache = resources.azurerm_managed_redis["cache_redis"]
+    assert cache.sku_name == "Balanced_B3"
 
 
 def test_redis_connection_is_returned():
@@ -109,4 +105,4 @@ def test_redis_connection_is_returned():
 
     # Connection should be created
     # (we'd need to check this through the connections dict in a full test)
-    assert "cache_redis" in resources.azurerm_redis_cache
+    assert "cache_redis" in resources.azurerm_managed_redis

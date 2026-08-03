@@ -277,7 +277,7 @@ class StorageAccount(BaseModel):
 
     # Security
     min_tls_version: str = "TLS1_2"
-    enable_https_traffic_only: bool = True
+    https_traffic_only_enabled: bool = True
 
     tags: Optional[Dict[str, str]] = None
 
@@ -344,8 +344,22 @@ class CdnEndpoint(BaseModel):
     tags: Optional[Dict[str, str]] = None
 
 
-class RedisCache(BaseModel):
-    """Azure Cache for Redis."""
+class ManagedRedis(BaseModel):
+    """
+    Azure Managed Redis.
+
+    Replaces Azure Cache for Redis (azurerm_redis_cache), which no longer
+    accepts new instances: "Azure Cache for Redis is retiring, create Azure
+    Managed Redis instance instead."
+
+    Only azurerm 4.x exposes this. The 3.x alternative,
+    azurerm_redis_enterprise_cluster, rejects the Balanced SKUs outright and
+    starts at Enterprise_E5 — roughly $220/month against $13 for Balanced_B0,
+    and more than the product being retired.
+
+    The connection details live on the nested default_database block rather
+    than on the cluster: port and primary_access_key both hang off it.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -353,35 +367,23 @@ class RedisCache(BaseModel):
     resource_group_name: str
     location: str
 
-    # SKU configuration
     sku_name: str = Field(
-        default="Standard",
-        description="Basic, Standard, or Premium",
+        default="Balanced_B0",
+        description="Balanced_B0 upward; B0 is the smallest and cheapest",
     )
-    family: str = Field(
-        default="C",
-        description="C for Basic/Standard, P for Premium",
-    )
-    capacity: int = Field(
-        default=1,
-        description="0-6 for C family (Basic/Standard), 1-5 for P family (Premium)",
-    )
+    high_availability_enabled: bool = False
 
-    # Redis configuration
-    redis_version: str = Field(default="6", description="Redis version 4 or 6")
-    enable_non_ssl_port: bool = False
-    minimum_tls_version: str = "1.2"
-
-    # Networking (Premium tier only)
-    subnet_id: Optional[str] = Field(
-        default=None,
-        description="Subnet ID for VNet injection (Premium tier only)",
-    )
-
-    # Persistence (Premium tier only)
-    redis_configuration: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Redis configuration including persistence settings",
+    default_database: List[Dict[str, Any]] = Field(
+        default_factory=lambda: [
+            {
+                # Managed Redis can require Entra ID auth instead. Composey
+                # wires a password into the application, so the access keys
+                # have to be available.
+                "access_keys_authentication_enabled": True,
+                "client_protocol": "Encrypted",
+                "eviction_policy": "AllKeysLRU",
+            }
+        ],
     )
 
     tags: Optional[Dict[str, str]] = None
@@ -419,7 +421,7 @@ class AzureResources(BaseModel):
         default_factory=dict
     )
     azurerm_role_assignment: Dict[str, RoleAssignment] = Field(default_factory=dict)
-    azurerm_redis_cache: Dict[str, RedisCache] = Field(default_factory=dict)
+    azurerm_managed_redis: Dict[str, ManagedRedis] = Field(default_factory=dict)
     azurerm_storage_account: Dict[str, StorageAccount] = Field(default_factory=dict)
     azurerm_storage_container: Dict[str, StorageContainer] = Field(default_factory=dict)
     azurerm_cdn_profile: Dict[str, CdnProfile] = Field(default_factory=dict)

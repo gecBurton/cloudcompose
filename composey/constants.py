@@ -91,6 +91,9 @@ class DefaultPorts:
     MYSQL = 3306
     MARIADB = 3306
     REDIS = 6379
+    # Azure Managed Redis does not serve on 6379: its database listens on
+    # 10000, which is what the connection has to name.
+    AZURE_MANAGED_REDIS = 10000
 
     @classmethod
     def for_database(cls, engine: str) -> int:

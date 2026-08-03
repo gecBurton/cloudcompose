@@ -35,7 +35,7 @@ def test_storage_account_is_created():
     assert account.account_tier == "Standard"
     assert account.account_replication_type == "LRS"
     assert account.account_kind == "StorageV2"
-    assert account.enable_https_traffic_only is True
+    assert account.https_traffic_only_enabled is True
     assert account.min_tls_version == "TLS1_2"
 
 

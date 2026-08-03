@@ -10,8 +10,13 @@ This allows incremental migration:
 import json
 import subprocess
 from pathlib import Path
-from typing import Union
 
+from composey.compiler.generator import generate as generate_aws
+from composey.compiler.generator_azure import generate as generate_azure
+from composey.compiler.generator_gcp import generate as generate_gcp
+from composey.compiler.inference import infer as infer_aws
+from composey.compiler.inference.azure import infer as infer_azure
+from composey.compiler.inference.gcp import infer as infer_gcp
 from composey.models.environment import (
     AwsEnvironment,
     AzureEnvironment,
@@ -19,12 +24,6 @@ from composey.models.environment import (
     GcpEnvironment,
 )
 from composey.models.semantic import Application as SemanticApplication
-from composey.compiler.generator import generate as generate_aws
-from composey.compiler.generator_azure import generate as generate_azure
-from composey.compiler.generator_gcp import generate as generate_gcp
-from composey.compiler.inference import infer as infer_aws
-from composey.compiler.inference.azure import infer as infer_azure
-from composey.compiler.inference.gcp import infer as infer_gcp
 
 
 def parse_and_normalize_go(compose_file: str, project_name: str) -> SemanticApplication:
@@ -103,8 +102,8 @@ def compile_to_terraform_hybrid(
         app = parse_and_normalize_go(compose_file, project_name)
     else:
         # Fallback to Python (for comparison testing)
-        from composey.compiler.parser import parse
         from composey.compiler.normalizer import normalize
+        from composey.compiler.parser import parse
 
         app = normalize(parse(compose_file), project_name)
 

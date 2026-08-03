@@ -7,8 +7,8 @@ as a cache.
 """
 
 import pytest
-
 from composey.compiler.normalizer import _infer_capability, normalize
+
 from composey.exceptions import IngressError, ValidationError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Port as DockerPort

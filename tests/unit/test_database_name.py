@@ -8,10 +8,10 @@ authentication-shaped error from the driver at runtime.
 """
 
 import pytest
+from composey.compiler.normalizer import _database_name
 from pydantic import ValidationError
 
 from composey.compiler.inference import infer
-from composey.compiler.normalizer import _database_name
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application, Service
 

@@ -8,10 +8,10 @@ from ..models.semantic import Application as SemanticApplication
 from .generator import generate as generate_aws
 from .generator_azure import generate as generate_azure
 from .generator_gcp import generate as generate_gcp
+from .hybrid import parse_and_normalize_go
 from .inference import infer as infer_aws
 from .inference.azure import infer as infer_azure
 from .inference.gcp import infer as infer_gcp
-from .hybrid import parse_and_normalize_go
 
 
 def compile_application(app: SemanticApplication, env: BaseEnvironment) -> str:

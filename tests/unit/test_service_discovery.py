@@ -9,12 +9,12 @@ silently, for eight days, because no example had two containers talking.
 import json
 
 import pytest
+from composey.compiler.normalizer import normalize
+from composey.compiler.parser import parse
 
 from composey.compiler import compile_to_terraform
 from composey.compiler.explain import explain
 from composey.compiler.inference import _namespace_for, infer
-from composey.compiler.normalizer import normalize
-from composey.compiler.parser import parse
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import (
     Application,

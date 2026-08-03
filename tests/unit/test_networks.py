@@ -10,9 +10,9 @@ developer's machine.
 import json
 
 import pytest
+from composey.compiler.normalizer import normalize
 
 from composey.compiler import compile_to_terraform
-from composey.compiler.normalizer import normalize
 from composey.exceptions import NetworkError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import NetworkDefinition

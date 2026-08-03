@@ -1,7 +1,7 @@
 import pytest
+from composey.compiler.normalizer import _parse_schedule, normalize
 
 from composey.compiler.inference import _eventbridge_expression
-from composey.compiler.normalizer import _parse_schedule, normalize
 from composey.exceptions import ScheduleError, ValidationError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Service as DockerService

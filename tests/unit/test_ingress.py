@@ -8,11 +8,11 @@ conflating, and each of them is pinned here.
 import json
 
 import pytest
+from composey.compiler.normalizer import normalize
 
 from composey.compiler.generator import generate
 from composey.compiler.inference import _path_patterns, infer
 from composey.compiler.inference._common import _priority_band
-from composey.compiler.normalizer import normalize
 from composey.exceptions import ValidationError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Port as DockerPort

@@ -11,8 +11,8 @@ an error rather than a silent one.
 """
 
 import pytest
-
 from composey.compiler.normalizer import normalize
+
 from composey.exceptions import StorageError
 from composey.models.compose import Application as DockerApplication
 from composey.models.compose import Service as DockerService

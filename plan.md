@@ -133,7 +133,7 @@
 **Day 7: Integration & Deployment**
 - Create hybrid integration layer (`composey/compiler/hybrid.py`)
 - Update CLI to use Go parser/normalizer
-- Move Python files to `.deprecated/`
+- Remove Python parser/normalizer files
 - Test all examples with Go→Python pipeline
 
 ### Checkpoint
@@ -145,8 +145,8 @@
 
 ### Files Changed
 **Removed:**
-- `composey/compiler/parser.py` (77 lines) → `.deprecated/`
-- `composey/compiler/normalizer.py` (382 lines) → `.deprecated/`
+- `composey/compiler/parser.py` (77 lines)
+- `composey/compiler/normalizer.py` (382 lines)
 
 **Added:**
 - `composey-go/internal/models/semantic.go` (162 lines)
@@ -222,7 +222,7 @@ Output (main.tf.json)
 
 **Day 6-7: Integration & Deployment**
 - Update hybrid integration to use Go inference for AWS
-- Move Python AWS files to `.deprecated/`
+- Remove Python AWS inference/generator files
 - Test all AWS examples with Go→Go→Go pipeline
 
 ### Checkpoint
@@ -275,7 +275,7 @@ Output (main.tf.json)
 **Day 11-12: Integration & Deployment**
 - Test all Azure examples with Go pipeline
 - Test all GCP examples with Go pipeline
-- Move Python Azure/GCP files to `.deprecated/`
+- Remove Python Azure/GCP inference/generator files
 
 ### Checkpoint
 - ✅ Azure inference complete
@@ -423,7 +423,7 @@ Instead of running Python and Go in parallel for months:
 1. **Port a stage** (parser, normalizer, inference, generator)
 2. **Test thoroughly** with parity tests
 3. **Replace Python immediately** once tests pass
-4. **Move old code to `.deprecated/`**
+4. **Remove old code** (git is the rollback mechanism)
 5. **Continue to next stage**
 
 ### Benefits
@@ -434,17 +434,14 @@ Instead of running Python and Go in parallel for months:
 - ✅ Smaller PRs, easier reviews
 - ✅ Can still rollback if needed (`.deprecated/` files)
 
-### Rollback Plan
+### Rollback Strategy
 
-If critical issues found in production:
+**If critical issues are found:**
+- Use git to revert to previous commit: `git revert HEAD`
+- Or checkout specific files: `git checkout HEAD~1 -- composey/compiler/`
+- Tag current state before migration to make rollback easier
 
-```bash
-# For Phase 2 (parser/normalizer issues)
-cd /Users/GBurton/PycharmProjects/composey
-mv .deprecated/parser.py composey/compiler/
-mv .deprecated/normalizer.py composey/compiler/
-git checkout composey/cli.py composey/compiler/__init__.py
-```
+**No separate `.deprecated/` directory needed - git is the rollback mechanism.**
 
 ---
 
@@ -608,9 +605,9 @@ git checkout composey/cli.py composey/compiler/__init__.py
 - `composey-go/internal/compiler/` (~530 lines) - Parser + Normalizer
 - `composey-go/internal/models/` (275 lines) - Data models
 
-### Deprecated Python Files
-- `.deprecated/parser.py` (77 lines)
-- `.deprecated/normalizer.py` (382 lines)
+### Removed Python Files (Phase 2)
+- `composey/compiler/parser.py` (77 lines)
+- `composey/compiler/normalizer.py` (382 lines)
 
 ---
 

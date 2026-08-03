@@ -198,9 +198,7 @@ def _private_networking(
         "delegated_subnet_id": subnet_id,
         "private_dns_zone_id": f"${{azurerm_private_dns_zone.{zone_key}.id}}",
         "public_network_access_enabled": False,
-        "depends_on": [
-            f"azurerm_private_dns_zone_virtual_network_link.{zone_key}"
-        ],
+        "depends_on": [f"azurerm_private_dns_zone_virtual_network_link.{zone_key}"],
     }
 
 

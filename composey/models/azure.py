@@ -109,6 +109,11 @@ class PostgreSQLFlexibleServer(BaseModel):
     # Database to create
     database_name: Optional[str] = None
 
+    # The private DNS zone must be linked to the VNet before the server is
+    # created, and no argument here references the link, so the edge has to be
+    # declared explicitly.
+    depends_on: Optional[List[str]] = None
+
     tags: Optional[Dict[str, str]] = None
 
 
@@ -149,6 +154,9 @@ class MySQLFlexibleServer(BaseModel):
     # High availability
     high_availability: Optional[Dict[str, str]] = None
 
+    # See PostgreSQLFlexibleServer.depends_on.
+    depends_on: Optional[List[str]] = None
+
     tags: Optional[Dict[str, str]] = None
 
 
@@ -161,6 +169,35 @@ class MySQLFlexibleDatabase(BaseModel):
     server_id: str
     charset: str = "utf8mb4"
     collation: str = "utf8mb4_unicode_ci"
+
+
+class PrivateDnsZone(BaseModel):
+    """
+    Private DNS zone for a Flexible Server.
+
+    A server on a delegated subnet is unreachable by name without one, and
+    Azure refuses to create it: EmptyPrivateDnsZoneArmResourceId. The zone name
+    must end in the engine's suffix (.postgres.database.azure.com).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    tags: Optional[Dict[str, str]] = None
+
+
+class PrivateDnsZoneVirtualNetworkLink(BaseModel):
+    """Attaches a private DNS zone to the environment's VNet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    private_dns_zone_name: str
+    virtual_network_id: str
+    registration_enabled: bool = False
+    tags: Optional[Dict[str, str]] = None
 
 
 class KeyVault(BaseModel):
@@ -372,6 +409,10 @@ class AzureResources(BaseModel):
     azurerm_mysql_flexible_database: Dict[str, MySQLFlexibleDatabase] = Field(
         default_factory=dict
     )
+    azurerm_private_dns_zone: Dict[str, PrivateDnsZone] = Field(default_factory=dict)
+    azurerm_private_dns_zone_virtual_network_link: Dict[
+        str, PrivateDnsZoneVirtualNetworkLink
+    ] = Field(default_factory=dict)
     azurerm_key_vault: Dict[str, KeyVault] = Field(default_factory=dict)
     azurerm_key_vault_secret: Dict[str, KeyVaultSecret] = Field(default_factory=dict)
     azurerm_user_assigned_identity: Dict[str, UserAssignedIdentity] = Field(

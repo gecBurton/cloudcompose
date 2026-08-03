@@ -623,7 +623,50 @@ def generate_azure_environment(
                     ],
                 }
             ],
-        }
+        },
+        # A subnet carries exactly one delegation, and a Flexible Server
+        # requires its subnet delegated to its own engine. So neither database
+        # can share the Container Apps subnet, and the two engines cannot share
+        # a subnet with each other. Subnets cost nothing; both are created up
+        # front so the environment can host either.
+        f"{tf_name}_postgresql": {
+            "name": "postgresql",
+            "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+            "virtual_network_name": f"${{azurerm_virtual_network.{tf_name}.name}}",
+            "address_prefixes": [_cidrsubnet(vnet_cidr, 5, 1)],
+            "delegation": [
+                {
+                    "name": "postgresql-flexible-server",
+                    "service_delegation": [
+                        {
+                            "name": "Microsoft.DBforPostgreSQL/flexibleServers",
+                            "actions": [
+                                "Microsoft.Network/virtualNetworks/subnets/join/action"
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+        f"{tf_name}_mysql": {
+            "name": "mysql",
+            "resource_group_name": f"${{azurerm_resource_group.{tf_name}.name}}",
+            "virtual_network_name": f"${{azurerm_virtual_network.{tf_name}.name}}",
+            "address_prefixes": [_cidrsubnet(vnet_cidr, 5, 2)],
+            "delegation": [
+                {
+                    "name": "mysql-flexible-server",
+                    "service_delegation": [
+                        {
+                            "name": "Microsoft.DBforMySQL/flexibleServers",
+                            "actions": [
+                                "Microsoft.Network/virtualNetworks/subnets/join/action"
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
     }
 
     # Container Apps Environment
@@ -650,6 +693,8 @@ def generate_azure_environment(
         "log_analytics_workspace_id": f"${{azurerm_log_analytics_workspace.{tf_name}.id}}",
         "vnet_id": f"${{azurerm_virtual_network.{tf_name}.id}}",
         "infrastructure_subnet_id": f"${{azurerm_subnet.{tf_name}_infrastructure.id}}",
+        "postgresql_subnet_id": f"${{azurerm_subnet.{tf_name}_postgresql.id}}",
+        "mysql_subnet_id": f"${{azurerm_subnet.{tf_name}_mysql.id}}",
         "retain_data_on_destroy": retain_data_on_destroy,
     }
 

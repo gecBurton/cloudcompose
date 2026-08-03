@@ -114,8 +114,7 @@
         "storage_mb": 32768,
         "administrator_login": "composey",
         "administrator_password": "${random_password.postgres_admin.result}",
-        "delegated_subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure",
-        "public_network_access_enabled": false
+        "public_network_access_enabled": true
       }
     },
     "azurerm_postgresql_flexible_server_database": {

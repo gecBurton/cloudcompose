@@ -137,6 +137,17 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             for k, v in resources.azurerm_mysql_flexible_database.items()
         }
 
+    if resources.azurerm_private_dns_zone:
+        result["azurerm_private_dns_zone"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_private_dns_zone.items()
+        }
+
+    if resources.azurerm_private_dns_zone_virtual_network_link:
+        result["azurerm_private_dns_zone_virtual_network_link"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_private_dns_zone_virtual_network_link.items()
+        }
+
     if resources.azurerm_key_vault:
         result["azurerm_key_vault"] = {
             k: _clean_model(v) for k, v in resources.azurerm_key_vault.items()

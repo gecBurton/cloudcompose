@@ -24,6 +24,8 @@ from composey.models.azure import (
     MySQLFlexibleServer,
     PostgreSQLFlexibleDatabase,
     PostgreSQLFlexibleServer,
+    PrivateDnsZone,
+    PrivateDnsZoneVirtualNetworkLink,
     StorageAccount,
     StorageContainer,
 )
@@ -153,6 +155,55 @@ def _infer_container_registry(
     )
 
 
+def _private_networking(
+    resources: AzureResources,
+    env: AzureEnvironment,
+    app: SemanticApp,
+    engine: str,
+    subnet_id: str | None,
+    tags: dict[str, str] | None,
+) -> dict:
+    """
+    Arguments placing a Flexible Server on the environment's private network.
+
+    Azure will not create a server on a delegated subnet without a private DNS
+    zone (EmptyPrivateDnsZoneArmResourceId), and the zone has to be linked to
+    the VNet before the server exists. Environments predating those subnets
+    have no delegated subnet to use, so the server falls back to public network
+    access rather than failing to compile.
+    """
+    if not subnet_id:
+        return {"public_network_access_enabled": True}
+
+    zone_key = f"{engine}"
+    suffix = "postgres" if engine == "postgresql" else "mysql"
+    zone_name = f"{app.name}-{engine}.{suffix}.database.azure.com"
+
+    resources.azurerm_private_dns_zone[zone_key] = PrivateDnsZone(
+        name=zone_name,
+        resource_group_name=env.name,
+        tags=tags,
+    )
+    resources.azurerm_private_dns_zone_virtual_network_link[zone_key] = (
+        PrivateDnsZoneVirtualNetworkLink(
+            name=f"{app.name}-{engine}-link",
+            resource_group_name=env.name,
+            private_dns_zone_name=f"${{azurerm_private_dns_zone.{zone_key}.name}}",
+            virtual_network_id=env.vnet_id,
+            tags=tags,
+        )
+    )
+
+    return {
+        "delegated_subnet_id": subnet_id,
+        "private_dns_zone_id": f"${{azurerm_private_dns_zone.{zone_key}.id}}",
+        "public_network_access_enabled": False,
+        "depends_on": [
+            f"azurerm_private_dns_zone_virtual_network_link.{zone_key}"
+        ],
+    }
+
+
 def _infer_databases(
     resources: AzureResources,
     app: SemanticApp,
@@ -198,9 +249,10 @@ def _infer_databases(
             version="14",
             sku_name="B_Standard_B1ms",
             storage_mb=32768,
-            delegated_subnet_id=env.infrastructure_subnet_id,
-            public_network_access_enabled=False,
             tags=tags,
+            **_private_networking(
+                resources, env, app, "postgresql", env.postgresql_subnet_id, tags
+            ),
         )
 
         for service in pg_services:
@@ -235,9 +287,10 @@ def _infer_databases(
             version="8.0",
             sku_name="B_Standard_B1ms",
             storage_mb=32768,
-            delegated_subnet_id=env.infrastructure_subnet_id,
-            public_network_access_enabled=False,
             tags=tags,
+            **_private_networking(
+                resources, env, app, "mysql", env.mysql_subnet_id, tags
+            ),
         )
 
         for service in mysql_services:

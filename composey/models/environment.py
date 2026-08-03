@@ -111,6 +111,20 @@ class AzureEnvironment(BaseEnvironment):
         description="Subnet ID for Container Apps infrastructure"
     )
 
+    # A Flexible Server needs a subnet delegated to its own engine, so neither
+    # database can reuse the Container Apps subnet and the two engines cannot
+    # share one either. Optional so environment files written before composey
+    # created these subnets stay loadable; a database then falls back to public
+    # network access instead of failing to compile.
+    postgresql_subnet_id: Optional[str] = Field(
+        default=None,
+        description="Subnet delegated to Microsoft.DBforPostgreSQL/flexibleServers",
+    )
+    mysql_subnet_id: Optional[str] = Field(
+        default=None,
+        description="Subnet delegated to Microsoft.DBforMySQL/flexibleServers",
+    )
+
     # Container Registry (ACR)
     container_registry_name: Optional[str] = Field(
         default=None,

@@ -1,7 +1,9 @@
 # Azure: where things stand
 
 Written 2026-08-04, after taking Azure from "compiles but has never deployed"
-to a four-example acceptance suite that passes against real Azure.
+to a four-example acceptance suite that passes against real Azure, including
+Container Apps Jobs (confirmed via a full `production-stack` run in
+`francecentral`).
 
 ## Verified against real Azure
 
@@ -12,7 +14,7 @@ with nothing left in the subscription.
 | --- | --- |
 | `hello` | Container App, ingress, the environment stack |
 | `web-api` | Two services talking to each other |
-| `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault |
+| `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs |
 | `minio-s3` | Container-to-managed-service substitution (minio → Storage Account) |
 
 Run one with:
@@ -20,14 +22,6 @@ Run one with:
 ```bash
 gh workflow run azure-acceptance.yml --ref main -f example=hello
 ```
-
-## Verified only by `terraform validate`
-
-Compiles and passes provider validation; **never applied to Azure**.
-
-- **Container Apps Jobs** (`36f1eb1`). `production-stack` exercises this, so one
-  acceptance run would settle it. Do this first — it is the cheapest
-  outstanding item and the most recently written code.
 
 ## Outstanding work
 

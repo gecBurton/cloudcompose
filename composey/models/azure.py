@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from composey.models.aws import DockerImage, DockerRegistryImage
+
 
 class ContainerApp(BaseModel):
     """Azure Container App resource."""
@@ -476,9 +478,11 @@ class AzureResources(BaseModel):
     azurerm_cdn_profile: Dict[str, CdnProfile] = Field(default_factory=dict)
     azurerm_cdn_endpoint: Dict[str, CdnEndpoint] = Field(default_factory=dict)
 
-    # Docker provider resources (same as AWS)
-    docker_image: Dict[str, Any] = Field(default_factory=dict)
-    docker_registry_image: Dict[str, Any] = Field(default_factory=dict)
+    # Docker provider resources (same models as AWS: build locally, push to
+    # ACR instead of ECR). See _handle_build_context in
+    # compiler/inference/azure/__init__.py for how these get populated.
+    docker_image: Dict[str, DockerImage] = Field(default_factory=dict)
+    docker_registry_image: Dict[str, DockerRegistryImage] = Field(default_factory=dict)
 
     # Random resources for passwords
     random_password: Dict[str, Any] = Field(default_factory=dict)

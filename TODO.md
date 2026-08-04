@@ -25,23 +25,26 @@ gh workflow run azure-acceptance.yml --ref main -f example=hello
 
 ## Outstanding work
 
-### 1. Image build and push — the last real feature gap
+### 1. Image build and push — implemented, not yet live-verified
 
-Azure never builds or pushes images. The ACR is created and the container app
-references `<registry>.azurecr.io/<service>:latest`, but nothing builds it, so
-the app fails to pull. AWS does this properly: `aws_ecr_repository` +
-`docker_image` + `docker_registry_image`. The Azure inference populates
-neither, though `generator_azure.py` is already wired to emit them if something
-filled them in.
+Azure now builds and pushes images the same way AWS does: `docker_image`
+builds locally via the `kreuzwerker/docker` provider, `docker_registry_image`
+pushes it to ACR, and the container's `image` field is pinned to the pushed
+`sha256_digest` rather than a mutable `:latest` tag (`_infer_container_registry`
+and `_get_container_image` in `compiler/inference/azure/__init__.py`). The
+`docker` provider is now conditionally declared (only when something builds)
+and authenticates against ACR's admin credentials — `admin_username`/
+`admin_password` off the `azurerm_container_registry` resource itself, no
+data source needed, unlike AWS's ephemeral `aws_ecr_authorization_token`.
 
-Blocks `flask`, `doctor`, `build-webapp`.
+Passes `terraform validate` for `flask`, `doctor`, and `build-webapp`. **Not
+yet run against real Azure** — the registry's `identity: "System"` pull
+config on the Container App/Job has never been checked for whether it also
+needs an explicit `AcrPull` role assignment, since nothing has attempted a
+real pull before now. Run `build-webapp` through the acceptance workflow
+first; it is the simplest of the three.
 
-**Needs a decision:** docker provider building on the runner and pushing to ACR
-(mirrors AWS, keeps one mental model) versus ACR Tasks building server-side
-(no Docker daemon needed in CI, but a second build mechanism to maintain).
-
-Note `docs/aws-azure-gaps.md` claims "Build from source ✅ ECR ✅ ACR — Both
-supported". That is wrong and should be corrected whichever way this goes.
+`docs/aws-azure-gaps.md` has been corrected.
 
 ### 2. Front Door — CDN is unsupported
 

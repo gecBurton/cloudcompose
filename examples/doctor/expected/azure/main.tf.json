@@ -5,13 +5,13 @@
         "source": "hashicorp/azurerm",
         "version": "~> 4.0"
       },
-      "docker": {
-        "source": "kreuzwerker/docker",
-        "version": "~> 3.0"
-      },
       "random": {
         "source": "hashicorp/random",
         "version": "~> 3.6"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
       }
     }
   },
@@ -19,8 +19,16 @@
     "azurerm": {
       "features": {}
     },
-    "docker": {},
-    "random": {}
+    "random": {},
+    "docker": {
+      "registry_auth": [
+        {
+          "address": "${azurerm_container_registry.main.login_server}",
+          "username": "${azurerm_container_registry.main.admin_username}",
+          "password": "${azurerm_container_registry.main.admin_password}"
+        }
+      ]
+    }
   },
   "data": {
     "azurerm_client_config": {
@@ -44,7 +52,7 @@
           "container": [
             {
               "name": "doctor",
-              "image": "prodacr.azurecr.io/doctor:latest",
+              "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",
               "cpu": 0.25,
               "memory": "0.5Gi",
               "env": [
@@ -182,6 +190,22 @@
         "name": "blobs",
         "storage_account_name": "${azurerm_storage_account.blobs_storage.name}",
         "container_access_type": "private"
+      }
+    },
+    "docker_image": {
+      "doctor_image": {
+        "name": "${azurerm_container_registry.main.login_server}/doctor:latest",
+        "build": {
+          "context": "app",
+          "platform": "linux/amd64",
+          "dockerfile": "Dockerfile"
+        }
+      }
+    },
+    "docker_registry_image": {
+      "doctor_push": {
+        "name": "${docker_image.doctor_image.name}",
+        "keep_remotely": true
       }
     },
     "random_password": {

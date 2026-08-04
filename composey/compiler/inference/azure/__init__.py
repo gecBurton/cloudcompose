@@ -13,7 +13,7 @@ from composey.compiler.inference.azure.naming import (
     key_vault_name,
     storage_account_name,
 )
-from composey.models.aws import RandomPassword
+from composey.models.aws import DockerImage, DockerRegistryImage, RandomPassword
 from composey.models.azure import (
     AzureResources,
     ContainerApp,
@@ -153,9 +153,40 @@ def _infer_container_registry(
         resource_group_name=env.name,
         location=env.region,
         sku="Standard",
-        admin_enabled=True,  # Required for Container Apps to pull
+        admin_enabled=True,  # Required for Container Apps to pull, and for
+        # the docker provider to authenticate when pushing (see
+        # _handle_build_context and generator_azure.py's registry_auth).
         tags=tags,
     )
+
+    # Build and push an image for every service with a build context. Mirrors
+    # AWS's _handle_build_context in compiler/inference/_compute.py: a
+    # docker_image builds locally, a docker_registry_image pushes it, and the
+    # container's image reference is pinned to the pushed digest rather than
+    # a mutable ":latest" tag, so Container Apps deploys exactly what was
+    # built rather than racing a tag that could be overwritten mid-apply.
+    for service in app.services:
+        if service.capability != "container" or not service.build_context:
+            continue
+
+        build: dict = {
+            "context": service.build_context,
+            "platform": "linux/amd64",
+        }
+        if service.dockerfile:
+            build["dockerfile"] = service.dockerfile
+
+        image_key = f"{service.name}_image"
+        resources.docker_image[image_key] = DockerImage(
+            name=f"${{azurerm_container_registry.main.login_server}}/{service.name}:latest",
+            build=build,
+        )
+
+        push_key = f"{service.name}_push"
+        resources.docker_registry_image[push_key] = DockerRegistryImage(
+            name=f"${{docker_image.{image_key}.name}}",
+            keep_remotely=True,
+        )
 
 
 def _private_networking(
@@ -684,14 +715,20 @@ def _infer_container_apps(
 
 
 def _get_container_image(service, app: SemanticApp, env: AzureEnvironment) -> str:
-    """Get the container image reference."""
+    """Get the container image reference.
+
+    For a built service this must resolve to the exact image
+    _infer_container_registry pushed — the sha256 digest, not a mutable
+    ":latest" tag — so Container Apps can't pull a different image than the
+    one Terraform just built. See docker_registry_image in
+    _infer_container_registry.
+    """
     if service.build_context:
-        # Must resolve to the registry _infer_container_registry creates, so
-        # both go through the same naming function.
-        registry = env.container_registry_name or container_registry_name(
-            env.name, app.name
+        push_key = f"{service.name}_push"
+        return (
+            f"${{azurerm_container_registry.main.login_server}}/{service.name}"
+            f"@${{docker_registry_image.{push_key}.sha256_digest}}"
         )
-        return f"{registry}.azurecr.io/{service.name}:latest"
     return service.image
 
 

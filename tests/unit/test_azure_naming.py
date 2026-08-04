@@ -75,10 +75,13 @@ class TestUniqueness:
 
 def test_built_images_point_at_the_registry_that_is_created():
     """
-    The registry name was computed in two places that disagreed: the registry
-    was created as "prod-flask-acr" while images referenced
-    "prodprodacr.azurecr.io" — the environment name twice, no application name.
-    Both now resolve through the same function.
+    The registry name was once computed in two places that disagreed: the
+    registry was created as "prod-flask-acr" while images referenced
+    "prodprodacr.azurecr.io" — the environment name twice, no application
+    name. Images now interpolate ${azurerm_container_registry.main.login_server}
+    directly rather than recomputing the name, which makes that class of bug
+    structurally impossible: there is only one place the registry's hostname
+    comes from.
     """
     import json
 
@@ -98,10 +101,11 @@ def test_built_images_point_at_the_registry_that_is_created():
         compile_to_terraform("examples/flask/compose.yml", env, "flask")
     )
 
-    registry = parsed["resource"]["azurerm_container_registry"]["main"]["name"]
+    assert "azurerm_container_registry" in parsed["resource"]
     apps = parsed["resource"]["azurerm_container_app"].values()
     images = [app["template"]["container"][0]["image"] for app in apps]
 
     assert images, "expected at least one built image"
+    registry = "${azurerm_container_registry.main.login_server}"
     for image in images:
-        assert image.startswith(f"{registry}.azurecr.io/"), image
+        assert image.startswith(f"{registry}/"), image

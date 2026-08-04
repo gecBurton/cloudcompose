@@ -27,10 +27,6 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
                     "source": "hashicorp/azurerm",
                     "version": "~> 4.0",
                 },
-                "docker": {
-                    "source": "kreuzwerker/docker",
-                    "version": "~> 3.0",
-                },
                 "random": {
                     "source": "hashicorp/random",
                     "version": "~> 3.6",
@@ -41,7 +37,6 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
             "azurerm": {
                 "features": {},
             },
-            "docker": {},
             "random": {},
         },
         "data": {
@@ -62,6 +57,27 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
         },
         "resource": _build_resources(resources),
     }
+
+    # Only wire up the docker provider if something actually builds an image.
+    # Auth is against the ACR admin account (azurerm_container_registry has
+    # admin_enabled=True whenever it exists) rather than a short-lived token
+    # like AWS's aws_ecr_authorization_token data source: ACR's admin
+    # credentials are stable resource attributes, so no data source is
+    # needed to fetch them.
+    if resources.docker_image:
+        terraform["terraform"]["required_providers"]["docker"] = {
+            "source": "kreuzwerker/docker",
+            "version": "~> 3.0",
+        }
+        terraform["provider"]["docker"] = {
+            "registry_auth": [
+                {
+                    "address": "${azurerm_container_registry.main.login_server}",
+                    "username": "${azurerm_container_registry.main.admin_username}",
+                    "password": "${azurerm_container_registry.main.admin_password}",
+                }
+            ]
+        }
 
     # On AWS the public hostname belongs to the environment's shared load
     # balancer, so the environment stack publishes it. A Container App carries
@@ -201,10 +217,14 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
 
     # Docker resources
     if resources.docker_image:
-        result["docker_image"] = resources.docker_image
+        result["docker_image"] = {
+            k: _clean_model(v) for k, v in resources.docker_image.items()
+        }
 
     if resources.docker_registry_image:
-        result["docker_registry_image"] = resources.docker_registry_image
+        result["docker_registry_image"] = {
+            k: _clean_model(v) for k, v in resources.docker_registry_image.items()
+        }
 
     # Random resources
     if resources.random_password:

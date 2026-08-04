@@ -21,6 +21,7 @@ on:
           - web-api
           - minio-s3
           - production-stack
+          - build-webapp
       region:
         description: Azure region to deploy into
         type: choice
@@ -140,6 +141,13 @@ jobs:
               # this is the longest run by some margin.
               export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
                      EXPECT="Welcome to nginx" POLL_TIMEOUT=480 ;;
+            build-webapp)
+              # First real-Azure exercise of image build+push (docker_image /
+              # docker_registry_image -> ACR). If this fails at the pull
+              # step, the registry identity likely also needs an explicit
+              # AcrPull role assignment — see TODO.md.
+              export COMPOSE=examples/build-webapp/compose.yml PROJECT=buildwebapp \
+                     EXPECT="hello from a composey-built image" ;;
             *)
               echo "::error::no smoke-test configuration for '${{ inputs.example }}'"
               exit 1 ;;

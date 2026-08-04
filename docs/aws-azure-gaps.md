@@ -9,7 +9,7 @@ This document compares the current feature support between AWS and Azure impleme
 | **Compute** | Serverless containers | ✅ ECS Fargate | ✅ Container Apps | Both supported |
 | | Task definitions | ✅ Detailed | ⚠️ Simplified | Azure uses simpler container spec |
 | | Service discovery | ✅ CloudMap | ⚠️ Built-in | Azure has automatic discovery |
-| | Build from source | ✅ ECR | ✅ ACR | Both supported |
+| | Build from source | ✅ ECR + docker provider | ✅ ACR + docker provider | Both build locally via kreuzwerker/docker and push, pinning the deployed image to its sha256 digest |
 | **Scaling** | CPU-based | ✅ Target tracking | ✅ KEDA | Both supported |
 | | Memory-based | ✅ Target tracking | ⚠️ Not implemented | Azure can add KEDA memory trigger |
 | | Request-based | ✅ ALB requests | ✅ HTTP concurrent | Different mechanisms |

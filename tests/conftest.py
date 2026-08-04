@@ -42,8 +42,6 @@ def composey_go_binary():
     return go_binary
 
 
-
-
 # AWS Mock Environment
 @pytest.fixture(scope="session")
 def mock_prod_env():

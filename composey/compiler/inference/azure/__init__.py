@@ -422,6 +422,22 @@ def _infer_container_apps(
     connections: dict[str, Connection],
 ) -> None:
     """Create Container Apps for each container service."""
+    scheduled = [s for s in app.services if s.schedule and s.capability == "container"]
+    if scheduled:
+        # AWS routes these to EventBridge and deliberately does not run them as
+        # persistent services. Azure has no equivalent here, so the schedule is
+        # dropped and the service becomes an always-on Container App: a task
+        # written to run nightly instead runs continuously, and one that exits
+        # when its work is done is restarted forever. Container Apps Jobs are
+        # the right home for these; until composey emits them, say so rather
+        # than deploying something quietly different from what was asked for.
+        warnings.warn(
+            "Scheduled tasks are not supported on Azure: the schedule is "
+            "ignored and the service is deployed as an always-on Container "
+            "App. Affected: " + ", ".join(s.name for s in scheduled),
+            stacklevel=2,
+        )
+
     for service in app.services:
         if service.capability != "container":
             continue

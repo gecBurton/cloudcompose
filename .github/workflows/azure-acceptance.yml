@@ -21,6 +21,13 @@ on:
           - web-api
           - minio-s3
           - production-stack
+      region:
+        description: Azure region to deploy into
+        type: choice
+        default: westeurope
+        options:
+          - westeurope
+          - uksouth
 
 permissions:
   contents: read
@@ -107,7 +114,7 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           # Region under test. Not eastus: this subscription is offer-restricted
           # there for PostgreSQL Flexible Server (LocationIsOfferRestricted).
-          REGION: uksouth
+          REGION: ${{ inputs.region }}
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
           STATE_ACCOUNT: ${{ vars.AZURE_STATE_ACCOUNT }}

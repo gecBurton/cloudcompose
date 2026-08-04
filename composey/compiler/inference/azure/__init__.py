@@ -333,14 +333,14 @@ def _infer_caches(
     for service in cache_services:
         cache_key = f"{service.name}_redis"
 
-        # Balanced tier: the general-purpose Managed Redis family. B0 is the
-        # smallest, and cheaper than the Basic C0 it replaces.
+        # Balanced tier: the general-purpose Managed Redis family. B0 has
+        # insufficient capacity in many regions, so "small" maps to B1.
         size_sku_map = {
-            "small": "Balanced_B0",
+            "small": "Balanced_B1",
             "medium": "Balanced_B1",
             "large": "Balanced_B3",
         }
-        sku_name = size_sku_map.get(service.size, "Balanced_B0")
+        sku_name = size_sku_map.get(service.size, "Balanced_B1")
 
         resources.azurerm_managed_redis[cache_key] = ManagedRedis(
             name=get_name(service.name),

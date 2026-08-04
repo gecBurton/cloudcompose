@@ -32,7 +32,7 @@ def test_redis_cache_is_created():
 
     assert "cache_redis" in resources.azurerm_managed_redis
     cache = resources.azurerm_managed_redis["cache_redis"]
-    assert cache.sku_name == "Balanced_B0"
+    assert cache.sku_name == "Balanced_B1"
 
 
 def test_redis_cache_size_mapping():

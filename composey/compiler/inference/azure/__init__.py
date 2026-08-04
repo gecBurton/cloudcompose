@@ -333,14 +333,19 @@ def _infer_caches(
     for service in cache_services:
         cache_key = f"{service.name}_redis"
 
-        # Balanced tier: the general-purpose Managed Redis family. B0 has
-        # insufficient capacity in many regions, so "small" maps to B1.
+        # Balanced tier: the general-purpose Managed Redis family. B0 is the
+        # smallest, and cheaper than the Basic C0 it replaces.
+        #
+        # InsufficientCapacity for B0/B1 has been observed in uksouth and
+        # northeurope (confirmed against real Azure); eastus succeeded on the
+        # same SKU within minutes. This is regional physical capacity, not a
+        # SKU or code problem — see docs/aws-azure-gaps.md.
         size_sku_map = {
-            "small": "Balanced_B1",
+            "small": "Balanced_B0",
             "medium": "Balanced_B1",
             "large": "Balanced_B3",
         }
-        sku_name = size_sku_map.get(service.size, "Balanced_B1")
+        sku_name = size_sku_map.get(service.size, "Balanced_B0")
 
         resources.azurerm_managed_redis[cache_key] = ManagedRedis(
             name=get_name(service.name),

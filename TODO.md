@@ -75,12 +75,21 @@ Check against actual billing before wiring this into an on-demand workflow.
 
 ## Things worth knowing before touching this again
 
-**Deploy to `uksouth`, not `eastus`.** The subscription is offer-restricted in
-`eastus` for PostgreSQL Flexible Server — `LocationIsOfferRestricted`, twenty
-minutes into an apply. `uksouth` also builds a Container Apps Environment in
-~3 minutes against 13–17 in `eastus`, which cut a typical run from ~60 minutes
-to ~30. `REGION` in the workflow controls this and is deliberately separate
-from `STATE_LOCATION` (where the state blob lives).
+**Deploy to `francecentral` for anything with a cache, `uksouth` otherwise.**
+`eastus` is offer-restricted for PostgreSQL Flexible Server —
+`LocationIsOfferRestricted`, twenty minutes into an apply. Separately, Azure
+Managed Redis (`azurerm_managed_redis`, both Balanced_B0 and B1) fails with
+`InsufficientCapacity` in `uksouth` and `northeurope` — confirmed against real
+Azure 2026-08-04, reproducible via plain `az redisenterprise create`, nothing
+to do with Terraform or this codebase. The same SKU succeeded in `eastus`
+within ~4 minutes, so it's regional physical capacity, not a SKU problem —
+resist the urge to "fix" it by bumping the SKU, that just doubles cost for no
+benefit. `francecentral` is the one region checked so far with neither
+restriction: Postgres came up `Ready` and Redis came up `Running`, both within
+minutes, same day. `uksouth` remains fine — and faster to build a Container
+Apps Environment in (~3 min against 13–17 in `eastus`) — for examples that
+don't touch Redis. `REGION` in the workflow controls this and is deliberately
+separate from `STATE_LOCATION` (where the state blob lives).
 
 **`terraform validate` cannot catch several whole classes of bug.** It passed,
 happily, on: two stacks both declaring ownership of the Container Apps

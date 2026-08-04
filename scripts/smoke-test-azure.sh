@@ -31,7 +31,13 @@ KEEP="${KEEP:-0}"                                      # 1 = do not destroy afte
 # Not eastus: this subscription is offer-restricted there for PostgreSQL
 # Flexible Server, which fails with LocationIsOfferRestricted twenty minutes
 # into an apply.
-REGION="${REGION:-uksouth}"                            # region to deploy into
+#
+# Not uksouth or northeurope for anything touching Azure Managed Redis:
+# both have failed Balanced_B0/B1 creation with InsufficientCapacity
+# (confirmed against real Azure 2026-08-04). francecentral has neither
+# restriction and was confirmed clean for both Postgres and Redis the same
+# day — prefer it whenever the example includes a cache.
+REGION="${REGION:-francecentral}"                     # region to deploy into
 STATE_RG="${STATE_RG:-}"                               # Resource Group for remote state; empty = local
 STATE_LOCATION="${STATE_LOCATION:-eastus}"             # location of STATE_RG storage
 STATE_ACCOUNT="${STATE_ACCOUNT:-composeyacceptstate}"  # storage account holding state

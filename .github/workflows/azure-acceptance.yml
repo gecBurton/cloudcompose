@@ -24,12 +24,12 @@ on:
       region:
         description: Azure region to deploy into
         type: choice
-        default: northeurope
+        default: francecentral
         options:
-          - northeurope
+          - francecentral
+          - eastus
           - uksouth
-          - westeurope
-          - swedencentral
+          - northeurope
 
 permissions:
   contents: read
@@ -114,8 +114,11 @@ jobs:
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          # Region under test. Not eastus: this subscription is offer-restricted
-          # there for PostgreSQL Flexible Server (LocationIsOfferRestricted).
+          # Region under test. Not eastus by default: this subscription is
+          # offer-restricted there for PostgreSQL Flexible Server
+          # (LocationIsOfferRestricted). francecentral has neither that
+          # restriction nor the Azure Managed Redis InsufficientCapacity seen
+          # in uksouth/northeurope — confirmed against real Azure 2026-08-04.
           REGION: ${{ inputs.region }}
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}

@@ -393,9 +393,17 @@ class ManagedRedis(BaseModel):
 
     Only azurerm 4.x exposes this. The 3.x alternative,
     azurerm_redis_enterprise_cluster, rejects the Balanced SKUs outright and
-    starts at Enterprise_E5 — roughly $220/month against $26 for Balanced_B1,
-    and more than the product being retired (B0 at ~$13/month had insufficient
-    capacity in many regions).
+    starts at Enterprise_E5 — roughly $220/month against $13 for Balanced_B0,
+    and more than the product being retired.
+
+    Every tier and SKU — including B0 — provisions a genuine Redis Enterprise
+    cluster (multiple nodes), unlike the single-VM Basic tier it replaces.
+    That heavier footprint runs into real per-region capacity limits: B0 and
+    B1 have both failed with InsufficientCapacity in uksouth and northeurope,
+    while the identical SKU succeeded in eastus within minutes. This is
+    physical scarcity in specific regions, not a SKU or code defect — do not
+    "fix" InsufficientCapacity by bumping the SKU; try a different region
+    (eastus has capacity) instead.
 
     The connection details live on the nested default_database block rather
     than on the cluster: port and primary_access_key both hang off it.
@@ -408,7 +416,7 @@ class ManagedRedis(BaseModel):
     location: str
 
     sku_name: str = Field(
-        default="Balanced_B1",
+        default="Balanced_B0",
         description="Balanced_B0 upward; B0 is the smallest and cheapest",
     )
     high_availability_enabled: bool = False

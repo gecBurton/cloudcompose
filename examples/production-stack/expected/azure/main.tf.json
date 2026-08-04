@@ -162,7 +162,7 @@
         "name": "prod-production-stack-cache",
         "resource_group_name": "prod",
         "location": "eastus",
-        "sku_name": "Balanced_B1",
+        "sku_name": "Balanced_B0",
         "high_availability_enabled": false,
         "default_database": [
           {

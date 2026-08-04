@@ -24,10 +24,12 @@ on:
       region:
         description: Azure region to deploy into
         type: choice
-        default: westeurope
+        default: northeurope
         options:
-          - westeurope
+          - northeurope
           - uksouth
+          - westeurope
+          - swedencentral
 
 permissions:
   contents: read

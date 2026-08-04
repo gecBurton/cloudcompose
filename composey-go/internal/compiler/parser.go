@@ -9,9 +9,9 @@ import (
 	"github.com/gecburton/composey/internal/models"
 )
 
-// ParseCompose parses a Docker Compose file using compose-go
+// ParseCompose parses a Docker Compose file using compose-go (Docker's native parser)
 func ParseCompose(filePath string) (*models.ComposeApplication, error) {
-	// Load the compose file using compose-go (no Docker CLI needed!)
+	// Load the compose file using Docker's native loader
 	project, err := loader.Load(types.ConfigDetails{
 		ConfigFiles: []types.ConfigFile{
 			{Filename: filePath},
@@ -19,6 +19,16 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parse compose file: %w", err)
+	}
+
+	// Normalize the project (fills defaults, validates structure) - like Docker does
+	if err := loader.Normalize(project); err != nil {
+		return nil, fmt.Errorf("normalize compose: %w", err)
+	}
+
+	// Resolve relative paths (build contexts, volumes, secrets) - like Docker does
+	if err := loader.ResolveRelativePaths(project); err != nil {
+		return nil, fmt.Errorf("resolve paths: %w", err)
 	}
 
 	app := &models.ComposeApplication{
@@ -80,11 +90,13 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 			}
 		}
 
-		// Convert networks (simplified - just mark that networks exist)
+		// Convert networks
 		if len(service.Networks) > 0 {
 			s.Networks = make(map[string]interface{})
-			// Service networks are more complex, simplified for now
-			s.Networks["networks"] = nil
+			for netName, netConfig := range service.Networks {
+				_ = netConfig // Network config not used currently
+				s.Networks[netName] = nil
+			}
 		}
 
 		// Convert volumes
@@ -104,15 +116,15 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 
 		// Extract x-composey extension
 		if service.Extensions != nil {
-			if xc, ok := service.Extensions["x-composey"]; ok {
-				s.XComposey = xc
+			if xComposey, ok := service.Extensions["x-composey"]; ok {
+				s.XComposey = xComposey
 			}
 		}
 
 		app.Services[service.Name] = s
 	}
 
-	// Convert networks
+	// Convert networks with proper parsing
 	for name, network := range project.Networks {
 		app.Networks[name] = &models.NetworkDefinition{
 			Name:     network.Name,

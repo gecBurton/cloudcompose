@@ -4,11 +4,44 @@ import shutil
 import subprocess
 import tempfile
 import time
+from pathlib import Path
 
 import pytest
 import requests
 
 from composey.models.environment import AwsEnvironment, AzureEnvironment
+
+
+@pytest.fixture(scope="session")
+def composey_go_binary():
+    """
+    Build the Go binary once per test session.
+
+    This fixture ensures the Go parser/normalizer binary is available
+    for tests that use the hybrid compiler.
+    """
+    repo_root = Path(__file__).parent.parent
+    go_binary = repo_root / "composey-go" / "composey-go"
+
+    # Build the binary if it doesn't exist
+    if not go_binary.exists():
+        composey_go_dir = repo_root / "composey-go"
+        if not composey_go_dir.exists():
+            pytest.skip("composey-go directory not found, skipping Go-dependent tests")
+
+        result = subprocess.run(
+            ["go", "build", "-o", "composey-go", "./cmd/composey"],
+            cwd=composey_go_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            pytest.fail(f"Failed to build Go binary: {result.stderr}")
+
+    return go_binary
+
+
 
 
 # AWS Mock Environment

@@ -26,18 +26,32 @@ from composey.models.environment import (
 from composey.models.semantic import Application as SemanticApplication
 
 
-def parse_and_normalize_go(compose_file: str, project_name: str) -> SemanticApplication:
+def parse_and_normalize_go(
+    compose_file: str, project_name: str, go_binary_path: str = None
+) -> SemanticApplication:
     """
     Use Go binary for parsing and normalization.
 
     This replaces Python's parse() + normalize() with a single call to the Go binary.
+
+    Args:
+        compose_file: Path to docker-compose.yml
+        project_name: Project name for resource naming
+        go_binary_path: Optional path to Go binary. If not provided, uses default location.
+
+    Returns:
+        SemanticApplication model
     """
-    go_binary = Path(__file__).parent.parent.parent / "composey-go" / "composey-go"
+    if go_binary_path:
+        go_binary = Path(go_binary_path)
+    else:
+        go_binary = Path(__file__).parent.parent.parent / "composey-go" / "composey-go"
 
     if not go_binary.exists():
         raise RuntimeError(
             f"Go binary not found at {go_binary}. "
-            f"Run: cd composey-go && go build -o composey-go ./cmd/composey"
+            f"Run: cd composey-go && go build -o composey-go ./cmd/composey\n"
+            f"Or use the composey_go_binary pytest fixture."
         )
 
     result = subprocess.run(

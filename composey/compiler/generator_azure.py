@@ -108,6 +108,11 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_container_app.items()
         }
 
+    if resources.azurerm_container_app_job:
+        result["azurerm_container_app_job"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_container_app_job.items()
+        }
+
     if resources.azurerm_container_registry:
         result["azurerm_container_registry"] = {
             k: _clean_model(v) for k, v in resources.azurerm_container_registry.items()

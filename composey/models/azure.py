@@ -48,6 +48,45 @@ class ContainerApp(BaseModel):
     tags: Optional[Dict[str, str]] = None
 
 
+class ContainerAppJob(BaseModel):
+    """
+    Azure Container Apps Job: a container that runs to completion on a trigger.
+
+    A service with a schedule belongs here rather than in a Container App. A
+    Container App is always-on, so a nightly task would run continuously, and
+    one that exits when its work is done would be restarted indefinitely.
+
+    Lives in the same Container Apps Environment as the application's services,
+    so scheduling needs no platform infrastructure of its own.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+    container_app_environment_id: str
+
+    # How long a single execution may run before it is stopped. Required by the
+    # provider, with no default of its own.
+    replica_timeout_in_seconds: int = Field(
+        default=1800,
+        description="Hard limit on one execution, in seconds",
+    )
+    replica_retry_limit: int = Field(
+        default=1, description="Retries before an execution is failed"
+    )
+
+    schedule_trigger_config: List[Dict[str, Any]] = Field(
+        description="Cron trigger; the provider requires cron_expression"
+    )
+    template: List[Dict[str, Any]] = Field(description="Container spec to run")
+
+    identity: Optional[Dict[str, Any]] = None
+    registry: Optional[List[Dict[str, Any]]] = None
+    tags: Optional[Dict[str, str]] = None
+
+
 class ContainerAppEnvironment(BaseModel):
     """Azure Container Apps Environment."""
 
@@ -393,6 +432,7 @@ class AzureResources(BaseModel):
     """A registry of the Azure resources our compiler supports."""
 
     azurerm_container_app: Dict[str, ContainerApp] = Field(default_factory=dict)
+    azurerm_container_app_job: Dict[str, ContainerAppJob] = Field(default_factory=dict)
     azurerm_container_app_environment: Dict[str, ContainerAppEnvironment] = Field(
         default_factory=dict
     )

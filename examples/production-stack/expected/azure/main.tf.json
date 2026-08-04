@@ -35,32 +35,6 @@
   },
   "resource": {
     "azurerm_container_app": {
-      "cleanup": {
-        "name": "prod-production-stack-cleanup",
-        "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
-        "revision_mode": "Single",
-        "template": {
-          "container": [
-            {
-              "name": "cleanup",
-              "image": "busybox",
-              "cpu": 0.25,
-              "memory": "0.5Gi",
-              "args": [
-                "echo",
-                "cleaning up..."
-              ],
-              "env": []
-            }
-          ],
-          "min_replicas": 1,
-          "max_replicas": 1
-        },
-        "identity": {
-          "type": "SystemAssigned"
-        }
-      },
       "web": {
         "name": "prod-production-stack-web",
         "resource_group_name": "prod",
@@ -111,6 +85,41 @@
             "percentage": 100
           }
         },
+        "identity": {
+          "type": "SystemAssigned"
+        }
+      }
+    },
+    "azurerm_container_app_job": {
+      "cleanup": {
+        "name": "prod-production-stack-cleanup",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "replica_timeout_in_seconds": 1800,
+        "replica_retry_limit": 1,
+        "schedule_trigger_config": [
+          {
+            "cron_expression": "0 2 * * *"
+          }
+        ],
+        "template": [
+          {
+            "container": [
+              {
+                "name": "cleanup",
+                "image": "busybox",
+                "cpu": 0.25,
+                "memory": "0.5Gi",
+                "args": [
+                  "echo",
+                  "cleaning up..."
+                ],
+                "env": []
+              }
+            ]
+          }
+        ],
         "identity": {
           "type": "SystemAssigned"
         }

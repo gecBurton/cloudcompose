@@ -17,6 +17,7 @@ from composey.models.aws import RandomPassword
 from composey.models.azure import (
     AzureResources,
     ContainerApp,
+    ContainerAppJob,
     ContainerRegistry,
     KeyVault,
     MySQLFlexibleDatabase,
@@ -80,7 +81,10 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
     # Step 8: Infer container apps
     _infer_container_apps(resources, app, env, get_name, tags, identity_id, connections)
 
-    # Step 9: Infer CDN for services with cdn_enabled
+    # Step 9: Scheduled services run as Jobs, not as always-on Container Apps
+    _infer_scheduled_jobs(resources, app, env, get_name, tags, identity_id, connections)
+
+    # Step 10: Infer CDN for services with cdn_enabled
     _infer_cdn(resources, app, env, get_name, tags)
 
     return resources
@@ -412,6 +416,153 @@ def _infer_storage(
     return connections
 
 
+def _cron_expression(schedule) -> str:
+    """
+    Render a cloud-neutral schedule as the standard 5-field cron Azure wants.
+
+    Azure has no rate dialect, so an interval is expressed as the cron that
+    means the same thing. Intervals that cron cannot express — anything that
+    does not divide its unit evenly, like every 7 hours — are rejected rather
+    than silently rounded to something that runs at the wrong time.
+    """
+    from composey.exceptions import ScheduleError
+    from composey.models.semantic import RateSchedule
+
+    if not isinstance(schedule, RateSchedule):
+        return schedule.expression
+
+    value, unit = schedule.value, schedule.unit
+
+    if unit == "minutes":
+        if value == 1:
+            return "* * * * *"
+        if 60 % value:
+            raise ScheduleError(
+                f"a rate of every {value} minutes cannot be expressed as cron, "
+                f"which Azure requires: use an interval that divides an hour "
+                f"evenly, or give a cron expression directly."
+            )
+        return f"*/{value} * * * *"
+
+    if unit == "hours":
+        if value == 1:
+            return "0 * * * *"
+        if 24 % value:
+            raise ScheduleError(
+                f"a rate of every {value} hours cannot be expressed as cron, "
+                f"which Azure requires: use an interval that divides a day "
+                f"evenly, or give a cron expression directly."
+            )
+        return f"0 */{value} * * *"
+
+    # days
+    if value == 1:
+        return "0 0 * * *"
+    raise ScheduleError(
+        f"a rate of every {value} days cannot be expressed as cron, which "
+        f"Azure requires: months are not all the same length, so */{value} on "
+        f"day-of-month would drift. Give a cron expression directly."
+    )
+
+
+def _infer_scheduled_jobs(
+    resources: AzureResources,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    get_name: Callable[[str], str],
+    tags: dict[str, str] | None,
+    identity_id: str,
+    connections: dict[str, Connection],
+) -> None:
+    """
+    Create a Container Apps Job for each scheduled service.
+
+    A Job runs to completion on its trigger and stops, which is what a schedule
+    asks for. Deploying these as Container Apps instead — as composey used to —
+    runs a nightly task continuously, and restarts one that exits as soon as it
+    has finished.
+    """
+    for service in app.services:
+        if service.capability != "container" or not service.schedule:
+            continue
+
+        job_key = service.name
+        identity_config = (
+            {"type": "UserAssigned", "identity_ids": [identity_id]}
+            if identity_id
+            else {"type": "SystemAssigned"}
+        )
+
+        registry_config = None
+        if service.build_context:
+            registry = env.container_registry_name or container_registry_name(
+                env.name, app.name
+            )
+            registry_config = [
+                {
+                    "server": f"{registry}.azurecr.io",
+                    "identity": identity_id or "System",
+                }
+            ]
+
+        resources.azurerm_container_app_job[job_key] = ContainerAppJob(
+            name=get_name(service.name),
+            resource_group_name=env.name,
+            location=env.region,
+            container_app_environment_id=(
+                "${data.azurerm_container_app_environment.main.id}"
+            ),
+            schedule_trigger_config=[
+                {"cron_expression": _cron_expression(service.schedule)}
+            ],
+            template=[{"container": [_container_spec(service, app, env, connections)]}],
+            identity=identity_config,
+            registry=registry_config,
+            tags=tags,
+        )
+
+
+def _container_spec(
+    service,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    connections: dict[str, Connection],
+) -> dict:
+    """
+    The container block for a service, shared by Container Apps and Jobs.
+
+    Both take the same shape, so a scheduled task gets the same image
+    resolution and the same wired-in connection strings as a long-running one.
+    cpu and memory sit directly on the container; azurerm has no nested
+    "resources" block.
+    """
+    spec = {
+        "name": service.name,
+        "image": _get_container_image(service, app, env),
+        "cpu": _get_cpu_cores(service),
+        "memory": _get_memory_gb(service),
+    }
+
+    if service.command:
+        spec["args"] = service.command
+
+    env_vars = [{"name": k, "value": v} for k, v in service.env.items()]
+
+    for db_name, conn in connections.items():
+        if any(
+            r.client == service.name and r.server == db_name for r in app.relationships
+        ):
+            env_vars.append(
+                {
+                    "name": f"{db_name.upper()}_URL",
+                    "value": f"postgresql://{conn.username}:{conn.password}@{conn.host}:{conn.port}/{conn.database}",
+                }
+            )
+
+    spec["env"] = env_vars
+    return spec
+
+
 def _infer_container_apps(
     resources: AzureResources,
     app: SemanticApp,
@@ -422,24 +573,12 @@ def _infer_container_apps(
     connections: dict[str, Connection],
 ) -> None:
     """Create Container Apps for each container service."""
-    scheduled = [s for s in app.services if s.schedule and s.capability == "container"]
-    if scheduled:
-        # AWS routes these to EventBridge and deliberately does not run them as
-        # persistent services. Azure has no equivalent here, so the schedule is
-        # dropped and the service becomes an always-on Container App: a task
-        # written to run nightly instead runs continuously, and one that exits
-        # when its work is done is restarted forever. Container Apps Jobs are
-        # the right home for these; until composey emits them, say so rather
-        # than deploying something quietly different from what was asked for.
-        warnings.warn(
-            "Scheduled tasks are not supported on Azure: the schedule is "
-            "ignored and the service is deployed as an always-on Container "
-            "App. Affected: " + ", ".join(s.name for s in scheduled),
-            stacklevel=2,
-        )
-
     for service in app.services:
         if service.capability != "container":
+            continue
+        # Scheduled services are Jobs, not always-on apps. See
+        # _infer_scheduled_jobs.
+        if service.schedule:
             continue
 
         # Determine scaling configuration
@@ -451,38 +590,7 @@ def _infer_container_apps(
         if service.ingress and min_replicas == 0:
             min_replicas = 1
 
-        # Build container spec. cpu and memory sit directly on the container;
-        # azurerm has no nested "resources" block.
-        container_spec = {
-            "name": service.name,
-            "image": _get_container_image(service, app, env),
-            "cpu": _get_cpu_cores(service),
-            "memory": _get_memory_gb(service),
-        }
-
-        if service.command:
-            container_spec["args"] = service.command
-
-        # Environment variables
-        env_vars = []
-        for key, value in service.env.items():
-            env_vars.append({"name": key, "value": value})
-
-        # Add connection strings for dependencies
-        for db_name, conn in connections.items():
-            # Check if this service depends on the database
-            if any(
-                r.client == service.name and r.server == db_name
-                for r in app.relationships
-            ):
-                env_vars.append(
-                    {
-                        "name": f"{db_name.upper()}_URL",
-                        "value": f"postgresql://{conn.username}:{conn.password}@{conn.host}:{conn.port}/{conn.database}",
-                    }
-                )
-
-        container_spec["env"] = env_vars
+        container_spec = _container_spec(service, app, env, connections)
 
         # Build ingress config
         ingress_config = None

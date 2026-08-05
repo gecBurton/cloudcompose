@@ -25,7 +25,7 @@ gh workflow run azure-acceptance.yml --ref main -f example=hello
 
 ## Outstanding work
 
-### 1. Image build and push — implemented, not yet live-verified
+### 1. Image build and push — implemented, fix for a real bug pending live re-verification
 
 Azure now builds and pushes images the same way AWS does: `docker_image`
 builds locally via the `kreuzwerker/docker` provider, `docker_registry_image`
@@ -37,12 +37,24 @@ and authenticates against ACR's admin credentials — `admin_username`/
 `admin_password` off the `azurerm_container_registry` resource itself, no
 data source needed, unlike AWS's ephemeral `aws_ecr_authorization_token`.
 
-Passes `terraform validate` for `flask`, `doctor`, and `build-webapp`. **Not
-yet run against real Azure** — the registry's `identity: "System"` pull
-config on the Container App/Job has never been checked for whether it also
-needs an explicit `AcrPull` role assignment, since nothing has attempted a
-real pull before now. Run `build-webapp` through the acceptance workflow
-first; it is the simplest of the three.
+The first live run (`build-webapp` in `francecentral`) confirmed the build and
+push both worked — 6s to build, 11s to push — then `azurerm_container_app.web`
+hung "Creating..." for 20 minutes before Azure gave up with
+`ContainerAppOperationError: Operation expired`, never a clean permissions
+error. Root cause: the registry pull config used `identity: "System"`, which
+needs an `AcrPull` role assignment on the Container App's own
+system-assigned identity — but that identity's `principal_id` does not exist
+until the Container App itself has been created, and the create needs to
+pull the image. A genuine chicken-and-egg gap, not a missing role assignment
+that could just be added.
+
+Fixed by switching `registry` to `username`/`password_secret_name` against
+a `secret` block holding the ACR admin password (`_registry_auth` in
+`inference/azure/__init__.py`) — a stable resource attribute available the
+moment the registry exists, sidestepping the ordering problem entirely.
+Passes `terraform validate` for `flask`, `doctor`, and `build-webapp`.
+**Not yet re-verified against real Azure** — do that next, same example,
+before touching anything else here.
 
 `docs/aws-azure-gaps.md` has been corrected.
 

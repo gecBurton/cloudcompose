@@ -501,6 +501,41 @@ def _cron_expression(schedule) -> str:
     )
 
 
+def _registry_auth(service) -> tuple[list[dict] | None, list[dict] | None]:
+    """
+    Registry pull config for a service, plus any secret block it needs.
+
+    Deliberately username/password rather than the managed-identity form of
+    `registry` (server + identity): a system-assigned identity's principal_id
+    does not exist until the Container App/Job itself has been created, so
+    granting it an AcrPull role assignment cannot happen before that first
+    create — and the create itself needs to pull the image. That chicken-
+    and-egg gap is exactly what silently hung for 20 minutes as
+    "ContainerAppOperationError: Operation expired" against real Azure
+    (confirmed 2026-08-04) rather than failing fast with a permissions error.
+    ACR's admin credentials are stable resource attributes available the
+    moment the registry exists, so authenticating with them sidesteps the
+    ordering problem entirely.
+    """
+    if not service.build_context:
+        return None, None
+
+    secret = [
+        {
+            "name": "acr-password",
+            "value": "${azurerm_container_registry.main.admin_password}",
+        }
+    ]
+    registry = [
+        {
+            "server": "${azurerm_container_registry.main.login_server}",
+            "username": "${azurerm_container_registry.main.admin_username}",
+            "password_secret_name": "acr-password",
+        }
+    ]
+    return registry, secret
+
+
 def _infer_scheduled_jobs(
     resources: AzureResources,
     app: SemanticApp,
@@ -529,17 +564,7 @@ def _infer_scheduled_jobs(
             else {"type": "SystemAssigned"}
         )
 
-        registry_config = None
-        if service.build_context:
-            registry = env.container_registry_name or container_registry_name(
-                env.name, app.name
-            )
-            registry_config = [
-                {
-                    "server": f"{registry}.azurecr.io",
-                    "identity": identity_id or "System",
-                }
-            ]
+        registry_config, secret_config = _registry_auth(service)
 
         resources.azurerm_container_app_job[job_key] = ContainerAppJob(
             name=get_name(service.name),
@@ -553,6 +578,7 @@ def _infer_scheduled_jobs(
             ],
             template=[{"container": [_container_spec(service, app, env, connections)]}],
             identity=identity_config,
+            secret=secret_config,
             registry=registry_config,
             tags=tags,
         )
@@ -683,24 +709,9 @@ def _infer_container_apps(
             # Use system-assigned identity
             identity_config = {"type": "SystemAssigned"}
 
-        # Registry config. The server has to be the registry that actually gets
-        # created, which is not always the one named on the environment.
-        #
-        # "System" is the literal the provider expects for a system-assigned
-        # identity. Naming the app's own principal_id here instead was a
-        # self-reference — the container app cannot depend on itself, and it
-        # only pointed at an undeclared azurerm_container_app.main anyway.
-        registry_config = None
-        if service.build_context:
-            registry = env.container_registry_name or container_registry_name(
-                env.name, app.name
-            )
-            registry_config = [
-                {
-                    "server": f"{registry}.azurecr.io",
-                    "identity": identity_id or "System",
-                }
-            ]
+        # Registry config: see _registry_auth for why this uses admin
+        # username/password rather than the managed-identity form.
+        registry_config, secret_config = _registry_auth(service)
 
         resources.azurerm_container_app[service.name] = ContainerApp(
             name=get_name(service.name),
@@ -709,6 +720,7 @@ def _infer_container_apps(
             template=template,
             ingress=ingress_config,
             identity=identity_config,
+            secret=secret_config,
             registry=registry_config,
             tags=tags,
         )

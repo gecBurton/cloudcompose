@@ -41,8 +41,14 @@ class ContainerApp(BaseModel):
         description="Managed identity configuration",
     )
 
+    # Secrets referenced by env vars or by registry password_secret_name.
+    secret: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Secret blocks, e.g. an ACR admin password for registry auth",
+    )
+
     # Registry
-    registry: Optional[List[Dict[str, str]]] = Field(
+    registry: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description="Container registry configuration",
     )
@@ -85,6 +91,7 @@ class ContainerAppJob(BaseModel):
     template: List[Dict[str, Any]] = Field(description="Container spec to run")
 
     identity: Optional[Dict[str, Any]] = None
+    secret: Optional[List[Dict[str, Any]]] = None
     registry: Optional[List[Dict[str, Any]]] = None
     tags: Optional[Dict[str, str]] = None
 

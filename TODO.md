@@ -55,25 +55,37 @@ the originGroup is created successfully and at least one enabled origin is
 created under the origin group." Open upstream:
 [hashicorp/terraform-provider-azurerm#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647).
 A second `terraform apply` always succeeds — Terraform detects the drift on
-refresh and flips the origin to enabled before retrying the route. Worked
-around in `scripts/smoke-test-azure.sh`: the app-stack apply now retries
-once, but only when the failure message matches this exact bug, so a
-genuine failure elsewhere still stops the run rather than being masked by a
-blind retry. Teardown was clean regardless — nothing leaked from the failed
-first attempt.
+refresh and flips the origin to enabled before retrying the route.
 
-**Still not fully verified**: the retry logic itself has not yet been
-exercised end-to-end (the fix went in after the failing run, not before it).
-Run `production-stack` through the acceptance workflow again to confirm the
-retry actually gets a clean run all the way through — including whether
-traffic really flows correctly through Front Door to the Container App, since
-the existing smoke test polls the Container App's own FQDN directly and
-never actually requests anything through the Front Door endpoint itself. That
-gap means "the apply succeeds" and "Front Door correctly proxies to the
-Container App" are still two different unverified claims — do not close this
-out on a clean apply alone.
+**Second live run hit a different bug, caused by the first fix.** The
+initial workaround retried the *entire* stack apply, which re-touched
+`azurerm_postgresql_flexible_server` too — Azure assigns its `zone` itself,
+and a second full apply's plan tried to "correct" that real zone back
+towards what was never actually configured, hitting a separate, long-standing
+provider bug ("`zone` can only be changed when exchanged with the zone
+specified in `high_availability.0.standby_availability_zone`" — open on and
+off since 2022, e.g. hashicorp/terraform-provider-azurerm#16888). One narrow,
+well-understood bug had been traded for a second, unrelated one by retrying
+more broadly than necessary.
+
+Fixed by scoping the retry to `-target=azurerm_cdn_frontdoor_route.<key>`
+instead of a blanket re-apply — the address is parsed out of the first
+apply's own error output rather than hardcoded, so it holds for any number
+of CDN-enabled services. Postgres, and everything else already created,
+is left alone on the retry. **Not yet re-verified against real Azure** — the
+narrower retry itself has not been exercised end-to-end.
+
+Teardown was clean on both failed runs — nothing leaked from either.
+
+**Still not fully verified even once this retry succeeds**: the smoke test
+polls the Container App's own FQDN directly and never actually requests
+anything through the Front Door endpoint itself. A clean apply confirms the
+resources exist and reference each other correctly — it does not confirm
+traffic actually flows through Front Door to the Container App. Those remain
+two different claims; do not close this out on a clean apply alone.
 
 ### 2. Smaller things
+
 
 
 - `nginx-flask-mysql` compiles and validates but has never had a live run. It

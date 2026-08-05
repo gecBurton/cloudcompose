@@ -158,35 +158,52 @@ def _wiring_decisions(
 
 
 def explain(
-    docker_app: DockerApplication, semantic: SemanticApplication
+    docker_app: DockerApplication | None, semantic: SemanticApplication
 ) -> list[Decision]:
-    """Describe every inference made while normalizing this application."""
+    """
+    Describe every inference made while normalizing this application.
+
+    docker_app is optional: only a handful of decisions below need the raw
+    compose model specifically (whether `capability` was declared verbatim
+    rather than inferred, the exact list of dropped ports/mounts, and the
+    fallback "which services publish a port" detail when nothing is public).
+    Everything else — schedule, scaling, CDN, size, wiring, platform config,
+    empty secrets, declared ingress, relationships — is answerable from the
+    semantic model alone, which the Go parser/normalizer always produces.
+    Skipping all of it whenever docker_app is unavailable would throw away
+    everything explain() exists for on exactly the path that has no Python
+    parser to fall back to.
+    """
     decisions: list[Decision] = []
-    by_name = {s.name: s for s in semantic.services}
 
-    # If docker_app is None (using Go parser), we skip docker-specific decisions
-    if docker_app is None:
-        for service in semantic.services:
-            decisions.append(
-                Decision(
-                    service.name,
-                    f"capability: {service.capability}",
-                    "parsed by Go normalizer",
-                    "inferred",
-                )
-            )
-        return decisions
-
-    for name, docker_service in docker_app.services.items():
-        service = by_name[name]
-        raw = docker_service.x_composey_raw
-
-        decisions.append(_capability_decision(name, service, "capability" in raw))
+    for service in semantic.services:
+        name = service.name
+        declared_capability = (
+            "capability" in docker_app.services[name].x_composey_raw
+            if docker_app is not None
+            # Without the raw compose model there is no direct record of
+            # whether `capability` was written explicitly. Whether the
+            # inferred value would have guessed the same capability from the
+            # image name is the closest available proxy: if it disagrees,
+            # something must have overridden it.
+            else service.capability != _infer_capability_reference(service.image)
+        )
+        decisions.append(_capability_decision(name, service, declared_capability))
 
         if service.capability != "container":
             continue
 
-        decisions.extend(_port_decisions(name, docker_service, service))
+        if docker_app is not None:
+            decisions.extend(_port_decisions(name, docker_app.services[name], service))
+        elif service.port is not None:
+            decisions.append(
+                Decision(
+                    name,
+                    f"listens on {service.port}",
+                    "first published port",
+                    "inferred",
+                )
+            )
 
         if service.build_context:
             dockerfile = service.dockerfile or "Dockerfile"
@@ -239,7 +256,10 @@ def explain(
                 )
             )
 
-        decisions.extend(_volume_decisions(name, docker_service, service))
+        if docker_app is not None:
+            decisions.extend(
+                _volume_decisions(name, docker_app.services[name], service)
+            )
         decisions.extend(_wiring_decisions(name, semantic, service))
 
         if service.config:
@@ -285,8 +305,34 @@ def explain(
     return decisions
 
 
+def _infer_capability_reference(image: str) -> str:
+    """
+    A standalone copy of what the normalizer's own capability inference
+    would have guessed from the image name alone, used only as a proxy for
+    "was this declared rather than inferred" when there is no raw compose
+    model to check directly (the Go-parser path). Kept intentionally
+    separate from any single canonical implementation: normalizer.py, the
+    Python one this was ported from, no longer exists on this branch, and
+    the Go implementation lives in a different language entirely.
+    """
+    from ..constants import CAPABILITY_IMAGES
+
+    reference = image.lower().split("@")[0]
+    path, _, last = reference.rpartition("/")
+    segments = f"{path}/{last.split(':')[0]}".strip("/").split("/")
+
+    if len(segments) > 1 and ("." in segments[0] or segments[0] == "localhost"):
+        segments = segments[1:]
+
+    for capability, known in CAPABILITY_IMAGES.items():
+        if any(segment in known for segment in segments):
+            return capability
+
+    return "container"
+
+
 def _ingress_decisions(
-    docker_app: DockerApplication, semantic: SemanticApplication
+    docker_app: DockerApplication | None, semantic: SemanticApplication
 ) -> list[Decision]:
     public = semantic.public_services
     if public:
@@ -317,11 +363,19 @@ def _ingress_decisions(
             )
         return decisions
 
-    published = [
-        name
-        for name, service in docker_app.services.items()
-        if any(p.published for p in service.ports or [])
-    ]
+    if docker_app is not None:
+        published = [
+            name
+            for name, service in docker_app.services.items()
+            if any(p.published for p in service.ports or [])
+        ]
+    else:
+        # Without the raw compose model, a service's own resolved port is
+        # the closest available signal for "this looked like it wanted to
+        # be reached" — it is not exactly "published a port" (a compose
+        # file can list ports without ever publishing one), so this errs
+        # towards naming a candidate rather than staying silent.
+        published = [s.name for s in semantic.services if s.port is not None]
     because = (
         f"{', '.join(published)} publish ports; declare x-composey: ingress on "
         f"whichever should be reachable from outside"

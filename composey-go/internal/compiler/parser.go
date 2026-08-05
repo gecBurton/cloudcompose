@@ -3,6 +3,7 @@ package compiler
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -10,50 +11,83 @@ import (
 	"github.com/compose-spec/compose-go/loader"
 	"github.com/compose-spec/compose-go/types"
 	"github.com/gecburton/composey/internal/models"
+	"gopkg.in/yaml.v3"
 )
 
-// declaredEnvironment loads the compose file a second time with
-// interpolation skipped, so environment values still contain their literal
-// ${VAR} form (or env_file-sourced values, still unresolved) rather than
-// whatever a developer's local shell or .env happened to substitute.
+// rawComposeService is deliberately loose: this only needs the environment
+// block exactly as written, before compose-go or anything else has touched
+// it.
+type rawComposeFile struct {
+	Services map[string]struct {
+		Environment interface{} `yaml:"environment"`
+	} `yaml:"services"`
+}
+
+// declaredEnvironment reads the compose file's own YAML directly — not
+// through compose-go at all — so env_file contents and ${VAR} substitutions
+// are both absent, leaving only what the file's `environment:` block
+// actually states.
 //
-// Mirrors _declared_environment in the Python parser it replaces, which
-// re-read the raw YAML directly for the same reason: `docker compose config`
-// (the Python parser's own subprocess call) folds env_file and ${VAR}
-// substitutions into one flat map, indistinguishable from a value actually
-// written in the compose file — the whole point of platform_env is telling
-// those apart, so it needs a view compose-go's own interpolation has not
-// touched.
-func declaredEnvironment(filePath, workingDir string) (map[string]map[string]*string, error) {
-	project, err := loader.Load(types.ConfigDetails{
-		WorkingDir: workingDir,
-		ConfigFiles: []types.ConfigFile{
-			{Filename: filePath},
-		},
-	}, func(o *loader.Options) {
-		o.SkipInterpolation = true
-	})
+// A second compose-go load with SkipInterpolation was tried first, since it
+// looked like the natural way to get an "unresolved" view without a second
+// parser. It skips ${VAR} substitution, but env_file merging is a wholly
+// separate loading step that SkipInterpolation does not touch, so
+// POSTGRES_PASSWORD from a real .env file still showed up looking exactly
+// like a value written in the compose file — the precise case this exists to
+// catch, silently defeated (confirmed against a real env_file 2026-08-05).
+//
+// Mirrors _declared_environment in the Python parser this replaces, which
+// read raw YAML via yaml.safe_load for the same reason, rather than through
+// its own `docker compose config` subprocess call.
+func declaredEnvironment(filePath string) (map[string]map[string]*string, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("parse compose file (uninterpolated): %w", err)
-	}
-	if err := loader.Normalize(project); err != nil {
-		return nil, fmt.Errorf("normalize compose (uninterpolated): %w", err)
+		return nil, fmt.Errorf("read compose file: %w", err)
 	}
 
-	declared := make(map[string]map[string]*string, len(project.Services))
-	for _, service := range project.Services {
-		env := make(map[string]*string, len(service.Environment))
-		for key, val := range service.Environment {
-			if val == nil {
-				env[key] = nil
-			} else {
-				v := *val
-				env[key] = &v
-			}
-		}
-		declared[service.Name] = env
+	var raw rawComposeFile
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse compose file as raw YAML: %w", err)
+	}
+
+	declared := make(map[string]map[string]*string, len(raw.Services))
+	for name, service := range raw.Services {
+		declared[name] = declaredEnvironmentValue(service.Environment)
 	}
 	return declared, nil
+}
+
+// declaredEnvironmentValue normalizes compose's two accepted forms for
+// `environment:` — a mapping, or a list of "KEY=value"/"KEY" strings — into
+// one shape, the same way models.Service.environment does on the Python
+// side (Application/_declared_environment in the deleted parser.py).
+func declaredEnvironmentValue(raw interface{}) map[string]*string {
+	result := make(map[string]*string)
+	switch v := raw.(type) {
+	case map[string]interface{}:
+		for key, val := range v {
+			if val == nil {
+				result[key] = nil
+				continue
+			}
+			s := fmt.Sprintf("%v", val)
+			result[key] = &s
+		}
+	case []interface{}:
+		for _, entry := range v {
+			s, ok := entry.(string)
+			if !ok {
+				continue
+			}
+			parts := strings.SplitN(s, "=", 2)
+			if len(parts) == 2 {
+				result[parts[0]] = &parts[1]
+			} else {
+				result[parts[0]] = nil
+			}
+		}
+	}
+	return result
 }
 
 // splitEnvironment separates values the compose file states literally from
@@ -128,7 +162,7 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	// output depend on where the repository happens to be checked out,
 	// rather than compiling to the same thing on any machine.
 
-	declared, err := declaredEnvironment(filePath, composeDir)
+	declared, err := declaredEnvironment(filePath)
 	if err != nil {
 		return nil, err
 	}

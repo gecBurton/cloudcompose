@@ -452,11 +452,11 @@ func SettingsFor(name string, service models.ComposeService) (*models.XComposey,
 	settings := &models.XComposey{}
 	jsonBytes, err := json.Marshal(service.XComposey)
 	if err != nil {
-		return nil, fmt.Errorf("service %q has an invalid x-composey block: %v", name, err)
+		return nil, fmt.Errorf("service '%s' has an invalid x-composey block: %v", name, err)
 	}
 
 	if err := json.Unmarshal(jsonBytes, settings); err != nil {
-		return nil, fmt.Errorf("service %q has an invalid x-composey block: %v", name, err)
+		return nil, fmt.Errorf("service '%s' has an invalid x-composey block: %v", name, err)
 	}
 
 	return settings, nil

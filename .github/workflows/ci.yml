@@ -24,6 +24,25 @@ jobs:
       with:
         terraform_version: "1.10.0"
 
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: composey-go/go.mod
+
+    - name: Run Go tests
+      run: go vet ./... && go test ./...
+      working-directory: composey-go
+
+    - name: Build Go parser/normalizer binary
+      # compile_to_terraform (composey/compiler/__init__.py) shells out to
+      # this binary unconditionally — there is no Python fallback anymore,
+      # so every golden/integration test fails at collection-adjacent time
+      # without it. Built once here rather than relying on the
+      # composey_go_binary pytest fixture, which only covers tests that
+      # request it explicitly.
+      run: go build -o composey-go ./cmd/composey
+      working-directory: composey-go
+
     - name: Install dependencies
       run: uv sync --all-extras --dev
 

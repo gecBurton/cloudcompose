@@ -296,8 +296,19 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 			capability = string(*settings.Capability)
 		}
 
+		// dockerService.Command is always []string by the time it reaches
+		// here (parser.go converts compose-go's ShellCommand, which is
+		// itself already shell-split from a YAML string form — `docker
+		// compose config`, the equivalent step in the parser this replaces,
+		// does the same normalization). The []interface{}/string cases
+		// below exist only in case that assumption is ever violated by a
+		// different caller of Normalize; a bare string would previously
+		// have been wrapped in ["/bin/sh", "-c", ...], but that shape has
+		// never actually been observed from either parser in practice.
 		var command []string
 		switch v := dockerService.Command.(type) {
+		case []string:
+			command = v
 		case []interface{}:
 			command = make([]string, len(v))
 			for i, cmd := range v {

@@ -7,7 +7,7 @@ import (
 )
 
 func TestNormalizeFlaskExample(t *testing.T) {
-	composeApp, err := ParseCompose("../../examples/flask/compose.yml")
+	composeApp, err := ParseCompose("../../../examples/flask/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
@@ -59,11 +59,11 @@ func TestNormalizeFlaskExample(t *testing.T) {
 
 func TestNormalizeAllExamples(t *testing.T) {
 	examples := []string{
-		"../../examples/flask/compose.yml",
-		"../../examples/flask-redis/compose.yml",
-		"../../examples/minio-s3/compose.yml",
-		"../../examples/hello/compose.yml",
-		"../../examples/scaling/compose.yml",
+		"../../../examples/flask/compose.yml",
+		"../../../examples/flask-redis/compose.yml",
+		"../../../examples/minio-s3/compose.yml",
+		"../../../examples/hello/compose.yml",
+		"../../../examples/scaling/compose.yml",
 	}
 
 	for _, example := range examples {

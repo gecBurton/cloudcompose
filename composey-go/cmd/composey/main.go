@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gecburton/composey/internal/compiler"
 	"github.com/spf13/cobra"
@@ -47,7 +48,25 @@ var normalizeCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		filePath := args[0]
-		projectName := "composey"
+
+		// Matches the Python CLI's fallback (cli.py): the compose file's
+		// parent directory name, not a hardcoded default. Every resource
+		// name in every cloud is derived from this, so silently defaulting
+		// it to a fixed string produced identically-named, colliding
+		// resources for every project compiled through this binary.
+		projectName, err := cmd.Flags().GetString("project")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if projectName == "" {
+			absPath, err := filepath.Abs(filePath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error resolving %q: %v\n", filePath, err)
+				os.Exit(1)
+			}
+			projectName = filepath.Base(filepath.Dir(absPath))
+		}
 
 		composeApp, err := compiler.ParseCompose(filePath)
 		if err != nil {
@@ -75,6 +94,8 @@ func init() {
 	rootCmd.AddCommand(parseCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(normalizeCmd)
+
+	normalizeCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
 }
 
 func main() {

@@ -55,7 +55,7 @@ def parse_and_normalize_go(
         )
 
     result = subprocess.run(
-        [str(go_binary), "normalize", compose_file],
+        [str(go_binary), "normalize", "--project", project_name, compose_file],
         capture_output=True,
         text=True,
         check=True,
@@ -69,18 +69,13 @@ def parse_and_normalize_go(
     return SemanticApplication(**data)
 
 
-def compile_application_hybrid(
-    app: SemanticApplication, env: BaseEnvironment, use_go_frontend: bool = True
-) -> str:
+def compile_application_hybrid(app: SemanticApplication, env: BaseEnvironment) -> str:
     """
     Hybrid compilation: Go frontend (parser + normalizer), Python backend (inference + generation).
 
     Args:
         app: Semantic application model
         env: Environment configuration (AWS/Azure/GCP)
-        use_go_frontend: If True, use Go for parser+normalizer. If False, use Python.
-
-    This allows gradual migration by toggling use_go_frontend.
     """
     if isinstance(env, AwsEnvironment):
         return generate_aws(infer_aws(app, env), env)
@@ -98,27 +93,17 @@ def compile_to_terraform_hybrid(
     compose_file: str,
     env: BaseEnvironment,
     project_name: str,
-    use_go_frontend: bool = True,
 ) -> str:
     """
-    Compile compose file to Terraform using hybrid approach.
+    Compile compose file to Terraform using the Go parser/normalizer.
 
     Args:
         compose_file: Path to docker-compose.yml
         env: Environment configuration
         project_name: Project name for resource naming
-        use_go_frontend: Use Go for parser+normalizer (default: True)
 
     Returns:
         Terraform JSON string
     """
-    if use_go_frontend:
-        app = parse_and_normalize_go(compose_file, project_name)
-    else:
-        # Fallback to Python (for comparison testing)
-        from composey.compiler.normalizer import normalize
-        from composey.compiler.parser import parse
-
-        app = normalize(parse(compose_file), project_name)
-
-    return compile_application_hybrid(app, env, use_go_frontend)
+    app = parse_and_normalize_go(compose_file, project_name)
+    return compile_application_hybrid(app, env)

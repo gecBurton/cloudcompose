@@ -2,8 +2,8 @@
 
 Written 2026-08-04, after taking Azure from "compiles but has never deployed"
 to a five-example acceptance suite that passes against real Azure, including
-Container Apps Jobs and image build-and-push (both confirmed via full runs in
-`francecentral`).
+Container Apps Jobs, image build-and-push, and Front Door (all confirmed via
+full runs in `francecentral`).
 
 ## Verified against real Azure
 
@@ -14,7 +14,7 @@ with nothing left in the subscription.
 | --- | --- |
 | `hello` | Container App, ingress, the environment stack |
 | `web-api` | Two services talking to each other |
-| `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs |
+| `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs, Front Door (`cdn: true`) |
 | `minio-s3` | Container-to-managed-service substitution (minio → Storage Account) |
 | `build-webapp` | Image build + push (`docker_image`/`docker_registry_image` → ACR), pull by digest |
 
@@ -26,75 +26,43 @@ gh workflow run azure-acceptance.yml --ref main -f example=hello
 
 ## Outstanding work
 
-### 1. Front Door — implemented, one apply-time issue found and worked around, not yet fully live-verified
+### 1. Front Door: confirm traffic actually flows through it, not just that it applies cleanly
 
-`cdn: true` now compiles to a real Front Door Standard setup: one
-`azurerm_cdn_frontdoor_profile` per application (shared, the way Key Vault and
-the Container Registry already are), and one endpoint + origin group +
-origin + route per CDN-enabled service, fronting that service's Container App
-ingress FQDN (`_infer_cdn` in `compiler/inference/azure/__init__.py`). Front
-Door is global, so none of these five resources carry a `location`, unlike
-everything else this module creates.
+`cdn: true` compiles to a real Front Door Standard setup — one
+`azurerm_cdn_frontdoor_profile` per application, one endpoint + origin group
++ origin + route per CDN-enabled service, fronting that service's Container
+App ingress FQDN (`_infer_cdn` in `compiler/inference/azure/__init__.py`).
+Front Door is global, so none of these five resources carry a `location`,
+unlike everything else this module creates. Replaces the old
+`CdnProfile`/`CdnEndpoint` models, which targeted Azure CDN from Microsoft
+(classic) — a product that no longer accepts new profiles at all.
 
-Replaces the old `CdnProfile`/`CdnEndpoint` models, which modelled Azure CDN
-from Microsoft (classic) — a product that no longer accepts new profiles at
-all ("Azure CDN from Microsoft (classic) no longer support new profile
-creation"), so those models had never been able to succeed for anyone.
+Confirmed clean end-to-end against real Azure 2026-08-05 (`production-stack`
+in `francecentral`), after finding and fixing two real, distinct bugs along
+the way — full detail in git history (`7d1e301`, `3cc0721`, `387e17b`,
+`6319a18`) and in "things worth knowing" below:
 
-The billing concern that blocked this is resolved: Front Door Standard's
-$35/month base fee is billed hourly, only for hours used (confirmed on
-Microsoft's own pricing page), so a short acceptance run costs a few cents.
+1. `azurerm_cdn_frontdoor_origin` is created with `enabled=false` regardless
+   of configuration — an open, unresolved azurerm provider bug
+   ([#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647)).
+   Worked around in `scripts/smoke-test-azure.sh`: the app-stack apply
+   detects this exact failure message and retries once.
+2. That retry, applied blindly to the whole stack, re-touched
+   `azurerm_postgresql_flexible_server` and hit a second, unrelated,
+   long-standing provider bug over its auto-assigned `zone`. Fixed at the
+   actual source — `PostgreSQLFlexibleServer` now carries
+   `lifecycle.ignore_changes: ["zone"]` — rather than by scoping the retry,
+   since `-target` turned out to pull in a resource's entire dependency
+   chain regardless of how the retry was scoped.
 
-**First live run (`production-stack` in `francecentral`, 2026-08-05) hit a
-real, unresolved provider bug, not a composey bug.**
-`azurerm_cdn_frontdoor_origin` gets created with `enabled=false` regardless
-of what is configured — the provider's own docs say it defaults to `true` —
-so `azurerm_cdn_frontdoor_route`, which needs at least one enabled origin
-under its origin group, fails its first apply with "Please make sure that
-the originGroup is created successfully and at least one enabled origin is
-created under the origin group." Open upstream:
-[hashicorp/terraform-provider-azurerm#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647).
-A second `terraform apply` always succeeds — Terraform detects the drift on
-refresh and flips the origin to enabled before retrying the route.
-
-**Second live run hit a different bug, caused by the first fix.** The
-initial workaround retried the *entire* stack apply, which re-touched
-`azurerm_postgresql_flexible_server` too — Azure assigns its `zone` itself,
-and a second full apply's plan tried to "correct" that real zone back
-towards what was never actually configured, hitting a separate, long-standing
-provider bug ("`zone` can only be changed when exchanged with the zone
-specified in `high_availability.0.standby_availability_zone`" — open on and
-off since 2022, e.g. hashicorp/terraform-provider-azurerm#16888). One narrow,
-well-understood bug had been traded for a second, unrelated one by retrying
-more broadly than necessary.
-
-**Third live run showed `-target` doesn't actually solve this.** Scoping the
-retry to `-target=azurerm_cdn_frontdoor_route.<key>` still pulled in Postgres
-and hit the exact same `zone` error: `-target` includes the whole dependency
-chain behind what's targeted, and the Front Door origin's `host_name`
-resolves through the Container App, whose environment variables resolve
-through Postgres's connection string. There is no resource-graph-based way
-to retry "just Front Door" once anything else references what it fronts.
-
-Fixed at the actual source instead: `PostgreSQLFlexibleServer` now carries
-`lifecycle.ignore_changes: ["zone"]` unconditionally (`models/azure.py`), so
-*no* plan — retried or not — ever proposes changing it back. `generator_azure.py`
-was silently dropping every model's `lifecycle` block regardless of resource
-type ("needs special handling", dated further back than this session); fixed
-that too, since it's what let this exist unnoticed. `KeyVaultSecret` already
-carried a `lifecycle` block that had been silently dropped the same way.
-With the actual cause fixed, the retry itself is a plain, unscoped second
-`terraform apply` — simple, because it no longer needs to dodge anything.
-
-**Not yet re-verified against real Azure.** Teardown was clean on all three
-failed runs — nothing leaked from any of them.
-
-**Still not fully verified even once a clean run happens**: the smoke test
-polls the Container App's own FQDN directly and never actually requests
-anything through the Front Door endpoint itself. A clean apply confirms the
-resources exist and reference each other correctly — it does not confirm
-traffic actually flows through Front Door to the Container App. Those remain
-two different claims; do not close this out on a clean apply alone.
+**Still not fully verified even with a clean apply**: the smoke test polls
+the Container App's own FQDN directly and has never actually sent a request
+through the Front Door endpoint itself. A clean apply confirms the five
+resources exist and correctly reference each other — it does not confirm
+Front Door actually proxies real traffic to the Container App end to end.
+Extend the smoke test to poll `azurerm_cdn_frontdoor_endpoint.<key>.host_name`
+instead of (or as well as) the Container App's own FQDN before treating this
+as fully proven.
 
 ### 2. Smaller things
 
@@ -116,8 +84,9 @@ inert the whole time — no test caught it because nothing asserted its
 presence in output, only that the model carried the field. Fixed by
 deleting the special-case deletion; AWS's generator already emits
 `lifecycle` as a plain key with no special handling, which is all Terraform
-JSON needs. Found while chasing the Postgres `zone` bug below — worth an
-audit of what else this cost, since it went unnoticed until now.
+JSON needs. Found while chasing a Postgres `zone`-drift bug hit via Front
+Door's retry path (below) — worth an audit of what else this cost, since it
+went unnoticed until now.
 
 **`-target` does not scope a retry the way it looks like it should.**
 Tried using `-target=<one resource>` to retry only a resource that failed,
@@ -129,8 +98,25 @@ Postgres connection string, in this case), `-target` on one reaches the
 other regardless of how unrelated they look. There is no way to retry "just
 this resource" once anything else in the stack references what it depends
 on; the actual fix has to prevent the retriggering plan from wanting to
-change the other resource at all (see `ignore_changes` below), not try to
-dodge it with more precise targeting.
+change the other resource at all (`ignore_changes`, as landed on
+`PostgreSQLFlexibleServer.zone`), not try to dodge it with more precise
+targeting.
+
+**Two open azurerm provider bugs, both confirmed against real Azure
+2026-08-05, both worth knowing about before assuming a schema-valid Front
+Door / Postgres config will apply cleanly:**
+- `azurerm_cdn_frontdoor_origin` is created with `enabled=false` regardless
+  of what's configured, so any route depending on it fails its first apply.
+  A second apply always succeeds. Open:
+  [hashicorp/terraform-provider-azurerm#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647).
+  Worked around with a detect-and-retry in `scripts/smoke-test-azure.sh`.
+- `azurerm_postgresql_flexible_server`'s `zone` is assigned by Azure itself;
+  any plan that reaches the resource without `ignore_changes: ["zone"]`
+  tries to write back whatever value Azure picked and gets rejected with
+  "`zone` can only be changed when exchanged with the zone specified in
+  `high_availability.0.standby_availability_zone`". Open on and off since
+  2022, e.g. hashicorp/terraform-provider-azurerm#16888. Fixed for good on
+  the model, not worked around per-call-site.
 
 **Deploy to `francecentral` for anything with a cache, `uksouth` otherwise.**
 `eastus` is offer-restricted for PostgreSQL Flexible Server —

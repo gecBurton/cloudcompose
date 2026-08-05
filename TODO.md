@@ -42,7 +42,7 @@ does not expose whether that fee prorates hourly. If it does not, every
 acceptance run that creates a Front Door profile could cost the full $35.
 Check against actual billing before wiring this into an on-demand workflow.
 
-### 3. Smaller things
+### 2. Smaller things
 
 - `nginx-flask-mysql` compiles and validates but has never had a live run. It
   is the only MySQL path, so the `mysql` delegated subnet and the MySQL private

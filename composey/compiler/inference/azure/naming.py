@@ -70,3 +70,13 @@ def key_vault_name(env_name: str, app_name: str) -> str:
     if not candidate[:1].isalpha():
         candidate = f"kv-{candidate}"
     return _fit(candidate, full, min_len=3, max_len=24, sep="-").strip("-")
+
+
+def frontdoor_profile_name(env_name: str, app_name: str) -> str:
+    """Name for azurerm_cdn_frontdoor_profile: no documented length cap below
+    260 characters, but kept consistent with the rest of this module's
+    dash-joined, digest-on-collision convention rather than relying on that."""
+    full = f"{env_name}-{app_name}-fd"
+    candidate = re.sub(r"[^a-zA-Z0-9-]", "-", full)
+    candidate = re.sub(r"-+", "-", candidate).strip("-")
+    return _fit(candidate, full, min_len=1, max_len=64, sep="-").strip("-")

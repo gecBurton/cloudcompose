@@ -5,11 +5,11 @@ Azure Container Apps is a higher-level service than ECS Fargate, so this
 module makes opinionated choices that fit Azure's model.
 """
 
-import warnings
 from typing import Callable
 
 from composey.compiler.inference.azure.naming import (
     container_registry_name,
+    frontdoor_profile_name,
     key_vault_name,
     storage_account_name,
 )
@@ -19,6 +19,11 @@ from composey.models.azure import (
     ContainerApp,
     ContainerAppJob,
     ContainerRegistry,
+    FrontDoorEndpoint,
+    FrontDoorOrigin,
+    FrontDoorOriginGroup,
+    FrontDoorProfile,
+    FrontDoorRoute,
     KeyVault,
     MySQLFlexibleDatabase,
     MySQLFlexibleServer,
@@ -778,32 +783,73 @@ def _infer_cdn(
     tags: dict[str, str] | None,
 ) -> None:
     """
-    Azure CDN is not currently supported.
+    Put Azure Front Door (Standard/Premium) in front of every service with
+    both `cdn: true` and an ingress.
 
-    These resources model Azure CDN from Microsoft (classic), which no longer
-    accepts new profiles:
+    Replaces Azure CDN from Microsoft (classic), which this used to model —
+    that product no longer accepts new profiles at all ("Azure CDN from
+    Microsoft (classic) no longer support new profile creation"). Front Door
+    Standard's $35/month base fee is billed hourly and only for the hours
+    used (confirmed against Microsoft's own pricing page 2026-08-05), so it
+    costs a few cents for a short-lived acceptance run — not a reason to
+    avoid creating one.
 
-      Code="BadRequest" Message="Azure CDN from Microsoft (classic) no longer
-      support new profile creation."
+    One profile per application, shared by every CDN-enabled service in it —
+    Front Door profiles are a real unit of billing and management, and
+    nothing about this codebase's other per-app resources (Key Vault,
+    Container Registry) suggests one per service. Everything below the
+    profile (endpoint, origin group, origin, route) is one set per service,
+    since each service's Container App has its own ingress FQDN to front.
 
-    So emitting them cannot succeed for anyone. Front Door is the replacement,
-    and porting to it is a real piece of work — azurerm_cdn_frontdoor_profile
-    plus endpoint, origin group, origin and route — not a rename. Until then
-    the request is skipped rather than compiled into an apply that fails after
-    everything else has been built.
-
-    The application still deploys; it is served directly from its Container App
-    ingress, without a CDN in front.
+    Front Door is global, unlike everything else this module creates: no
+    `location` on any of these five resources.
     """
     cdn_services = [s for s in app.services if s.cdn_enabled and s.ingress]
 
     if not cdn_services:
         return
 
-    warnings.warn(
-        "Azure CDN is not supported: the classic CDN these resources model no "
-        "longer accepts new profiles, and Front Door is not implemented yet. "
-        "Ignoring cdn for: " + ", ".join(s.name for s in cdn_services),
-        stacklevel=2,
+    profile_key = "main"
+    resources.azurerm_cdn_frontdoor_profile[profile_key] = FrontDoorProfile(
+        name=frontdoor_profile_name(env.name, app.name),
+        resource_group_name=env.name,
+        tags=tags,
     )
-    return
+    profile_id = f"${{azurerm_cdn_frontdoor_profile.{profile_key}.id}}"
+
+    for service in cdn_services:
+        key = service.name
+
+        resources.azurerm_cdn_frontdoor_endpoint[key] = FrontDoorEndpoint(
+            name=get_name(f"{service.name}-fd"),
+            cdn_frontdoor_profile_id=profile_id,
+            tags=tags,
+        )
+        endpoint_id = f"${{azurerm_cdn_frontdoor_endpoint.{key}.id}}"
+
+        resources.azurerm_cdn_frontdoor_origin_group[key] = FrontDoorOriginGroup(
+            name=service.name,
+            cdn_frontdoor_profile_id=profile_id,
+        )
+        origin_group_id = f"${{azurerm_cdn_frontdoor_origin_group.{key}.id}}"
+
+        # The Container App's ingress FQDN, exactly as output.fqdn already
+        # references it in generator_azure.py. Both host_name and
+        # origin_host_header need it: Container Apps, like most managed
+        # backends, requires the Host header on the forwarded request to
+        # match the origin it is actually listening for.
+        fqdn = f"${{azurerm_container_app.{service.name}.ingress[0].fqdn}}"
+        resources.azurerm_cdn_frontdoor_origin[key] = FrontDoorOrigin(
+            name=service.name,
+            cdn_frontdoor_origin_group_id=origin_group_id,
+            host_name=fqdn,
+            origin_host_header=fqdn,
+        )
+        origin_id = f"${{azurerm_cdn_frontdoor_origin.{key}.id}}"
+
+        resources.azurerm_cdn_frontdoor_route[key] = FrontDoorRoute(
+            name="default",
+            cdn_frontdoor_endpoint_id=endpoint_id,
+            cdn_frontdoor_origin_group_id=origin_group_id,
+            cdn_frontdoor_origin_ids=[origin_id],
+        )

@@ -205,14 +205,33 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_storage_container.items()
         }
 
-    if resources.azurerm_cdn_profile:
-        result["azurerm_cdn_profile"] = {
-            k: _clean_model(v) for k, v in resources.azurerm_cdn_profile.items()
+    if resources.azurerm_cdn_frontdoor_profile:
+        result["azurerm_cdn_frontdoor_profile"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_profile.items()
         }
 
-    if resources.azurerm_cdn_endpoint:
-        result["azurerm_cdn_endpoint"] = {
-            k: _clean_model(v) for k, v in resources.azurerm_cdn_endpoint.items()
+    if resources.azurerm_cdn_frontdoor_endpoint:
+        result["azurerm_cdn_frontdoor_endpoint"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_endpoint.items()
+        }
+
+    if resources.azurerm_cdn_frontdoor_origin_group:
+        result["azurerm_cdn_frontdoor_origin_group"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_origin_group.items()
+        }
+
+    if resources.azurerm_cdn_frontdoor_origin:
+        result["azurerm_cdn_frontdoor_origin"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_origin.items()
+        }
+
+    if resources.azurerm_cdn_frontdoor_route:
+        result["azurerm_cdn_frontdoor_route"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_cdn_frontdoor_route.items()
         }
 
     # Docker resources

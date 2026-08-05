@@ -168,6 +168,56 @@
         ]
       }
     },
+    "azurerm_cdn_frontdoor_profile": {
+      "main": {
+        "name": "prod-production-stack-fd",
+        "resource_group_name": "prod",
+        "sku_name": "Standard_AzureFrontDoor"
+      }
+    },
+    "azurerm_cdn_frontdoor_endpoint": {
+      "web": {
+        "name": "prod-production-stack-web-fd",
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}"
+      }
+    },
+    "azurerm_cdn_frontdoor_origin_group": {
+      "web": {
+        "name": "web",
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
+        "load_balancing": {}
+      }
+    },
+    "azurerm_cdn_frontdoor_origin": {
+      "web": {
+        "name": "web",
+        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
+        "host_name": "${azurerm_container_app.web.ingress[0].fqdn}",
+        "certificate_name_check_enabled": true,
+        "origin_host_header": "${azurerm_container_app.web.ingress[0].fqdn}",
+        "http_port": 80,
+        "https_port": 443
+      }
+    },
+    "azurerm_cdn_frontdoor_route": {
+      "web": {
+        "name": "default",
+        "cdn_frontdoor_endpoint_id": "${azurerm_cdn_frontdoor_endpoint.web.id}",
+        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
+        "cdn_frontdoor_origin_ids": [
+          "${azurerm_cdn_frontdoor_origin.web.id}"
+        ],
+        "patterns_to_match": [
+          "/*"
+        ],
+        "supported_protocols": [
+          "Http",
+          "Https"
+        ],
+        "forwarding_protocol": "HttpsOnly",
+        "https_redirect_enabled": true
+      }
+    },
     "random_password": {
       "postgres_admin": {
         "length": 20,

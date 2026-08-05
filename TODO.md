@@ -24,25 +24,45 @@ Run one with:
 gh workflow run azure-acceptance.yml --ref main -f example=hello
 ```
 
+**`production-stack`'s verification above predates Front Door.** It carries
+`cdn: true`, so re-running it now exercises five new resources
+(`azurerm_cdn_frontdoor_profile`/`_endpoint`/`_origin_group`/`_origin`/`_route`)
+that have only ever passed `terraform validate`, never a real apply. Do that
+run before touching Front Door again — see below.
+
 ## Outstanding work
 
-### 1. Front Door — CDN is unsupported
+### 1. Front Door — implemented, not yet live-verified
 
-`cdn: true` compiles to nothing on Azure and warns. The old resources modelled
-Azure CDN from Microsoft (classic), which no longer accepts new profiles at
-all.
+`cdn: true` now compiles to a real Front Door Standard setup: one
+`azurerm_cdn_frontdoor_profile` per application (shared, the way Key Vault and
+the Container Registry already are), and one endpoint + origin group +
+origin + route per CDN-enabled service, fronting that service's Container App
+ingress FQDN (`_infer_cdn` in `compiler/inference/azure/__init__.py`). Front
+Door is global, so none of these five resources carry a `location`, unlike
+everything else this module creates.
 
-The port is `azurerm_cdn_frontdoor_profile` + `_endpoint` + `_origin_group` +
-`_origin` + `_route` — five resources replacing two, and a genuine remodelling.
-Front Door is global, not regional, so `location` drops out.
+Replaces the old `CdnProfile`/`CdnEndpoint` models, which modelled Azure CDN
+from Microsoft (classic) — a product that no longer accepts new profiles at
+all ("Azure CDN from Microsoft (classic) no longer support new profile
+creation"), so those models had never been able to succeed for anyone.
 
-**Blocked on a question:** Front Door Standard carries a **$35/month base fee**
-(confirmed via Azure's retail pricing API) where classic CDN had none. The API
-does not expose whether that fee prorates hourly. If it does not, every
-acceptance run that creates a Front Door profile could cost the full $35.
-Check against actual billing before wiring this into an on-demand workflow.
+The billing concern that blocked this is resolved: Front Door Standard's
+$35/month base fee is billed hourly, only for hours used (confirmed on
+Microsoft's own pricing page), so a short acceptance run costs a few cents.
+
+Passes `terraform validate` for `production-stack`, the one example using
+`cdn: true`. **Not yet run against real Azure.** Run `production-stack`
+through the acceptance workflow next, in `francecentral` — the only things
+genuinely new to that run are the five Front Door resources, since the rest
+of the stack was verified in an earlier session. Given how many of the
+Container App identity/auth assumptions turned out wrong only once actually
+pulled against real Azure (see the `AcrPull` entry below), do not assume the
+`origin_host_header`/`host_name`-against-Container-Apps combination is
+correct until it has actually been hit by a real request through Front Door.
 
 ### 2. Smaller things
+
 
 - `nginx-flask-mysql` compiles and validates but has never had a live run. It
   is the only MySQL path, so the `mysql` delegated subnet and the MySQL private

@@ -162,6 +162,20 @@ class PostgreSQLFlexibleServer(BaseModel):
     # declared explicitly.
     depends_on: Optional[List[str]] = None
 
+    # Azure assigns the availability zone itself; nothing in this model
+    # configures it. Without ignoring it, any later plan sees a "change" from
+    # unset to whatever Azure actually picked and tries to write it back,
+    # which the API rejects outright: "`zone` can only be changed when
+    # exchanged with the zone specified in
+    # `high_availability.0.standby_availability_zone`" (confirmed against
+    # real Azure 2026-08-05; open on and off in the azurerm provider since
+    # 2022, e.g. hashicorp/terraform-provider-azurerm#16888). Ignoring it is
+    # the workaround used throughout that thread — there is no configuration
+    # that avoids the bug, only ignoring the drift it causes.
+    lifecycle: Optional[Dict[str, List[str]]] = Field(
+        default_factory=lambda: {"ignore_changes": ["zone"]}
+    )
+
     tags: Optional[Dict[str, str]] = None
 
 

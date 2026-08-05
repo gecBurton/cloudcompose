@@ -109,7 +109,12 @@
         "storage_mb": 32768,
         "administrator_login": "composey",
         "administrator_password": "${random_password.postgres_admin.result}",
-        "public_network_access_enabled": true
+        "public_network_access_enabled": true,
+        "lifecycle": {
+          "ignore_changes": [
+            "zone"
+          ]
+        }
       }
     },
     "azurerm_postgresql_flexible_server_database": {

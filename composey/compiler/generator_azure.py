@@ -263,8 +263,4 @@ def _clean_model(obj: Any) -> Any:
     else:
         return obj
 
-    # Remove lifecycle key for now (needs special handling)
-    if "lifecycle" in data:
-        del data["lifecycle"]
-
     return data

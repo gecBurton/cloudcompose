@@ -205,27 +205,23 @@ eval "$TF init -input=false -reconfigure"
 # azurerm_cdn_frontdoor_route depending on that origin fails its first apply
 # with "Please make sure that the originGroup is created successfully and at
 # least one enabled origin is created under the origin group." A second
-# apply of just that route always succeeds: Terraform detects the drift on
-# refresh and flips the origin to enabled first.
+# apply always succeeds: Terraform detects the drift on refresh and flips the
+# origin to enabled before the route is attempted again.
 #
-# The retry is deliberately scoped to -target the route resources rather than
-# a second full-stack apply: a blanket retry re-touches every resource,
-# including azurerm_postgresql_flexible_server, whose `zone` Azure assigns
-# itself and which a second apply then tries to "correct" back to — hitting
-# a separate, long-standing provider bug ("`zone` can only be changed when
-# exchanged with the zone specified in `high_availability.0.standby_availability_zone`",
-# confirmed against real Azure 2026-08-05). Retrying everything to fix one
-# resource traded a known, narrow bug for a second, unrelated one.
+# A -target'd retry was tried first, to avoid touching anything else on the
+# second apply — but -target pulls in the whole dependency chain behind the
+# route (origin -> Container App -> Postgres connection string), so it still
+# re-touched azurerm_postgresql_flexible_server and hit a second bug: Azure
+# assigns that resource's `zone` itself, and any plan that reaches it tries
+# to "correct" that real value, which the API rejects
+# (models/azure.py's PostgreSQLFlexibleServer now carries
+# `lifecycle.ignore_changes: ["zone"]` so that no longer happens on *any*
+# plan, not just this retry). With that fixed at the source, retrying the
+# whole apply is simple and no longer trades one bug for another.
 if ! eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; then
   if grep -q "at least one enabled origin is created under the origin group" /tmp/tf-apply-app.log; then
-    log "Front Door origin race hit (known azurerm provider bug #31647) — retrying just the route…"
-    route_addrs="$(grep -oE 'azurerm_cdn_frontdoor_route\.[A-Za-z0-9_-]+' /tmp/tf-apply-app.log | sort -u)"
-    [[ -n "$route_addrs" ]] || fail "front door route retry: could not find a route address to target"
-    target_args=()
-    while IFS= read -r addr; do
-      target_args+=(-target="$addr")
-    done <<< "$route_addrs"
-    eval "$TF apply -auto-approve ${target_args[*]}"
+    log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
+    eval "$TF apply -auto-approve"
   else
     fail "terraform apply failed for the app stack"
   fi

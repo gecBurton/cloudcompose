@@ -68,16 +68,28 @@ off since 2022, e.g. hashicorp/terraform-provider-azurerm#16888). One narrow,
 well-understood bug had been traded for a second, unrelated one by retrying
 more broadly than necessary.
 
-Fixed by scoping the retry to `-target=azurerm_cdn_frontdoor_route.<key>`
-instead of a blanket re-apply — the address is parsed out of the first
-apply's own error output rather than hardcoded, so it holds for any number
-of CDN-enabled services. Postgres, and everything else already created,
-is left alone on the retry. **Not yet re-verified against real Azure** — the
-narrower retry itself has not been exercised end-to-end.
+**Third live run showed `-target` doesn't actually solve this.** Scoping the
+retry to `-target=azurerm_cdn_frontdoor_route.<key>` still pulled in Postgres
+and hit the exact same `zone` error: `-target` includes the whole dependency
+chain behind what's targeted, and the Front Door origin's `host_name`
+resolves through the Container App, whose environment variables resolve
+through Postgres's connection string. There is no resource-graph-based way
+to retry "just Front Door" once anything else references what it fronts.
 
-Teardown was clean on both failed runs — nothing leaked from either.
+Fixed at the actual source instead: `PostgreSQLFlexibleServer` now carries
+`lifecycle.ignore_changes: ["zone"]` unconditionally (`models/azure.py`), so
+*no* plan — retried or not — ever proposes changing it back. `generator_azure.py`
+was silently dropping every model's `lifecycle` block regardless of resource
+type ("needs special handling", dated further back than this session); fixed
+that too, since it's what let this exist unnoticed. `KeyVaultSecret` already
+carried a `lifecycle` block that had been silently dropped the same way.
+With the actual cause fixed, the retry itself is a plain, unscoped second
+`terraform apply` — simple, because it no longer needs to dodge anything.
 
-**Still not fully verified even once this retry succeeds**: the smoke test
+**Not yet re-verified against real Azure.** Teardown was clean on all three
+failed runs — nothing leaked from any of them.
+
+**Still not fully verified even once a clean run happens**: the smoke test
 polls the Container App's own FQDN directly and never actually requests
 anything through the Front Door endpoint itself. A clean apply confirms the
 resources exist and reference each other correctly — it does not confirm
@@ -95,6 +107,30 @@ two different claims; do not close this out on a clean apply alone.
 - The persistent-environment restructure (see below) is now much less urgent.
 
 ## Things worth knowing before touching this again
+
+**`generator_azure.py` was silently dropping every model's `lifecycle`
+block.** `_clean_model` deleted the key outright with a "needs special
+handling" comment, for every resource type, not just the one it was written
+for. `KeyVaultSecret`'s `ignore_changes: ["value"]` had been silently
+inert the whole time — no test caught it because nothing asserted its
+presence in output, only that the model carried the field. Fixed by
+deleting the special-case deletion; AWS's generator already emits
+`lifecycle` as a plain key with no special handling, which is all Terraform
+JSON needs. Found while chasing the Postgres `zone` bug below — worth an
+audit of what else this cost, since it went unnoticed until now.
+
+**`-target` does not scope a retry the way it looks like it should.**
+Tried using `-target=<one resource>` to retry only a resource that failed,
+without touching anything else already applied. It still pulled in that
+resource's entire dependency chain — anything the target references,
+transitively, all the way back. If two resources are connected through
+enough intermediate references (Front Door origin → Container App →
+Postgres connection string, in this case), `-target` on one reaches the
+other regardless of how unrelated they look. There is no way to retry "just
+this resource" once anything else in the stack references what it depends
+on; the actual fix has to prevent the retriggering plan from wanting to
+change the other resource at all (see `ignore_changes` below), not try to
+dodge it with more precise targeting.
 
 **Deploy to `francecentral` for anything with a cache, `uksouth` otherwise.**
 `eastus` is offer-restricted for PostgreSQL Flexible Server —

@@ -31,7 +31,13 @@ KEEP="${KEEP:-0}"                                      # 1 = do not destroy afte
 # Not eastus: this subscription is offer-restricted there for PostgreSQL
 # Flexible Server, which fails with LocationIsOfferRestricted twenty minutes
 # into an apply.
-REGION="${REGION:-uksouth}"                            # region to deploy into
+#
+# Not uksouth or northeurope for anything touching Azure Managed Redis:
+# both have failed Balanced_B0/B1 creation with InsufficientCapacity
+# (confirmed against real Azure 2026-08-04). francecentral has neither
+# restriction and was confirmed clean for both Postgres and Redis the same
+# day — prefer it whenever the example includes a cache.
+REGION="${REGION:-francecentral}"                     # region to deploy into
 STATE_RG="${STATE_RG:-}"                               # Resource Group for remote state; empty = local
 STATE_LOCATION="${STATE_LOCATION:-eastus}"             # location of STATE_RG storage
 STATE_ACCOUNT="${STATE_ACCOUNT:-composeyacceptstate}"  # storage account holding state
@@ -193,9 +199,33 @@ write_backend "$BUILD_DIR" "acceptance/$NAME/$PROJECT.tfstate"
 cd "$BUILD_DIR"
 
 eval "$TF init -input=false -reconfigure"
-eval "$TF apply -auto-approve"
-
-# --- 4. Get Container App FQDN and poll -------------------------------------
+# azurerm_cdn_frontdoor_origin is created with enabled=false regardless of
+# what is configured — a known, unresolved provider bug (confirmed against
+# real Azure 2026-08-05: hashicorp/terraform-provider-azurerm#31647). Any
+# azurerm_cdn_frontdoor_route depending on that origin fails its first apply
+# with "Please make sure that the originGroup is created successfully and at
+# least one enabled origin is created under the origin group." A second
+# apply always succeeds: Terraform detects the drift on refresh and flips the
+# origin to enabled before the route is attempted again.
+#
+# A -target'd retry was tried first, to avoid touching anything else on the
+# second apply — but -target pulls in the whole dependency chain behind the
+# route (origin -> Container App -> Postgres connection string), so it still
+# re-touched azurerm_postgresql_flexible_server and hit a second bug: Azure
+# assigns that resource's `zone` itself, and any plan that reaches it tries
+# to "correct" that real value, which the API rejects
+# (models/azure.py's PostgreSQLFlexibleServer now carries
+# `lifecycle.ignore_changes: ["zone"]` so that no longer happens on *any*
+# plan, not just this retry). With that fixed at the source, retrying the
+# whole apply is simple and no longer trades one bug for another.
+if ! eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; then
+  if grep -q "at least one enabled origin is created under the origin group" /tmp/tf-apply-app.log; then
+    log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
+    eval "$TF apply -auto-approve"
+  else
+    fail "terraform apply failed for the app stack"
+  fi
+fi
 # `terraform output -raw` prints its "No outputs found" warning on stdout, so a
 # missing output is captured as the hostname rather than as an empty string.
 # The previous state-show fallback could not have covered for that either: it

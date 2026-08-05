@@ -27,10 +27,6 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
                     "source": "hashicorp/azurerm",
                     "version": "~> 4.0",
                 },
-                "docker": {
-                    "source": "kreuzwerker/docker",
-                    "version": "~> 3.0",
-                },
                 "random": {
                     "source": "hashicorp/random",
                     "version": "~> 3.6",
@@ -41,7 +37,6 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
             "azurerm": {
                 "features": {},
             },
-            "docker": {},
             "random": {},
         },
         "data": {
@@ -62,6 +57,27 @@ def generate(resources: AzureResources, env: AzureEnvironment) -> str:
         },
         "resource": _build_resources(resources),
     }
+
+    # Only wire up the docker provider if something actually builds an image.
+    # Auth is against the ACR admin account (azurerm_container_registry has
+    # admin_enabled=True whenever it exists) rather than a short-lived token
+    # like AWS's aws_ecr_authorization_token data source: ACR's admin
+    # credentials are stable resource attributes, so no data source is
+    # needed to fetch them.
+    if resources.docker_image:
+        terraform["terraform"]["required_providers"]["docker"] = {
+            "source": "kreuzwerker/docker",
+            "version": "~> 3.0",
+        }
+        terraform["provider"]["docker"] = {
+            "registry_auth": [
+                {
+                    "address": "${azurerm_container_registry.main.login_server}",
+                    "username": "${azurerm_container_registry.main.admin_username}",
+                    "password": "${azurerm_container_registry.main.admin_password}",
+                }
+            ]
+        }
 
     # On AWS the public hostname belongs to the environment's shared load
     # balancer, so the environment stack publishes it. A Container App carries
@@ -106,6 +122,11 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
     if resources.azurerm_container_app:
         result["azurerm_container_app"] = {
             k: _clean_model(v) for k, v in resources.azurerm_container_app.items()
+        }
+
+    if resources.azurerm_container_app_job:
+        result["azurerm_container_app_job"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_container_app_job.items()
         }
 
     if resources.azurerm_container_registry:
@@ -184,22 +205,45 @@ def _build_resources(resources: AzureResources) -> dict[str, Any]:
             k: _clean_model(v) for k, v in resources.azurerm_storage_container.items()
         }
 
-    if resources.azurerm_cdn_profile:
-        result["azurerm_cdn_profile"] = {
-            k: _clean_model(v) for k, v in resources.azurerm_cdn_profile.items()
+    if resources.azurerm_cdn_frontdoor_profile:
+        result["azurerm_cdn_frontdoor_profile"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_profile.items()
         }
 
-    if resources.azurerm_cdn_endpoint:
-        result["azurerm_cdn_endpoint"] = {
-            k: _clean_model(v) for k, v in resources.azurerm_cdn_endpoint.items()
+    if resources.azurerm_cdn_frontdoor_endpoint:
+        result["azurerm_cdn_frontdoor_endpoint"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_endpoint.items()
+        }
+
+    if resources.azurerm_cdn_frontdoor_origin_group:
+        result["azurerm_cdn_frontdoor_origin_group"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_origin_group.items()
+        }
+
+    if resources.azurerm_cdn_frontdoor_origin:
+        result["azurerm_cdn_frontdoor_origin"] = {
+            k: _clean_model(v)
+            for k, v in resources.azurerm_cdn_frontdoor_origin.items()
+        }
+
+    if resources.azurerm_cdn_frontdoor_route:
+        result["azurerm_cdn_frontdoor_route"] = {
+            k: _clean_model(v) for k, v in resources.azurerm_cdn_frontdoor_route.items()
         }
 
     # Docker resources
     if resources.docker_image:
-        result["docker_image"] = resources.docker_image
+        result["docker_image"] = {
+            k: _clean_model(v) for k, v in resources.docker_image.items()
+        }
 
     if resources.docker_registry_image:
-        result["docker_registry_image"] = resources.docker_registry_image
+        result["docker_registry_image"] = {
+            k: _clean_model(v) for k, v in resources.docker_registry_image.items()
+        }
 
     # Random resources
     if resources.random_password:
@@ -218,9 +262,5 @@ def _clean_model(obj: Any) -> Any:
         data = obj.dict(exclude_none=True)
     else:
         return obj
-
-    # Remove lifecycle key for now (needs special handling)
-    if "lifecycle" in data:
-        del data["lifecycle"]
 
     return data

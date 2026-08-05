@@ -5,19 +5,25 @@ Azure Container Apps is a higher-level service than ECS Fargate, so this
 module makes opinionated choices that fit Azure's model.
 """
 
-import warnings
 from typing import Callable
 
 from composey.compiler.inference.azure.naming import (
     container_registry_name,
+    frontdoor_profile_name,
     key_vault_name,
     storage_account_name,
 )
-from composey.models.aws import RandomPassword
+from composey.models.aws import DockerImage, DockerRegistryImage, RandomPassword
 from composey.models.azure import (
     AzureResources,
     ContainerApp,
+    ContainerAppJob,
     ContainerRegistry,
+    FrontDoorEndpoint,
+    FrontDoorOrigin,
+    FrontDoorOriginGroup,
+    FrontDoorProfile,
+    FrontDoorRoute,
     KeyVault,
     MySQLFlexibleDatabase,
     MySQLFlexibleServer,
@@ -80,7 +86,10 @@ def infer(app: SemanticApp, env: AzureEnvironment) -> AzureResources:
     # Step 8: Infer container apps
     _infer_container_apps(resources, app, env, get_name, tags, identity_id, connections)
 
-    # Step 9: Infer CDN for services with cdn_enabled
+    # Step 9: Scheduled services run as Jobs, not as always-on Container Apps
+    _infer_scheduled_jobs(resources, app, env, get_name, tags, identity_id, connections)
+
+    # Step 10: Infer CDN for services with cdn_enabled
     _infer_cdn(resources, app, env, get_name, tags)
 
     return resources
@@ -149,9 +158,40 @@ def _infer_container_registry(
         resource_group_name=env.name,
         location=env.region,
         sku="Standard",
-        admin_enabled=True,  # Required for Container Apps to pull
+        admin_enabled=True,  # Required for Container Apps to pull, and for
+        # the docker provider to authenticate when pushing (see
+        # _handle_build_context and generator_azure.py's registry_auth).
         tags=tags,
     )
+
+    # Build and push an image for every service with a build context. Mirrors
+    # AWS's _handle_build_context in compiler/inference/_compute.py: a
+    # docker_image builds locally, a docker_registry_image pushes it, and the
+    # container's image reference is pinned to the pushed digest rather than
+    # a mutable ":latest" tag, so Container Apps deploys exactly what was
+    # built rather than racing a tag that could be overwritten mid-apply.
+    for service in app.services:
+        if service.capability != "container" or not service.build_context:
+            continue
+
+        build: dict = {
+            "context": service.build_context,
+            "platform": "linux/amd64",
+        }
+        if service.dockerfile:
+            build["dockerfile"] = service.dockerfile
+
+        image_key = f"{service.name}_image"
+        resources.docker_image[image_key] = DockerImage(
+            name=f"${{azurerm_container_registry.main.login_server}}/{service.name}:latest",
+            build=build,
+        )
+
+        push_key = f"{service.name}_push"
+        resources.docker_registry_image[push_key] = DockerRegistryImage(
+            name=f"${{docker_image.{image_key}.name}}",
+            keep_remotely=True,
+        )
 
 
 def _private_networking(
@@ -331,6 +371,11 @@ def _infer_caches(
 
         # Balanced tier: the general-purpose Managed Redis family. B0 is the
         # smallest, and cheaper than the Basic C0 it replaces.
+        #
+        # InsufficientCapacity for B0/B1 has been observed in uksouth and
+        # northeurope (confirmed against real Azure); eastus succeeded on the
+        # same SKU within minutes. This is regional physical capacity, not a
+        # SKU or code problem — see docs/aws-azure-gaps.md.
         size_sku_map = {
             "small": "Balanced_B0",
             "medium": "Balanced_B1",
@@ -412,6 +457,179 @@ def _infer_storage(
     return connections
 
 
+def _cron_expression(schedule) -> str:
+    """
+    Render a cloud-neutral schedule as the standard 5-field cron Azure wants.
+
+    Azure has no rate dialect, so an interval is expressed as the cron that
+    means the same thing. Intervals that cron cannot express — anything that
+    does not divide its unit evenly, like every 7 hours — are rejected rather
+    than silently rounded to something that runs at the wrong time.
+    """
+    from composey.exceptions import ScheduleError
+    from composey.models.semantic import RateSchedule
+
+    if not isinstance(schedule, RateSchedule):
+        return schedule.expression
+
+    value, unit = schedule.value, schedule.unit
+
+    if unit == "minutes":
+        if value == 1:
+            return "* * * * *"
+        if 60 % value:
+            raise ScheduleError(
+                f"a rate of every {value} minutes cannot be expressed as cron, "
+                f"which Azure requires: use an interval that divides an hour "
+                f"evenly, or give a cron expression directly."
+            )
+        return f"*/{value} * * * *"
+
+    if unit == "hours":
+        if value == 1:
+            return "0 * * * *"
+        if 24 % value:
+            raise ScheduleError(
+                f"a rate of every {value} hours cannot be expressed as cron, "
+                f"which Azure requires: use an interval that divides a day "
+                f"evenly, or give a cron expression directly."
+            )
+        return f"0 */{value} * * *"
+
+    # days
+    if value == 1:
+        return "0 0 * * *"
+    raise ScheduleError(
+        f"a rate of every {value} days cannot be expressed as cron, which "
+        f"Azure requires: months are not all the same length, so */{value} on "
+        f"day-of-month would drift. Give a cron expression directly."
+    )
+
+
+def _registry_auth(service) -> tuple[list[dict] | None, list[dict] | None]:
+    """
+    Registry pull config for a service, plus any secret block it needs.
+
+    Deliberately username/password rather than the managed-identity form of
+    `registry` (server + identity): a system-assigned identity's principal_id
+    does not exist until the Container App/Job itself has been created, so
+    granting it an AcrPull role assignment cannot happen before that first
+    create — and the create itself needs to pull the image. That chicken-
+    and-egg gap is exactly what silently hung for 20 minutes as
+    "ContainerAppOperationError: Operation expired" against real Azure
+    (confirmed 2026-08-04) rather than failing fast with a permissions error.
+    ACR's admin credentials are stable resource attributes available the
+    moment the registry exists, so authenticating with them sidesteps the
+    ordering problem entirely.
+    """
+    if not service.build_context:
+        return None, None
+
+    secret = [
+        {
+            "name": "acr-password",
+            "value": "${azurerm_container_registry.main.admin_password}",
+        }
+    ]
+    registry = [
+        {
+            "server": "${azurerm_container_registry.main.login_server}",
+            "username": "${azurerm_container_registry.main.admin_username}",
+            "password_secret_name": "acr-password",
+        }
+    ]
+    return registry, secret
+
+
+def _infer_scheduled_jobs(
+    resources: AzureResources,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    get_name: Callable[[str], str],
+    tags: dict[str, str] | None,
+    identity_id: str,
+    connections: dict[str, Connection],
+) -> None:
+    """
+    Create a Container Apps Job for each scheduled service.
+
+    A Job runs to completion on its trigger and stops, which is what a schedule
+    asks for. Deploying these as Container Apps instead — as composey used to —
+    runs a nightly task continuously, and restarts one that exits as soon as it
+    has finished.
+    """
+    for service in app.services:
+        if service.capability != "container" or not service.schedule:
+            continue
+
+        job_key = service.name
+        identity_config = (
+            {"type": "UserAssigned", "identity_ids": [identity_id]}
+            if identity_id
+            else {"type": "SystemAssigned"}
+        )
+
+        registry_config, secret_config = _registry_auth(service)
+
+        resources.azurerm_container_app_job[job_key] = ContainerAppJob(
+            name=get_name(service.name),
+            resource_group_name=env.name,
+            location=env.region,
+            container_app_environment_id=(
+                "${data.azurerm_container_app_environment.main.id}"
+            ),
+            schedule_trigger_config=[
+                {"cron_expression": _cron_expression(service.schedule)}
+            ],
+            template=[{"container": [_container_spec(service, app, env, connections)]}],
+            identity=identity_config,
+            secret=secret_config,
+            registry=registry_config,
+            tags=tags,
+        )
+
+
+def _container_spec(
+    service,
+    app: SemanticApp,
+    env: AzureEnvironment,
+    connections: dict[str, Connection],
+) -> dict:
+    """
+    The container block for a service, shared by Container Apps and Jobs.
+
+    Both take the same shape, so a scheduled task gets the same image
+    resolution and the same wired-in connection strings as a long-running one.
+    cpu and memory sit directly on the container; azurerm has no nested
+    "resources" block.
+    """
+    spec = {
+        "name": service.name,
+        "image": _get_container_image(service, app, env),
+        "cpu": _get_cpu_cores(service),
+        "memory": _get_memory_gb(service),
+    }
+
+    if service.command:
+        spec["args"] = service.command
+
+    env_vars = [{"name": k, "value": v} for k, v in service.env.items()]
+
+    for db_name, conn in connections.items():
+        if any(
+            r.client == service.name and r.server == db_name for r in app.relationships
+        ):
+            env_vars.append(
+                {
+                    "name": f"{db_name.upper()}_URL",
+                    "value": f"postgresql://{conn.username}:{conn.password}@{conn.host}:{conn.port}/{conn.database}",
+                }
+            )
+
+    spec["env"] = env_vars
+    return spec
+
+
 def _infer_container_apps(
     resources: AzureResources,
     app: SemanticApp,
@@ -425,6 +643,10 @@ def _infer_container_apps(
     for service in app.services:
         if service.capability != "container":
             continue
+        # Scheduled services are Jobs, not always-on apps. See
+        # _infer_scheduled_jobs.
+        if service.schedule:
+            continue
 
         # Determine scaling configuration
         min_replicas = service.min_scale
@@ -435,38 +657,7 @@ def _infer_container_apps(
         if service.ingress and min_replicas == 0:
             min_replicas = 1
 
-        # Build container spec. cpu and memory sit directly on the container;
-        # azurerm has no nested "resources" block.
-        container_spec = {
-            "name": service.name,
-            "image": _get_container_image(service, app, env),
-            "cpu": _get_cpu_cores(service),
-            "memory": _get_memory_gb(service),
-        }
-
-        if service.command:
-            container_spec["args"] = service.command
-
-        # Environment variables
-        env_vars = []
-        for key, value in service.env.items():
-            env_vars.append({"name": key, "value": value})
-
-        # Add connection strings for dependencies
-        for db_name, conn in connections.items():
-            # Check if this service depends on the database
-            if any(
-                r.client == service.name and r.server == db_name
-                for r in app.relationships
-            ):
-                env_vars.append(
-                    {
-                        "name": f"{db_name.upper()}_URL",
-                        "value": f"postgresql://{conn.username}:{conn.password}@{conn.host}:{conn.port}/{conn.database}",
-                    }
-                )
-
-        container_spec["env"] = env_vars
+        container_spec = _container_spec(service, app, env, connections)
 
         # Build ingress config
         ingress_config = None
@@ -523,24 +714,9 @@ def _infer_container_apps(
             # Use system-assigned identity
             identity_config = {"type": "SystemAssigned"}
 
-        # Registry config. The server has to be the registry that actually gets
-        # created, which is not always the one named on the environment.
-        #
-        # "System" is the literal the provider expects for a system-assigned
-        # identity. Naming the app's own principal_id here instead was a
-        # self-reference — the container app cannot depend on itself, and it
-        # only pointed at an undeclared azurerm_container_app.main anyway.
-        registry_config = None
-        if service.build_context:
-            registry = env.container_registry_name or container_registry_name(
-                env.name, app.name
-            )
-            registry_config = [
-                {
-                    "server": f"{registry}.azurecr.io",
-                    "identity": identity_id or "System",
-                }
-            ]
+        # Registry config: see _registry_auth for why this uses admin
+        # username/password rather than the managed-identity form.
+        registry_config, secret_config = _registry_auth(service)
 
         resources.azurerm_container_app[service.name] = ContainerApp(
             name=get_name(service.name),
@@ -549,20 +725,27 @@ def _infer_container_apps(
             template=template,
             ingress=ingress_config,
             identity=identity_config,
+            secret=secret_config,
             registry=registry_config,
             tags=tags,
         )
 
 
 def _get_container_image(service, app: SemanticApp, env: AzureEnvironment) -> str:
-    """Get the container image reference."""
+    """Get the container image reference.
+
+    For a built service this must resolve to the exact image
+    _infer_container_registry pushed — the sha256 digest, not a mutable
+    ":latest" tag — so Container Apps can't pull a different image than the
+    one Terraform just built. See docker_registry_image in
+    _infer_container_registry.
+    """
     if service.build_context:
-        # Must resolve to the registry _infer_container_registry creates, so
-        # both go through the same naming function.
-        registry = env.container_registry_name or container_registry_name(
-            env.name, app.name
+        push_key = f"{service.name}_push"
+        return (
+            f"${{azurerm_container_registry.main.login_server}}/{service.name}"
+            f"@${{docker_registry_image.{push_key}.sha256_digest}}"
         )
-        return f"{registry}.azurecr.io/{service.name}:latest"
     return service.image
 
 
@@ -600,32 +783,73 @@ def _infer_cdn(
     tags: dict[str, str] | None,
 ) -> None:
     """
-    Azure CDN is not currently supported.
+    Put Azure Front Door (Standard/Premium) in front of every service with
+    both `cdn: true` and an ingress.
 
-    These resources model Azure CDN from Microsoft (classic), which no longer
-    accepts new profiles:
+    Replaces Azure CDN from Microsoft (classic), which this used to model —
+    that product no longer accepts new profiles at all ("Azure CDN from
+    Microsoft (classic) no longer support new profile creation"). Front Door
+    Standard's $35/month base fee is billed hourly and only for the hours
+    used (confirmed against Microsoft's own pricing page 2026-08-05), so it
+    costs a few cents for a short-lived acceptance run — not a reason to
+    avoid creating one.
 
-      Code="BadRequest" Message="Azure CDN from Microsoft (classic) no longer
-      support new profile creation."
+    One profile per application, shared by every CDN-enabled service in it —
+    Front Door profiles are a real unit of billing and management, and
+    nothing about this codebase's other per-app resources (Key Vault,
+    Container Registry) suggests one per service. Everything below the
+    profile (endpoint, origin group, origin, route) is one set per service,
+    since each service's Container App has its own ingress FQDN to front.
 
-    So emitting them cannot succeed for anyone. Front Door is the replacement,
-    and porting to it is a real piece of work — azurerm_cdn_frontdoor_profile
-    plus endpoint, origin group, origin and route — not a rename. Until then
-    the request is skipped rather than compiled into an apply that fails after
-    everything else has been built.
-
-    The application still deploys; it is served directly from its Container App
-    ingress, without a CDN in front.
+    Front Door is global, unlike everything else this module creates: no
+    `location` on any of these five resources.
     """
     cdn_services = [s for s in app.services if s.cdn_enabled and s.ingress]
 
     if not cdn_services:
         return
 
-    warnings.warn(
-        "Azure CDN is not supported: the classic CDN these resources model no "
-        "longer accepts new profiles, and Front Door is not implemented yet. "
-        "Ignoring cdn for: " + ", ".join(s.name for s in cdn_services),
-        stacklevel=2,
+    profile_key = "main"
+    resources.azurerm_cdn_frontdoor_profile[profile_key] = FrontDoorProfile(
+        name=frontdoor_profile_name(env.name, app.name),
+        resource_group_name=env.name,
+        tags=tags,
     )
-    return
+    profile_id = f"${{azurerm_cdn_frontdoor_profile.{profile_key}.id}}"
+
+    for service in cdn_services:
+        key = service.name
+
+        resources.azurerm_cdn_frontdoor_endpoint[key] = FrontDoorEndpoint(
+            name=get_name(f"{service.name}-fd"),
+            cdn_frontdoor_profile_id=profile_id,
+            tags=tags,
+        )
+        endpoint_id = f"${{azurerm_cdn_frontdoor_endpoint.{key}.id}}"
+
+        resources.azurerm_cdn_frontdoor_origin_group[key] = FrontDoorOriginGroup(
+            name=service.name,
+            cdn_frontdoor_profile_id=profile_id,
+        )
+        origin_group_id = f"${{azurerm_cdn_frontdoor_origin_group.{key}.id}}"
+
+        # The Container App's ingress FQDN, exactly as output.fqdn already
+        # references it in generator_azure.py. Both host_name and
+        # origin_host_header need it: Container Apps, like most managed
+        # backends, requires the Host header on the forwarded request to
+        # match the origin it is actually listening for.
+        fqdn = f"${{azurerm_container_app.{service.name}.ingress[0].fqdn}}"
+        resources.azurerm_cdn_frontdoor_origin[key] = FrontDoorOrigin(
+            name=service.name,
+            cdn_frontdoor_origin_group_id=origin_group_id,
+            host_name=fqdn,
+            origin_host_header=fqdn,
+        )
+        origin_id = f"${{azurerm_cdn_frontdoor_origin.{key}.id}}"
+
+        resources.azurerm_cdn_frontdoor_route[key] = FrontDoorRoute(
+            name="default",
+            cdn_frontdoor_endpoint_id=endpoint_id,
+            cdn_frontdoor_origin_group_id=origin_group_id,
+            cdn_frontdoor_origin_ids=[origin_id],
+        )

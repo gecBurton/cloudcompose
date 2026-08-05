@@ -5,10 +5,6 @@
         "source": "hashicorp/azurerm",
         "version": "~> 4.0"
       },
-      "docker": {
-        "source": "kreuzwerker/docker",
-        "version": "~> 3.0"
-      },
       "random": {
         "source": "hashicorp/random",
         "version": "~> 3.6"
@@ -19,7 +15,6 @@
     "azurerm": {
       "features": {}
     },
-    "docker": {},
     "random": {}
   },
   "data": {
@@ -35,32 +30,6 @@
   },
   "resource": {
     "azurerm_container_app": {
-      "cleanup": {
-        "name": "prod-production-stack-cleanup",
-        "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
-        "revision_mode": "Single",
-        "template": {
-          "container": [
-            {
-              "name": "cleanup",
-              "image": "busybox",
-              "cpu": 0.25,
-              "memory": "0.5Gi",
-              "args": [
-                "echo",
-                "cleaning up..."
-              ],
-              "env": []
-            }
-          ],
-          "min_replicas": 1,
-          "max_replicas": 1
-        },
-        "identity": {
-          "type": "SystemAssigned"
-        }
-      },
       "web": {
         "name": "prod-production-stack-web",
         "resource_group_name": "prod",
@@ -116,6 +85,41 @@
         }
       }
     },
+    "azurerm_container_app_job": {
+      "cleanup": {
+        "name": "prod-production-stack-cleanup",
+        "resource_group_name": "prod",
+        "location": "eastus",
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "replica_timeout_in_seconds": 1800,
+        "replica_retry_limit": 1,
+        "schedule_trigger_config": [
+          {
+            "cron_expression": "0 2 * * *"
+          }
+        ],
+        "template": [
+          {
+            "container": [
+              {
+                "name": "cleanup",
+                "image": "busybox",
+                "cpu": 0.25,
+                "memory": "0.5Gi",
+                "args": [
+                  "echo",
+                  "cleaning up..."
+                ],
+                "env": []
+              }
+            ]
+          }
+        ],
+        "identity": {
+          "type": "SystemAssigned"
+        }
+      }
+    },
     "azurerm_postgresql_flexible_server": {
       "main": {
         "name": "prod-production-stack-pg",
@@ -126,7 +130,12 @@
         "storage_mb": 32768,
         "administrator_login": "composey",
         "administrator_password": "${random_password.postgres_admin.result}",
-        "public_network_access_enabled": true
+        "public_network_access_enabled": true,
+        "lifecycle": {
+          "ignore_changes": [
+            "zone"
+          ]
+        }
       }
     },
     "azurerm_postgresql_flexible_server_database": {
@@ -162,6 +171,56 @@
             "eviction_policy": "AllKeysLRU"
           }
         ]
+      }
+    },
+    "azurerm_cdn_frontdoor_profile": {
+      "main": {
+        "name": "prod-production-stack-fd",
+        "resource_group_name": "prod",
+        "sku_name": "Standard_AzureFrontDoor"
+      }
+    },
+    "azurerm_cdn_frontdoor_endpoint": {
+      "web": {
+        "name": "prod-production-stack-web-fd",
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}"
+      }
+    },
+    "azurerm_cdn_frontdoor_origin_group": {
+      "web": {
+        "name": "web",
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
+        "load_balancing": {}
+      }
+    },
+    "azurerm_cdn_frontdoor_origin": {
+      "web": {
+        "name": "web",
+        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
+        "host_name": "${azurerm_container_app.web.ingress[0].fqdn}",
+        "certificate_name_check_enabled": true,
+        "origin_host_header": "${azurerm_container_app.web.ingress[0].fqdn}",
+        "http_port": 80,
+        "https_port": 443
+      }
+    },
+    "azurerm_cdn_frontdoor_route": {
+      "web": {
+        "name": "default",
+        "cdn_frontdoor_endpoint_id": "${azurerm_cdn_frontdoor_endpoint.web.id}",
+        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
+        "cdn_frontdoor_origin_ids": [
+          "${azurerm_cdn_frontdoor_origin.web.id}"
+        ],
+        "patterns_to_match": [
+          "/*"
+        ],
+        "supported_protocols": [
+          "Http",
+          "Https"
+        ],
+        "forwarding_protocol": "HttpsOnly",
+        "https_redirect_enabled": true
       }
     },
     "random_password": {

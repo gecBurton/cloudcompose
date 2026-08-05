@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from composey.models.aws import DockerImage, DockerRegistryImage
+
 
 class ContainerApp(BaseModel):
     """Azure Container App resource."""
@@ -39,12 +41,58 @@ class ContainerApp(BaseModel):
         description="Managed identity configuration",
     )
 
+    # Secrets referenced by env vars or by registry password_secret_name.
+    secret: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Secret blocks, e.g. an ACR admin password for registry auth",
+    )
+
     # Registry
-    registry: Optional[List[Dict[str, str]]] = Field(
+    registry: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description="Container registry configuration",
     )
 
+    tags: Optional[Dict[str, str]] = None
+
+
+class ContainerAppJob(BaseModel):
+    """
+    Azure Container Apps Job: a container that runs to completion on a trigger.
+
+    A service with a schedule belongs here rather than in a Container App. A
+    Container App is always-on, so a nightly task would run continuously, and
+    one that exits when its work is done would be restarted indefinitely.
+
+    Lives in the same Container Apps Environment as the application's services,
+    so scheduling needs no platform infrastructure of its own.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    resource_group_name: str
+    location: str
+    container_app_environment_id: str
+
+    # How long a single execution may run before it is stopped. Required by the
+    # provider, with no default of its own.
+    replica_timeout_in_seconds: int = Field(
+        default=1800,
+        description="Hard limit on one execution, in seconds",
+    )
+    replica_retry_limit: int = Field(
+        default=1, description="Retries before an execution is failed"
+    )
+
+    schedule_trigger_config: List[Dict[str, Any]] = Field(
+        description="Cron trigger; the provider requires cron_expression"
+    )
+    template: List[Dict[str, Any]] = Field(description="Container spec to run")
+
+    identity: Optional[Dict[str, Any]] = None
+    secret: Optional[List[Dict[str, Any]]] = None
+    registry: Optional[List[Dict[str, Any]]] = None
     tags: Optional[Dict[str, str]] = None
 
 
@@ -113,6 +161,20 @@ class PostgreSQLFlexibleServer(BaseModel):
     # created, and no argument here references the link, so the edge has to be
     # declared explicitly.
     depends_on: Optional[List[str]] = None
+
+    # Azure assigns the availability zone itself; nothing in this model
+    # configures it. Without ignoring it, any later plan sees a "change" from
+    # unset to whatever Azure actually picked and tries to write it back,
+    # which the API rejects outright: "`zone` can only be changed when
+    # exchanged with the zone specified in
+    # `high_availability.0.standby_availability_zone`" (confirmed against
+    # real Azure 2026-08-05; open on and off in the azurerm provider since
+    # 2022, e.g. hashicorp/terraform-provider-azurerm#16888). Ignoring it is
+    # the workaround used throughout that thread — there is no configuration
+    # that avoids the bug, only ignoring the drift it causes.
+    lifecycle: Optional[Dict[str, List[str]]] = Field(
+        default_factory=lambda: {"ignore_changes": ["zone"]}
+    )
 
     tags: Optional[Dict[str, str]] = None
 
@@ -295,53 +357,91 @@ class StorageContainer(BaseModel):
     )
 
 
-class CdnProfile(BaseModel):
-    """Azure CDN Profile."""
+class FrontDoorProfile(BaseModel):
+    """
+    Azure Front Door (Standard/Premium) profile: the top-level container for
+    an endpoint, origin groups and origins.
+
+    Replaces CdnProfile/CdnEndpoint (Azure CDN from Microsoft, classic),
+    which no longer accepts new profiles: "Azure CDN from Microsoft
+    (classic) no longer support new profile creation." Front Door has no
+    `location` — it is a global resource, unlike everything else this
+    inference creates.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     resource_group_name: str
-    location: str
-    sku: str = Field(
-        default="Standard_Microsoft",
-        description="Standard_Microsoft, Standard_Verizon, Standard_Akamai, or Premium_Verizon",
+    sku_name: str = Field(
+        default="Standard_AzureFrontDoor",
+        description="Standard_AzureFrontDoor or Premium_AzureFrontDoor",
     )
-
     tags: Optional[Dict[str, str]] = None
 
 
-class CdnEndpoint(BaseModel):
-    """Azure CDN Endpoint."""
+class FrontDoorEndpoint(BaseModel):
+    """Front Door endpoint: the public hostname traffic actually arrives at."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    profile_name: str
-    resource_group_name: str
-    location: str
-
-    # Origin configuration
-    origin_host_header: str
-    # Named "origin": the provider's block is singular, and Terraform JSON
-    # spells repeated blocks as a list under the singular name.
-    origin: List[Dict[str, Any]]
-
-    # HTTPS
-    is_http_allowed: bool = False
-    is_https_allowed: bool = True
-
-    # Optimizations
-    optimization_type: str = Field(
-        default="GeneralWebDelivery",
-        description="GeneralWebDelivery, DynamicSiteAcceleration, etc.",
-    )
-
-    # Cache rules
-    global_delivery_rule: Optional[Dict[str, Any]] = None
-    delivery_rule: Optional[List[Dict[str, Any]]] = None
-
+    cdn_frontdoor_profile_id: str
     tags: Optional[Dict[str, str]] = None
+
+
+class FrontDoorOriginGroup(BaseModel):
+    """
+    Front Door origin group: load-balancing and health-probe policy shared
+    by the origins underneath it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    cdn_frontdoor_profile_id: str
+    load_balancing: Dict[str, Any] = Field(default_factory=dict)
+    health_probe: Optional[Dict[str, Any]] = None
+
+
+class FrontDoorOrigin(BaseModel):
+    """
+    Front Door origin: the backend Front Door forwards traffic to — a
+    Container App's ingress FQDN, in this codebase's case.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    cdn_frontdoor_origin_group_id: str
+    host_name: str
+    certificate_name_check_enabled: bool = True
+    origin_host_header: Optional[str] = None
+    http_port: int = 80
+    https_port: int = 443
+
+
+class FrontDoorRoute(BaseModel):
+    """
+    Front Door route: ties an endpoint to an origin group and says which
+    request paths and protocols reach it.
+
+    `cdn_frontdoor_origin_ids` is not sent to the Azure API — Terraform uses
+    it only to order creation and destruction against the
+    FrontDoorOrigin(s) it lists, since the API itself infers origins from
+    the origin group.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    cdn_frontdoor_endpoint_id: str
+    cdn_frontdoor_origin_group_id: str
+    cdn_frontdoor_origin_ids: List[str]
+    patterns_to_match: List[str] = Field(default_factory=lambda: ["/*"])
+    supported_protocols: List[str] = Field(default_factory=lambda: ["Http", "Https"])
+    forwarding_protocol: str = "HttpsOnly"
+    https_redirect_enabled: bool = True
 
 
 class ManagedRedis(BaseModel):
@@ -356,6 +456,15 @@ class ManagedRedis(BaseModel):
     azurerm_redis_enterprise_cluster, rejects the Balanced SKUs outright and
     starts at Enterprise_E5 — roughly $220/month against $13 for Balanced_B0,
     and more than the product being retired.
+
+    Every tier and SKU — including B0 — provisions a genuine Redis Enterprise
+    cluster (multiple nodes), unlike the single-VM Basic tier it replaces.
+    That heavier footprint runs into real per-region capacity limits: B0 and
+    B1 have both failed with InsufficientCapacity in uksouth and northeurope,
+    while the identical SKU succeeded in eastus within minutes. This is
+    physical scarcity in specific regions, not a SKU or code defect — do not
+    "fix" InsufficientCapacity by bumping the SKU; try a different region
+    (eastus has capacity) instead.
 
     The connection details live on the nested default_database block rather
     than on the cluster: port and primary_access_key both hang off it.
@@ -393,6 +502,7 @@ class AzureResources(BaseModel):
     """A registry of the Azure resources our compiler supports."""
 
     azurerm_container_app: Dict[str, ContainerApp] = Field(default_factory=dict)
+    azurerm_container_app_job: Dict[str, ContainerAppJob] = Field(default_factory=dict)
     azurerm_container_app_environment: Dict[str, ContainerAppEnvironment] = Field(
         default_factory=dict
     )
@@ -424,12 +534,25 @@ class AzureResources(BaseModel):
     azurerm_managed_redis: Dict[str, ManagedRedis] = Field(default_factory=dict)
     azurerm_storage_account: Dict[str, StorageAccount] = Field(default_factory=dict)
     azurerm_storage_container: Dict[str, StorageContainer] = Field(default_factory=dict)
-    azurerm_cdn_profile: Dict[str, CdnProfile] = Field(default_factory=dict)
-    azurerm_cdn_endpoint: Dict[str, CdnEndpoint] = Field(default_factory=dict)
+    azurerm_cdn_frontdoor_profile: Dict[str, FrontDoorProfile] = Field(
+        default_factory=dict
+    )
+    azurerm_cdn_frontdoor_endpoint: Dict[str, FrontDoorEndpoint] = Field(
+        default_factory=dict
+    )
+    azurerm_cdn_frontdoor_origin_group: Dict[str, FrontDoorOriginGroup] = Field(
+        default_factory=dict
+    )
+    azurerm_cdn_frontdoor_origin: Dict[str, FrontDoorOrigin] = Field(
+        default_factory=dict
+    )
+    azurerm_cdn_frontdoor_route: Dict[str, FrontDoorRoute] = Field(default_factory=dict)
 
-    # Docker provider resources (same as AWS)
-    docker_image: Dict[str, Any] = Field(default_factory=dict)
-    docker_registry_image: Dict[str, Any] = Field(default_factory=dict)
+    # Docker provider resources (same models as AWS: build locally, push to
+    # ACR instead of ECR). See _handle_build_context in
+    # compiler/inference/azure/__init__.py for how these get populated.
+    docker_image: Dict[str, DockerImage] = Field(default_factory=dict)
+    docker_registry_image: Dict[str, DockerRegistryImage] = Field(default_factory=dict)
 
     # Random resources for passwords
     random_password: Dict[str, Any] = Field(default_factory=dict)

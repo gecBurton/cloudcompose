@@ -1,9 +1,11 @@
 """
-Test Azure CDN inference.
+Test Azure Front Door inference for `cdn: true`.
 
-Azure CDN is currently unsupported: see TestCdnIsUnsupported. The tests that
-asserted a profile and endpoint were created have been removed rather than
-updated — they described output the Azure API rejects outright.
+Front Door replaced Azure CDN from Microsoft (classic), which this module
+used to model: that product no longer accepts new profiles at all ("Azure
+CDN from Microsoft (classic) no longer support new profile creation"). See
+TODO.md for the billing check that unblocked implementing this (the $35/month
+Front Door Standard base fee is billed hourly and only for hours used).
 """
 
 from composey.compiler.inference.azure import infer
@@ -11,17 +13,19 @@ from composey.models.environment import AzureEnvironment
 from composey.models.semantic import Application, Ingress, Service
 
 
-def test_no_cdn_created_without_cdn_enabled():
-    """Services without cdn_enabled don't create CDN resources."""
-    env = AzureEnvironment(
+def _env(region: str = "francecentral") -> AzureEnvironment:
+    return AzureEnvironment(
         name="prod",
-        region="eastus",
+        region=region,
         container_apps_environment_name="prod-env",
         log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
         vnet_id="/subscriptions/123/vnets/prod",
         infrastructure_subnet_id="/subscriptions/123/subnets/prod",
     )
 
+
+def test_no_cdn_created_without_cdn_enabled():
+    """Services without cdn_enabled don't create any Front Door resources."""
     app = Application(
         name="myapp",
         services=[
@@ -36,25 +40,38 @@ def test_no_cdn_created_without_cdn_enabled():
         ],
     )
 
-    resources = infer(app, env)
+    resources = infer(app, _env())
 
-    # No CDN resources should be created
-    assert not resources.azurerm_cdn_profile
-    assert not resources.azurerm_cdn_endpoint
+    assert not resources.azurerm_cdn_frontdoor_profile
+    assert not resources.azurerm_cdn_frontdoor_endpoint
+    assert not resources.azurerm_cdn_frontdoor_origin_group
+    assert not resources.azurerm_cdn_frontdoor_origin
+    assert not resources.azurerm_cdn_frontdoor_route
 
 
-class TestCdnIsUnsupported:
-    """
-    The classic CDN these resources modelled no longer accepts new profiles
-    ("Azure CDN from Microsoft (classic) no longer support new profile
-    creation"), so compiling them produced an apply that failed after
-    everything else had been built. Front Door is the replacement and is not
-    implemented yet.
-    """
+def test_cdn_enabled_without_ingress_creates_nothing():
+    """cdn_enabled with no ingress has no Container App FQDN to front."""
+    app = Application(
+        name="myapp",
+        services=[
+            Service(
+                name="worker",
+                image="myapp/worker:latest",
+                capability="container",
+                cdn_enabled=True,
+            )
+        ],
+    )
+
+    resources = infer(app, _env())
+
+    assert not resources.azurerm_cdn_frontdoor_profile
+
+
+class TestFrontDoor:
+    """`cdn: true` on a service with an ingress puts Front Door in front of it."""
 
     def _app_with_cdn(self):
-        from composey.models.semantic import Application, Ingress, Service
-
         return Application(
             name="myapp",
             services=[
@@ -68,39 +85,67 @@ class TestCdnIsUnsupported:
             ],
         )
 
-    def _env(self):
-        from composey.models.environment import AzureEnvironment
+    def test_creates_one_profile_per_application(self):
+        resources = infer(self._app_with_cdn(), _env())
 
-        return AzureEnvironment(
-            name="prod",
-            region="uksouth",
-            container_apps_environment_name="prod-env",
-            log_analytics_workspace_id="/subscriptions/123/workspaces/prod",
-            vnet_id="/subscriptions/123/vnets/prod",
-            infrastructure_subnet_id="/subscriptions/123/subnets/prod",
-        )
+        assert list(resources.azurerm_cdn_frontdoor_profile.keys()) == ["main"]
+        profile = resources.azurerm_cdn_frontdoor_profile["main"]
+        assert profile.sku_name == "Standard_AzureFrontDoor"
+        # Front Door is global: no location field exists on this model at all.
+        assert not hasattr(profile, "location")
 
-    def test_no_cdn_resources_are_emitted(self):
-        from composey.compiler.inference.azure import infer
+    def test_creates_endpoint_origin_group_origin_and_route_per_service(self):
+        resources = infer(self._app_with_cdn(), _env())
 
-        resources = infer(self._app_with_cdn(), self._env())
+        assert "web" in resources.azurerm_cdn_frontdoor_endpoint
+        assert "web" in resources.azurerm_cdn_frontdoor_origin_group
+        assert "web" in resources.azurerm_cdn_frontdoor_origin
+        assert "web" in resources.azurerm_cdn_frontdoor_route
 
-        assert not resources.azurerm_cdn_profile
-        assert not resources.azurerm_cdn_endpoint
+    def test_origin_points_at_the_container_app_ingress_fqdn(self):
+        resources = infer(self._app_with_cdn(), _env())
 
-    def test_the_request_is_not_dropped_silently(self):
-        import warnings as _w
+        origin = resources.azurerm_cdn_frontdoor_origin["web"]
+        fqdn = "${azurerm_container_app.web.ingress[0].fqdn}"
+        assert origin.host_name == fqdn
+        # Container Apps requires the Host header to match what it is
+        # listening for, so this must be set explicitly rather than left to
+        # default to Front Door's own hostname.
+        assert origin.origin_host_header == fqdn
 
-        from composey.compiler.inference.azure import infer
+    def test_route_references_the_origin_for_terraform_ordering(self):
+        resources = infer(self._app_with_cdn(), _env())
 
-        with _w.catch_warnings(record=True) as caught:
-            _w.simplefilter("always")
-            infer(self._app_with_cdn(), self._env())
-
-        assert any("CDN is not supported" in str(c.message) for c in caught)
+        route = resources.azurerm_cdn_frontdoor_route["web"]
+        origin_id = "${azurerm_cdn_frontdoor_origin.web.id}"
+        assert route.cdn_frontdoor_origin_ids == [origin_id]
 
     def test_the_application_still_deploys(self):
-        from composey.compiler.inference.azure import infer
-
-        resources = infer(self._app_with_cdn(), self._env())
+        resources = infer(self._app_with_cdn(), _env())
         assert "web" in resources.azurerm_container_app
+
+    def test_multiple_cdn_services_share_one_profile(self):
+        app = Application(
+            name="myapp",
+            services=[
+                Service(
+                    name="web",
+                    image="nginx",
+                    capability="container",
+                    ingress=Ingress(port=80),
+                    cdn_enabled=True,
+                ),
+                Service(
+                    name="api",
+                    image="nginx",
+                    capability="container",
+                    ingress=Ingress(port=8080),
+                    cdn_enabled=True,
+                ),
+            ],
+        )
+
+        resources = infer(app, _env())
+
+        assert len(resources.azurerm_cdn_frontdoor_profile) == 1
+        assert set(resources.azurerm_cdn_frontdoor_origin.keys()) == {"web", "api"}

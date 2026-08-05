@@ -5,13 +5,13 @@
         "source": "hashicorp/azurerm",
         "version": "~> 4.0"
       },
-      "docker": {
-        "source": "kreuzwerker/docker",
-        "version": "~> 3.0"
-      },
       "random": {
         "source": "hashicorp/random",
         "version": "~> 3.6"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
       }
     }
   },
@@ -19,8 +19,16 @@
     "azurerm": {
       "features": {}
     },
-    "docker": {},
-    "random": {}
+    "random": {},
+    "docker": {
+      "registry_auth": [
+        {
+          "address": "${azurerm_container_registry.main.login_server}",
+          "username": "${azurerm_container_registry.main.admin_username}",
+          "password": "${azurerm_container_registry.main.admin_password}"
+        }
+      ]
+    }
   },
   "data": {
     "azurerm_client_config": {
@@ -44,7 +52,7 @@
           "container": [
             {
               "name": "backend",
-              "image": "prodacr.azurecr.io/backend:latest",
+              "image": "${azurerm_container_registry.main.login_server}/backend@${docker_registry_image.backend_push.sha256_digest}",
               "cpu": 0.25,
               "memory": "0.5Gi",
               "args": [
@@ -101,10 +109,17 @@
         "identity": {
           "type": "SystemAssigned"
         },
+        "secret": [
+          {
+            "name": "acr-password",
+            "value": "${azurerm_container_registry.main.admin_password}"
+          }
+        ],
         "registry": [
           {
-            "server": "prodacr.azurecr.io",
-            "identity": "System"
+            "server": "${azurerm_container_registry.main.login_server}",
+            "username": "${azurerm_container_registry.main.admin_username}",
+            "password_secret_name": "acr-password"
           }
         ]
       },
@@ -117,7 +132,7 @@
           "container": [
             {
               "name": "frontend",
-              "image": "prodacr.azurecr.io/frontend:latest",
+              "image": "${azurerm_container_registry.main.login_server}/frontend@${docker_registry_image.frontend_push.sha256_digest}",
               "cpu": 0.25,
               "memory": "0.5Gi",
               "env": []
@@ -129,10 +144,17 @@
         "identity": {
           "type": "SystemAssigned"
         },
+        "secret": [
+          {
+            "name": "acr-password",
+            "value": "${azurerm_container_registry.main.admin_password}"
+          }
+        ],
         "registry": [
           {
-            "server": "prodacr.azurecr.io",
-            "identity": "System"
+            "server": "${azurerm_container_registry.main.login_server}",
+            "username": "${azurerm_container_registry.main.admin_username}",
+            "password_secret_name": "acr-password"
           }
         ]
       }
@@ -156,7 +178,12 @@
         "storage_mb": 32768,
         "administrator_login": "composey",
         "administrator_password": "${random_password.postgres_admin.result}",
-        "public_network_access_enabled": true
+        "public_network_access_enabled": true,
+        "lifecycle": {
+          "ignore_changes": [
+            "zone"
+          ]
+        }
       }
     },
     "azurerm_postgresql_flexible_server_database": {
@@ -176,6 +203,34 @@
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
         "purge_protection_enabled": false
+      }
+    },
+    "docker_image": {
+      "backend_image": {
+        "name": "${azurerm_container_registry.main.login_server}/backend:latest",
+        "build": {
+          "context": "backend",
+          "platform": "linux/amd64",
+          "dockerfile": "Dockerfile"
+        }
+      },
+      "frontend_image": {
+        "name": "${azurerm_container_registry.main.login_server}/frontend:latest",
+        "build": {
+          "context": "frontend",
+          "platform": "linux/amd64",
+          "dockerfile": "Dockerfile"
+        }
+      }
+    },
+    "docker_registry_image": {
+      "backend_push": {
+        "name": "${docker_image.backend_image.name}",
+        "keep_remotely": true
+      },
+      "frontend_push": {
+        "name": "${docker_image.frontend_image.name}",
+        "keep_remotely": true
       }
     },
     "random_password": {

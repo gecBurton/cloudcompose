@@ -24,15 +24,9 @@ Run one with:
 gh workflow run azure-acceptance.yml --ref main -f example=hello
 ```
 
-**`production-stack`'s verification above predates Front Door.** It carries
-`cdn: true`, so re-running it now exercises five new resources
-(`azurerm_cdn_frontdoor_profile`/`_endpoint`/`_origin_group`/`_origin`/`_route`)
-that have only ever passed `terraform validate`, never a real apply. Do that
-run before touching Front Door again — see below.
-
 ## Outstanding work
 
-### 1. Front Door — implemented, not yet live-verified
+### 1. Front Door — implemented, one apply-time issue found and worked around, not yet fully live-verified
 
 `cdn: true` now compiles to a real Front Door Standard setup: one
 `azurerm_cdn_frontdoor_profile` per application (shared, the way Key Vault and
@@ -51,15 +45,33 @@ The billing concern that blocked this is resolved: Front Door Standard's
 $35/month base fee is billed hourly, only for hours used (confirmed on
 Microsoft's own pricing page), so a short acceptance run costs a few cents.
 
-Passes `terraform validate` for `production-stack`, the one example using
-`cdn: true`. **Not yet run against real Azure.** Run `production-stack`
-through the acceptance workflow next, in `francecentral` — the only things
-genuinely new to that run are the five Front Door resources, since the rest
-of the stack was verified in an earlier session. Given how many of the
-Container App identity/auth assumptions turned out wrong only once actually
-pulled against real Azure (see the `AcrPull` entry below), do not assume the
-`origin_host_header`/`host_name`-against-Container-Apps combination is
-correct until it has actually been hit by a real request through Front Door.
+**First live run (`production-stack` in `francecentral`, 2026-08-05) hit a
+real, unresolved provider bug, not a composey bug.**
+`azurerm_cdn_frontdoor_origin` gets created with `enabled=false` regardless
+of what is configured — the provider's own docs say it defaults to `true` —
+so `azurerm_cdn_frontdoor_route`, which needs at least one enabled origin
+under its origin group, fails its first apply with "Please make sure that
+the originGroup is created successfully and at least one enabled origin is
+created under the origin group." Open upstream:
+[hashicorp/terraform-provider-azurerm#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647).
+A second `terraform apply` always succeeds — Terraform detects the drift on
+refresh and flips the origin to enabled before retrying the route. Worked
+around in `scripts/smoke-test-azure.sh`: the app-stack apply now retries
+once, but only when the failure message matches this exact bug, so a
+genuine failure elsewhere still stops the run rather than being masked by a
+blind retry. Teardown was clean regardless — nothing leaked from the failed
+first attempt.
+
+**Still not fully verified**: the retry logic itself has not yet been
+exercised end-to-end (the fix went in after the failing run, not before it).
+Run `production-stack` through the acceptance workflow again to confirm the
+retry actually gets a clean run all the way through — including whether
+traffic really flows correctly through Front Door to the Container App, since
+the existing smoke test polls the Container App's own FQDN directly and
+never actually requests anything through the Front Door endpoint itself. That
+gap means "the apply succeeds" and "Front Door correctly proxies to the
+Container App" are still two different unverified claims — do not close this
+out on a clean apply alone.
 
 ### 2. Smaller things
 

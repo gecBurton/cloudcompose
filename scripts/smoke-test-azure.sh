@@ -199,9 +199,24 @@ write_backend "$BUILD_DIR" "acceptance/$NAME/$PROJECT.tfstate"
 cd "$BUILD_DIR"
 
 eval "$TF init -input=false -reconfigure"
-eval "$TF apply -auto-approve"
-
-# --- 4. Get Container App FQDN and poll -------------------------------------
+# azurerm_cdn_frontdoor_origin is created with enabled=false regardless of
+# what is configured — a known, unresolved provider bug (confirmed against
+# real Azure 2026-08-05: hashicorp/terraform-provider-azurerm#31647). Any
+# azurerm_cdn_frontdoor_route depending on that origin fails its first apply
+# with "Please make sure that the originGroup is created successfully and at
+# least one enabled origin is created under the origin group." A second
+# apply always succeeds: Terraform detects the drift on refresh and flips the
+# origin to enabled before the route is attempted again. Retrying only on
+# that exact message, rather than unconditionally, keeps a genuine failure
+# elsewhere from being masked by a second attempt.
+if ! eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; then
+  if grep -q "at least one enabled origin is created under the origin group" /tmp/tf-apply-app.log; then
+    log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
+    eval "$TF apply -auto-approve"
+  else
+    fail "terraform apply failed for the app stack"
+  fi
+fi
 # `terraform output -raw` prints its "No outputs found" warning on stdout, so a
 # missing output is captured as the hostname rather than as an empty string.
 # The previous state-show fallback could not have covered for that either: it

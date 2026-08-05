@@ -1,8 +1,8 @@
 # Azure: where things stand
 
 Written 2026-08-04, after taking Azure from "compiles but has never deployed"
-to a four-example acceptance suite that passes against real Azure, including
-Container Apps Jobs (confirmed via a full `production-stack` run in
+to a five-example acceptance suite that passes against real Azure, including
+Container Apps Jobs and image build-and-push (both confirmed via full runs in
 `francecentral`).
 
 ## Verified against real Azure
@@ -16,6 +16,7 @@ with nothing left in the subscription.
 | `web-api` | Two services talking to each other |
 | `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs |
 | `minio-s3` | Container-to-managed-service substitution (minio → Storage Account) |
+| `build-webapp` | Image build + push (`docker_image`/`docker_registry_image` → ACR), pull by digest |
 
 Run one with:
 
@@ -25,40 +26,7 @@ gh workflow run azure-acceptance.yml --ref main -f example=hello
 
 ## Outstanding work
 
-### 1. Image build and push — implemented, fix for a real bug pending live re-verification
-
-Azure now builds and pushes images the same way AWS does: `docker_image`
-builds locally via the `kreuzwerker/docker` provider, `docker_registry_image`
-pushes it to ACR, and the container's `image` field is pinned to the pushed
-`sha256_digest` rather than a mutable `:latest` tag (`_infer_container_registry`
-and `_get_container_image` in `compiler/inference/azure/__init__.py`). The
-`docker` provider is now conditionally declared (only when something builds)
-and authenticates against ACR's admin credentials — `admin_username`/
-`admin_password` off the `azurerm_container_registry` resource itself, no
-data source needed, unlike AWS's ephemeral `aws_ecr_authorization_token`.
-
-The first live run (`build-webapp` in `francecentral`) confirmed the build and
-push both worked — 6s to build, 11s to push — then `azurerm_container_app.web`
-hung "Creating..." for 20 minutes before Azure gave up with
-`ContainerAppOperationError: Operation expired`, never a clean permissions
-error. Root cause: the registry pull config used `identity: "System"`, which
-needs an `AcrPull` role assignment on the Container App's own
-system-assigned identity — but that identity's `principal_id` does not exist
-until the Container App itself has been created, and the create needs to
-pull the image. A genuine chicken-and-egg gap, not a missing role assignment
-that could just be added.
-
-Fixed by switching `registry` to `username`/`password_secret_name` against
-a `secret` block holding the ACR admin password (`_registry_auth` in
-`inference/azure/__init__.py`) — a stable resource attribute available the
-moment the registry exists, sidestepping the ordering problem entirely.
-Passes `terraform validate` for `flask`, `doctor`, and `build-webapp`.
-**Not yet re-verified against real Azure** — do that next, same example,
-before touching anything else here.
-
-`docs/aws-azure-gaps.md` has been corrected.
-
-### 2. Front Door — CDN is unsupported
+### 1. Front Door — CDN is unsupported
 
 `cdn: true` compiles to nothing on Azure and warns. The old resources modelled
 Azure CDN from Microsoft (classic), which no longer accepts new profiles at
@@ -138,6 +106,24 @@ that is the recovery path — `scripts/smoke-test-azure.sh --destroy-only`.
 
 **Run `ruff format --check` before pushing.** CI enforces it and the test suite
 does not. It has broken the build twice.
+
+**A Container App/Job cannot bootstrap its own pull permission via its own
+system-assigned identity.** `registry { server, identity: "System" }` needs
+an `AcrPull` role assignment on that identity, but the identity's
+`principal_id` does not exist until the resource is created, and creation
+itself needs to pull the image — a real ordering cycle, not a missing role
+assignment that could just be declared alongside it. It fails silently and
+slowly: no permissions error, just `azurerm_container_app` (or `_job`)
+stuck "Creating..." for the full 20-30 minute provider timeout before
+`ContainerAppOperationError: Operation expired`. Confirmed against real
+Azure 2026-08-04. Fixed for both resource types by authenticating with the
+ACR's admin username/password instead (`_registry_auth` in
+`inference/azure/__init__.py`) — stable resource attributes available the
+moment the registry exists. A **user-assigned** identity would not have hit
+this, since its `principal_id` exists independently of the resource being
+granted the role — worth remembering if admin credentials ever need to go
+away (ACR admin accounts are the kind of thing that eventually gets a
+security finding).
 
 ## Deferred: persistent acceptance environment
 

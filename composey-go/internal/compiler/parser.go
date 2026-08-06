@@ -1,14 +1,15 @@
 package compiler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/compose-spec/compose-go/loader"
-	"github.com/compose-spec/compose-go/types"
+	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/gecburton/composey/internal/models"
 )
 
@@ -35,7 +36,7 @@ import (
 // both flags set, POSTGRES_PASSWORD from .env is absent, and ${DATABASE_URL}
 // stays unresolved rather than substituted.
 func declaredEnvironment(filePath, workingDir string) (map[string]map[string]*string, error) {
-	project, err := loader.Load(types.ConfigDetails{
+	project, err := loader.LoadWithContext(context.Background(), types.ConfigDetails{
 		WorkingDir: workingDir,
 		ConfigFiles: []types.ConfigFile{
 			{Filename: filePath},
@@ -43,12 +44,13 @@ func declaredEnvironment(filePath, workingDir string) (map[string]map[string]*st
 	}, func(o *loader.Options) {
 		o.SkipInterpolation = true
 		o.SkipResolveEnvironment = true
+		// See the identical call in ParseCompose: v2 requires a project
+		// name at load time, and this function does not need the real one
+		// — only the environment blocks, never anything project-name-shaped.
+		o.SetProjectName("composey-parse-placeholder", true)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parse compose file (uninterpolated): %w", err)
-	}
-	if err := loader.Normalize(project); err != nil {
-		return nil, fmt.Errorf("normalize compose (uninterpolated): %w", err)
 	}
 
 	declared := make(map[string]map[string]*string, len(project.Services))
@@ -110,29 +112,39 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		return nil, fmt.Errorf("resolve compose file directory: %w", err)
 	}
 
-	// Load the compose file using Docker's native loader
-	project, err := loader.Load(types.ConfigDetails{
+	// Load the compose file using Docker's native loader. LoadWithContext
+	// normalizes (fills defaults, validates structure) and resolves
+	// relative paths (build contexts, volumes, secrets) internally by
+	// default — v1's separate loader.Normalize/loader.ResolveRelativePaths
+	// calls no longer exist as a distinct step for this path; ResolvePaths
+	// defaults to true in Options, and normalization happens unless
+	// SkipNormalization is set, neither of which this call does.
+	//
+	// v2 also hard-requires a project name at load time ("project name
+	// must not be empty") where v1 left it for composey's own Normalize to
+	// assign — ParseCompose does not know the real project name yet, that
+	// is normalize's job (Normalize(app, projectName)), so a placeholder is
+	// set imperatively here purely to satisfy compose-go's own requirement.
+	// Without imperativelySet, compose-go falls back to deriving one from
+	// the compose file's own `name:` field or the working directory's
+	// basename, which is real behavior this codebase does not want:
+	// project naming for every cloud already flows entirely through the
+	// project_name argument the CLI passes to Normalize, not through
+	// whatever compose-go happens to guess at parse time.
+	project, err := loader.LoadWithContext(context.Background(), types.ConfigDetails{
 		WorkingDir: composeDir,
 		ConfigFiles: []types.ConfigFile{
 			{Filename: filePath},
 		},
+	}, func(o *loader.Options) {
+		o.SetProjectName("composey-parse-placeholder", true)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parse compose file: %w", err)
 	}
 
-	// Normalize the project (fills defaults, validates structure) - like Docker does
-	if err := loader.Normalize(project); err != nil {
-		return nil, fmt.Errorf("normalize compose: %w", err)
-	}
-
-	// Resolve relative paths (build contexts, volumes, secrets) - like Docker does
-	if err := loader.ResolveRelativePaths(project); err != nil {
-		return nil, fmt.Errorf("resolve paths: %w", err)
-	}
-
-	// ResolveRelativePaths, above, makes build contexts absolute on the
-	// machine doing the compiling — the same thing `docker compose config`
+	// The above resolves build contexts to absolute paths on the machine
+	// doing the compiling — the same thing `docker compose config`
 	// does, which is what the Python parser it replaces had to re-root for
 	// exactly this reason: an absolute path here leaks the local filesystem
 	// into the generated Terraform (docker_image.build.context) and makes
@@ -274,11 +286,15 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		app.Services[service.Name] = s
 	}
 
-	// Convert networks with proper parsing
+	// Convert networks with proper parsing. v1's NetworkConfig.External was
+	// a struct with its own nested External bool field
+	// (network.External.External); v2 collapsed it to a plain named bool
+	// type (types.External, a `bool` underneath), so the field is the
+	// value itself now, not a field on it.
 	for name, network := range project.Networks {
 		app.Networks[name] = &models.NetworkDefinition{
 			Name:     network.Name,
-			External: network.External.External,
+			External: bool(network.External),
 		}
 	}
 

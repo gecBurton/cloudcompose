@@ -15,11 +15,23 @@ type ComposeApplication struct {
 }
 
 type ComposeService struct {
-	Image       string                 `json:"image,omitempty"`
-	Build       *BuildConfig           `json:"build,omitempty"`
-	Ports       []PortConfig           `json:"ports,omitempty"`
-	Environment map[string]*string     `json:"environment,omitempty"`
-	DependsOn   map[string]Dependency  `json:"depends_on,omitempty"`
+	Image       string             `json:"image,omitempty"`
+	Build       *BuildConfig       `json:"build,omitempty"`
+	Ports       []PortConfig       `json:"ports,omitempty"`
+	Environment map[string]*string `json:"environment,omitempty"`
+	// DependsOn only ever needs to answer "which services does this one
+	// depend on" — Normalize reads nothing but the map's keys, to build
+	// Relationships. compose-go's own condition/required semantics
+	// (service_healthy, service_completed_successfully, etc.) describe
+	// startup ordering, which composey does not model at all: connectivity
+	// comes from `networks:`, not from depends_on (see normalizer_test.go's
+	// TestNormalizeRelationships). A bare marker type, rather than a
+	// struct with fields nothing reads, makes that explicit instead of
+	// letting fields imply a meaning composey does not act on. The
+	// Python model this was ported from carried the same unread fields —
+	// this is a pre-existing simplification opportunity, not a regression
+	// introduced by the port.
+	DependsOn   map[string]struct{}    `json:"depends_on,omitempty"`
 	Networks    map[string]interface{} `json:"networks,omitempty"`
 	Volumes     []VolumeDefinition     `json:"volumes,omitempty"`
 	Secrets     []interface{}          `json:"secrets,omitempty"`
@@ -39,38 +51,52 @@ func (s *ComposeService) GetNetworks() []string {
 	return networks
 }
 
+// BuildConfig carries only what this codebase ever reads back out: the
+// context feeds docker_image.build.context in the Terraform this compiles
+// to, and Dockerfile/Target likewise. compose-go's own BuildConfig has
+// 25+ more fields (CacheFrom, Secrets, Ulimits, SSH forwarding, Platforms,
+// ...) — none of them modeled here because nothing downstream, on either
+// the Go or the Python side of this compiler, consumes them. Args was
+// carried and converted here for one release without ever being read;
+// removed rather than kept as a field implying support that does not
+// exist.
 type BuildConfig struct {
-	Context    string   `json:"context,omitempty"`
-	Dockerfile string   `json:"dockerfile,omitempty"`
-	Args       []string `json:"args,omitempty"`
-	Target     string   `json:"target,omitempty"`
+	Context    string `json:"context,omitempty"`
+	Dockerfile string `json:"dockerfile,omitempty"`
+	Target     string `json:"target,omitempty"`
 }
 
+// PortConfig. Protocol (tcp/udp) was carried and converted here for one
+// release without ever being read downstream — every inferred resource
+// this compiles to assumes TCP. Removed rather than kept implying a
+// choice nothing acts on.
 type PortConfig struct {
 	Target    uint32 `json:"target"`
 	Published string `json:"published,omitempty"`
-	Protocol  string `json:"protocol,omitempty"`
-}
-
-type Dependency struct {
-	Condition string `json:"condition,omitempty"`
-	Required  bool   `json:"required,omitempty"`
 }
 
 type ComposeSecret struct {
 	File string `json:"file,omitempty"`
 }
 
+// NetworkDefinition. Name was carried and converted here for one release
+// without ever being read — RejectUnsupportedNetworks only ever checks
+// External, and reports the network by its compose-file key (the map this
+// type lives in), not by this field. Removed rather than kept implying a
+// use nothing makes of it.
 type NetworkDefinition struct {
-	Name     string `json:"name,omitempty"`
-	External bool   `json:"external,omitempty"`
+	External bool `json:"external,omitempty"`
 }
 
+// VolumeDefinition. Target and ReadOnly were carried and converted here
+// for one release without ever being read — NamedVolumeSource (the only
+// consumer) only inspects Type and Source: whether a mount is a named
+// volume at all, and if so, what it's called. The rejection error reports
+// the volume's name, not its mount path or read/write mode. Removed
+// rather than kept implying a use nothing makes of them.
 type VolumeDefinition struct {
-	Type     string `json:"type"`
-	Source   string `json:"source,omitempty"`
-	Target   string `json:"target"`
-	ReadOnly bool   `json:"read_only,omitempty"`
+	Type   string `json:"type"`
+	Source string `json:"source,omitempty"`
 }
 
 // XComposey is the `x-composey` block on a service.

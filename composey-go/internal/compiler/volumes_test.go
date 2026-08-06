@@ -16,7 +16,7 @@ func TestNamedVolumeIsRefused(t *testing.T) {
 			"web": {
 				Image: "nginx",
 				Volumes: []models.VolumeDefinition{
-					{Type: "volume", Source: "db-data", Target: "/data"},
+					{Type: "volume", Source: "db-data"},
 				},
 			},
 		},
@@ -41,8 +41,8 @@ func TestEveryNamedVolumeIsListed(t *testing.T) {
 			"web": {
 				Image: "nginx",
 				Volumes: []models.VolumeDefinition{
-					{Type: "volume", Source: "media", Target: "/media"},
-					{Type: "volume", Source: "assets", Target: "/assets"},
+					{Type: "volume", Source: "media"},
+					{Type: "volume", Source: "assets"},
 				},
 			},
 		},
@@ -66,7 +66,7 @@ func TestNamedVolumeOnSubstitutedServiceIsAccepted(t *testing.T) {
 			"db": {
 				Image: "postgres:16",
 				Volumes: []models.VolumeDefinition{
-					{Type: "volume", Source: "db-data", Target: "/var/lib/postgresql/data"},
+					{Type: "volume", Source: "db-data"},
 				},
 			},
 		},
@@ -94,10 +94,10 @@ func TestLocalOnlyMountsAreIgnored(t *testing.T) {
 		name   string
 		volume models.VolumeDefinition
 	}{
-		{"relative bind", models.VolumeDefinition{Type: "bind", Source: "./local", Target: "/data"}},
-		{"absolute bind", models.VolumeDefinition{Type: "bind", Source: "/etc/hosts", Target: "/etc/hosts", ReadOnly: true}},
-		{"home-relative bind", models.VolumeDefinition{Type: "bind", Source: "~/config", Target: "/config"}},
-		{"anonymous volume", models.VolumeDefinition{Type: "volume", Target: "/data"}},
+		{"relative bind", models.VolumeDefinition{Type: "bind", Source: "./local"}},
+		{"absolute bind", models.VolumeDefinition{Type: "bind", Source: "/etc/hosts"}},
+		{"home-relative bind", models.VolumeDefinition{Type: "bind", Source: "~/config"}},
+		{"anonymous volume", models.VolumeDefinition{Type: "volume"}},
 	}
 
 	for _, tc := range cases {
@@ -122,8 +122,8 @@ func TestBindMountAlongsideNamedVolumeStillFails(t *testing.T) {
 			"web": {
 				Image: "nginx",
 				Volumes: []models.VolumeDefinition{
-					{Type: "bind", Source: "./local", Target: "/scratch"},
-					{Type: "volume", Source: "media", Target: "/media"},
+					{Type: "bind", Source: "./local"},
+					{Type: "volume", Source: "media"},
 				},
 			},
 		},

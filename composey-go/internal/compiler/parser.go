@@ -169,7 +169,9 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 			Image: service.Image,
 		}
 
-		// Convert build config
+		// Convert build config. Args is compose-go's
+		// MappingWithEquals — not converted, see BuildConfig's doc comment
+		// for why.
 		if service.Build != nil {
 			context := service.Build.Context
 			if filepath.IsAbs(context) {
@@ -182,20 +184,14 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 				Dockerfile: service.Build.Dockerfile,
 				Target:     service.Build.Target,
 			}
-			// Convert build args
-			for _, arg := range service.Build.Args {
-				if arg != nil {
-					s.Build.Args = append(s.Build.Args, *arg)
-				}
-			}
 		}
 
-		// Convert ports
+		// Convert ports. Protocol is not converted, see PortConfig's doc
+		// comment for why.
 		for _, port := range service.Ports {
 			s.Ports = append(s.Ports, models.PortConfig{
 				Target:    port.Target,
 				Published: port.Published,
-				Protocol:  string(port.Protocol),
 			})
 		}
 
@@ -213,14 +209,13 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		}
 		s.Environment, s.PlatformEnv = splitEnvironment(resolvedEnv, declared[service.Name])
 
-		// Convert depends_on
+		// Convert depends_on. Only the keys ever matter to Normalize (see
+		// ComposeService.DependsOn's doc comment), so condition/required
+		// are not converted.
 		if len(service.DependsOn) > 0 {
-			s.DependsOn = make(map[string]models.Dependency)
-			for depName, depConfig := range service.DependsOn {
-				s.DependsOn[depName] = models.Dependency{
-					Condition: depConfig.Condition,
-					Required:  depConfig.Required,
-				}
+			s.DependsOn = make(map[string]struct{}, len(service.DependsOn))
+			for depName := range service.DependsOn {
+				s.DependsOn[depName] = struct{}{}
 			}
 		}
 
@@ -250,10 +245,8 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		// actually produces.
 		for _, volume := range service.Volumes {
 			s.Volumes = append(s.Volumes, models.VolumeDefinition{
-				Type:     volume.Type,
-				Source:   volume.Source,
-				Target:   volume.Target,
-				ReadOnly: volume.ReadOnly,
+				Type:   volume.Type,
+				Source: volume.Source,
 			})
 		}
 
@@ -290,10 +283,10 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	// a struct with its own nested External bool field
 	// (network.External.External); v2 collapsed it to a plain named bool
 	// type (types.External, a `bool` underneath), so the field is the
-	// value itself now, not a field on it.
+	// value itself now, not a field on it. Name is not converted, see
+	// NetworkDefinition's doc comment for why.
 	for name, network := range project.Networks {
 		app.Networks[name] = &models.NetworkDefinition{
-			Name:     network.Name,
 			External: bool(network.External),
 		}
 	}

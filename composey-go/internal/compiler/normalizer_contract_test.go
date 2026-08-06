@@ -60,7 +60,7 @@ func TestNormalizeRelationships(t *testing.T) {
 		Services: map[string]models.ComposeService{
 			"web": {
 				Image:     "nginx",
-				DependsOn: map[string]models.Dependency{"db": {}},
+				DependsOn: map[string]struct{}{"db": {}},
 			},
 			"db": {Image: "postgres:16"},
 		},
@@ -253,7 +253,7 @@ func TestNormalizeRelationshipOrderIsDeterministic(t *testing.T) {
 		Services: map[string]models.ComposeService{
 			"web": {
 				Image: "nginx",
-				DependsOn: map[string]models.Dependency{
+				DependsOn: map[string]struct{}{
 					"cache": {}, "db": {}, "queue": {},
 				},
 			},

@@ -1,3 +1,14 @@
+"""IAM least-privilege scoping.
+
+Restored after the Go port deleted normalizer.py (0244d4a). The other half of
+this file (missing-image fallback, max_scale string coercion) moved to
+composey-go/internal/compiler/normalizer_contract_test.go
+(TestNormalizeMissingImageFallsBackToPlaceholder) and the max_scale coercion
+fix in models/compose.go's XComposey.UnmarshalJSON, since normalize() no
+longer exists here to drive them. What's left is pure inference behavior,
+unaffected by the Go port.
+"""
+
 import json
 
 from composey.compiler.inference import infer
@@ -54,31 +65,3 @@ def test_iam_least_privilege_scoping():
 
     s3_stmt = next(s for s in s3_policy["Statement"] if "s3:*" in s["Action"])
     assert "${aws_s3_bucket.blobs_bucket.arn}" in s3_stmt["Resource"]
-
-
-def test_normalizer_validation_protection():
-    """
-    Test how the normalizer handles missing or weird values.
-    """
-    from composey.compiler.normalizer import normalize
-    from composey.models.compose import (
-        Application as DockerApp,
-    )
-    from composey.models.compose import (
-        Service as DockerService,
-    )
-
-    # Test service with NO image (should fallback to placeholder instead of crashing)
-    docker_app = DockerApp(services={"ghost": DockerService(image=None)})
-    semantic_app = normalize(docker_app, "test")
-    assert semantic_app.services[0].image == "placeholder"
-
-    # Test that invalid scale strings (if passed by docker-compose) are handled
-    # Note: Pydantic handles the type conversion, but we verify the logic
-    docker_app_scale = DockerApp(
-        services={
-            "web": DockerService(image="nginx", **{"x-composey": {"max_scale": "5"}})
-        }
-    )
-    semantic_app_scale = normalize(docker_app_scale, "test")
-    assert semantic_app_scale.services[0].max_scale == 5

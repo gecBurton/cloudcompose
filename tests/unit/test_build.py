@@ -1,13 +1,21 @@
+"""
+Build-from-source: ECR, docker provider wiring, and IAM pull permissions.
+
+Restored after the Go port deleted normalizer.py (0244d4a). The build_context
+extraction test moved to composey-go's normalizer_contract_test.go
+(TestNormalizeExtractsBuildContext) since that's genuinely normalizer logic.
+What's left here is pure inference/generator behavior, unaffected by the Go
+port — built directly against the semantic model rather than through the
+deleted normalize().
+"""
+
 import json
 
 from composey.compiler.generator import generate
 from composey.compiler.inference import infer
-from composey.compiler.normalizer import normalize
-from composey.models.compose import Application as DockerApplication
-from composey.models.compose import Build
-from composey.models.compose import Port as DockerPort
-from composey.models.compose import Service as DockerService
 from composey.models.environment import AwsEnvironment
+from composey.models.semantic import Application as SemanticApplication
+from composey.models.semantic import Service as SemanticService
 
 
 def _env():
@@ -24,20 +32,14 @@ def _env():
 
 
 def _build_app():
-    docker_app = DockerApplication(
-        services={
-            "web": DockerService(
-                build=Build(context="app"),
-                ports=[DockerPort(target=80, published=80)],
+    return SemanticApplication(
+        name="prod",
+        services=[
+            SemanticService(
+                name="web", image="placeholder", port=80, build_context="app"
             )
-        }
+        ],
     )
-    return normalize(docker_app, "prod")
-
-
-def test_normalize_extracts_build_context():
-    app = _build_app()
-    assert app.services[0].build_context == "app"
 
 
 def test_infer_provisions_ecr_and_docker_build():
@@ -67,15 +69,9 @@ def test_generator_wires_docker_provider_only_when_building():
     assert "aws_ecr_authorization_token" in with_build["data"]
 
     # A plain image service does not drag in the docker provider or data block.
-    plain = normalize(
-        DockerApplication(
-            services={
-                "web": DockerService(
-                    image="nginx", ports=[DockerPort(target=80, published=80)]
-                )
-            }
-        ),
-        "prod",
+    plain = SemanticApplication(
+        name="prod",
+        services=[SemanticService(name="web", image="nginx", port=80)],
     )
     without_build = json.loads(generate(infer(plain, env), env))
     assert "docker" not in without_build["terraform"]["required_providers"]

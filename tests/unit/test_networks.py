@@ -5,6 +5,13 @@ service can reach every other regardless — so rules derived from it were guess
 `networks:` is the compose file's own statement of who may talk to whom, and it
 is enforced locally, so the topology compiled here has already been tested on the
 developer's machine.
+
+Restored after the Go port replaced parser.py/normalizer.py with the Go binary
+(0244d4a). The topology tests below (_groups/compile_to_terraform) already run
+through the Go-backed pipeline unchanged — compile_to_terraform has shelled out
+to the Go binary since the port landed. The segment-sorting/cap/external-
+network-rejection tests, which called the deleted normalize() directly, moved
+to composey-go/internal/compiler/normalizer_contract_test.go instead.
 """
 
 import json
@@ -12,11 +19,6 @@ import json
 import pytest
 
 from composey.compiler import compile_to_terraform
-from composey.compiler.normalizer import normalize
-from composey.exceptions import NetworkError
-from composey.models.compose import Application as DockerApplication
-from composey.models.compose import NetworkDefinition
-from composey.models.compose import Service as DockerService
 from composey.models.environment import AwsEnvironment
 
 
@@ -100,36 +102,6 @@ def test_relationships_no_longer_create_rules():
     rules = _groups("flask")["aws_security_group_rule"]
 
     assert not [name for name in rules if "_to_" in name and "alb_" not in name]
-
-
-def _normalize(networks_per_service: dict, top_level: dict | None = None):
-    docker_app = DockerApplication(
-        services={
-            name: DockerService(image=name, networks={n: None for n in networks})
-            for name, networks in networks_per_service.items()
-        },
-        networks=top_level or {},
-    )
-    return normalize(docker_app, "app")
-
-
-def test_network_segments_are_sorted_for_determinism():
-    app = _normalize({"web": ["zebra", "alpha"]})
-
-    assert app.services[0].network_isolation_segments == ["alpha", "zebra"]
-
-
-def test_too_many_network_segments_is_rejected():
-    with pytest.raises(NetworkError, match="joins 6 network segments"):
-        _normalize({"web": [f"net{i}" for i in range(6)]})
-
-
-def test_external_networks_are_rejected():
-    with pytest.raises(NetworkError, match="declared external"):
-        _normalize(
-            {"web": ["shared"]},
-            {"shared": NetworkDefinition(external=True)},
-        )
 
 
 def test_load_balancer_ingress_comes_from_the_balancer_alone():

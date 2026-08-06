@@ -4,6 +4,14 @@ Compose puts every service on a shared network where siblings resolve by name.
 An ECS task has no name at all, so a compose file whose frontend calls
 `http://backend:8000` compiled to an environment variable pointing at nothing —
 silently, for eight days, because no example had two containers talking.
+
+Restored after the Go port replaced parser.py/normalizer.py with the Go
+binary (0244d4a). Most of this already worked unchanged: compile_to_terraform
+has shelled out to the Go binary since the port landed, so the DNS/
+registration tests below never needed touching. The one test that called
+parse()+normalize() directly now goes through parse_and_normalize_go, mutates
+the returned semantic model the same way, and calls explain() with no
+docker_app (see explain.py) since there is no compose-side model on this path.
 """
 
 import json
@@ -12,9 +20,8 @@ import pytest
 
 from composey.compiler import compile_to_terraform
 from composey.compiler.explain import explain
+from composey.compiler.hybrid import parse_and_normalize_go
 from composey.compiler.inference import _namespace_for, infer
-from composey.compiler.normalizer import normalize
-from composey.compiler.parser import parse
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import (
     Application,
@@ -119,12 +126,11 @@ def test_a_scheduled_task_is_not_registered():
 
 
 def test_referencing_an_unreachable_sibling_is_reported():
-    docker_app = parse("examples/web-api/compose.yml")
-    semantic = normalize(docker_app, "web-api")
+    semantic = parse_and_normalize_go("examples/web-api/compose.yml", "web-api")
     # Strip the port that makes `api` findable.
     next(s for s in semantic.services if s.name == "api").port = None
 
-    warnings = [d for d in explain(docker_app, semantic) if d.source == "warning"]
+    warnings = [d for d in explain(None, semantic) if d.source == "warning"]
 
     assert any("cannot reach api" in d.decision for d in warnings)
 

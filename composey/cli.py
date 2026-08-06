@@ -11,8 +11,7 @@ from rich.console import Console
 from .cli_env import register_init_commands
 from .compiler import compile_application
 from .compiler.explain import explain, render
-from .compiler.normalizer import normalize
-from .compiler.parser import parse
+from .compiler.hybrid import parse_and_normalize_go
 from .exceptions import ComposeyError
 from .models.environment import load_environment
 
@@ -97,9 +96,8 @@ def main(
         # Explaining needs no environment: every inference reported here is made
         # before the target is consulted.
         if explain_only:
-            docker_app = parse(str(compose_file))
-            semantic = normalize(docker_app, project_name)
-            console.print(render(explain(docker_app, semantic)))
+            semantic = parse_and_normalize_go(str(compose_file), project_name)
+            console.print(render(explain(None, semantic)))
             return
 
         if env_file is None:
@@ -110,15 +108,14 @@ def main(
         console.print(f"[bold blue]Loading environment:[/] {env_file}")
         env = load_environment(str(env_file))
 
-        # 2. Compile
+        # 2. Compile (using Go parser + normalizer)
         console.print(
             f"[bold blue]Compiling:[/] {compose_file} -> {project_name} ({env.target})"
         )
-        docker_app = parse(str(compose_file))
-        semantic = normalize(docker_app, project_name)
+        semantic = parse_and_normalize_go(str(compose_file), project_name)
 
         # Report anything the compiler could not decide.
-        warnings = [d for d in explain(docker_app, semantic) if d.source == "warning"]
+        warnings = [d for d in explain(None, semantic) if d.source == "warning"]
         for warning in warnings:
             console.print(f"[yellow]warning[/] {warning.subject}: {warning.decision}")
         if warnings:

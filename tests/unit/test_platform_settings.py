@@ -1,12 +1,17 @@
-"""Settings that belong to the platform team rather than the application."""
+"""Settings that belong to the platform team rather than the application.
+
+Restored after the Go port deleted normalizer.py (0244d4a). The grace-period
+key-aliasing tests (startup_grace_period vs the deprecated
+health_check_grace_period) moved to
+composey-go/internal/compiler/normalizer_contract_test.go, since normalize()
+no longer exists here to drive them. What's left is log-retention and ECS
+wiring, unaffected Python inference behavior.
+"""
 
 import json
 
 from composey.compiler.generator import generate
 from composey.compiler.inference import infer
-from composey.compiler.normalizer import normalize
-from composey.models.compose import Application as DockerApplication
-from composey.models.compose import Service as DockerService
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application, Service
 
@@ -36,32 +41,6 @@ def test_log_retention_is_set_by_the_environment():
     # Retention is a platform policy, so it comes from the environment file and
     # is not something an application can choose.
     assert _log_groups(_env(log_retention_days=90))["web_lg"]["retention_in_days"] == 90
-
-
-def _grace_period(x_composey: dict):
-    docker_app = DockerApplication(
-        services={
-            "web": DockerService(image="web:latest", **{"x-composey": x_composey})
-        }
-    )
-    return normalize(docker_app, "test-project").services[0].startup_grace_period
-
-
-def test_startup_grace_period_is_read():
-    assert _grace_period({"startup_grace_period": 120}) == 120
-
-
-def test_deprecated_health_check_grace_period_still_works():
-    # The ECS-flavoured spelling predates the neutral name. Keep honouring it
-    # rather than silently ignoring the key.
-    assert _grace_period({"health_check_grace_period": 90}) == 90
-
-
-def test_neutral_name_wins_when_both_are_given():
-    assert (
-        _grace_period({"startup_grace_period": 120, "health_check_grace_period": 90})
-        == 120
-    )
 
 
 def test_grace_period_reaches_the_ecs_service():

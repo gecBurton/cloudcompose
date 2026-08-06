@@ -5,13 +5,19 @@ holding one database called "postgres" — and MySQL and MariaDB created none at
 all. A compose file that worked locally deployed an instance an application
 could reach and had nothing in it to connect to, which surfaces only as an
 authentication-shaped error from the driver at runtime.
+
+Restored after the Go port deleted normalizer.py (0244d4a). The
+_database_name derivation/sanitization tests moved to
+composey-go/internal/compiler/normalizer_contract_test.go, since
+_database_name no longer exists here to import. What's left is pure
+inference behavior and semantic-model validation, both unaffected by the Go
+port.
 """
 
 import pytest
 from pydantic import ValidationError
 
 from composey.compiler.inference import infer
-from composey.compiler.normalizer import _database_name
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application, Service
 
@@ -40,43 +46,6 @@ def test_every_engine_creates_a_database(image):
     assert instance["db_name"] == "shop"
 
 
-def test_the_default_is_compound():
-    # Nothing in the compose file named one, so composey picks. It picks a
-    # compound name rather than the bare service name, which RDS can refuse.
-    assert _database_name("shop", "orders", {}) == "shop_orders"
-
-
-def test_the_default_avoids_the_engine_reserved_word_that_broke_acceptance():
-    # `db` is a reserved word on Postgres and the likeliest name for a database
-    # service, so the bare service name was the one default guaranteed to fail.
-    # It failed at CreateDBInstance, not at `terraform validate`, which knows the
-    # provider's schema and not the engine's keywords.
-    assert _database_name("doctor", "db", {}) == "doctor_db"
-
-
-@pytest.mark.parametrize(
-    "variable", ["POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE"]
-)
-def test_a_name_the_compose_file_states_is_honoured(variable):
-    # The image would have created this database locally, so an application
-    # tested against it connects to that name and no other.
-    assert _database_name("shop", "db", {variable: "inventory"}) == "inventory"
-
-
-def test_a_name_only_referenced_is_not_used():
-    # docker compose config resolves ${POSTGRES_DB} from a developer's .env,
-    # which the parser strips rather than deploy. Nothing is left to honour, so
-    # the compound default applies.
-    assert _database_name("shop", "db", {}) == "shop_db"
-
-
-def test_a_stated_name_is_used_as_written_even_where_composey_would_not_pick_it():
-    # It is the author's call: the application was tested against this name.
-    # Composey does not second-guess it, and RDS reports it if the engine
-    # refuses.
-    assert _database_name("shop", "db", {"POSTGRES_DB": "orders"}) == "orders"
-
-
 def test_a_database_must_carry_a_name():
     # The invariant lives on the model so no backend can reach for a default of
     # its own and land back on the reserved word.
@@ -86,20 +55,6 @@ def test_a_database_must_carry_a_name():
 
 def test_a_container_needs_no_database_name():
     assert Service(name="web", image="nginx").database_name is None
-
-
-@pytest.mark.parametrize(
-    "stated,expected",
-    [
-        ("my-app", "my_app"),  # hyphens are not valid in either engine
-        ("My_App", "my_app"),  # Postgres folds unquoted names to lower
-        ("2fast", "fast"),  # Postgres requires a leading letter
-        ("_", "app"),  # nothing usable survived
-        ("a" * 80, "a" * 63),  # both engines cap the length
-    ],
-)
-def test_a_stated_name_is_coerced_into_one_every_engine_accepts(stated, expected):
-    assert _database_name("shop", "db", {"POSTGRES_DB": stated}) == expected
 
 
 def test_a_substituted_service_that_is_not_a_database_has_no_name():

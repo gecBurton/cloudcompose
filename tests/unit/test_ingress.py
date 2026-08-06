@@ -3,6 +3,13 @@
 These were one boolean derived from whether a published port happened to be 80
 or 443. That single rule produced four separate faults, one per question it was
 conflating, and each of them is pinned here.
+
+Restored after the Go port deleted normalizer.py (0244d4a). The declaration-
+semantics half of the original file (public_services from x-composey.ingress,
+the removed `public:` shorthand, bare `ingress:` handling) now lives in
+composey-go/internal/compiler/normalizer_contract_test.go, since normalize()
+no longer exists here to drive it. What's left is pure ALB/target-group/
+generator behavior, built directly against the semantic model.
 """
 
 import json
@@ -12,11 +19,6 @@ import pytest
 from composey.compiler.generator import generate
 from composey.compiler.inference import _path_patterns, infer
 from composey.compiler.inference._common import _priority_band
-from composey.compiler.normalizer import normalize
-from composey.exceptions import ValidationError
-from composey.models.compose import Application as DockerApplication
-from composey.models.compose import Port as DockerPort
-from composey.models.compose import Service as DockerService
 from composey.models.environment import AwsEnvironment
 from composey.models.semantic import Application, Ingress, Service
 
@@ -140,66 +142,3 @@ def test_internal_services_get_no_ingress():
     )
 
     assert "aws_lb_target_group" not in manifest["resource"]
-
-
-def _normalized(**per_service):
-    docker_app = DockerApplication(
-        services={
-            name: DockerService(
-                image=name,
-                ports=[DockerPort(target=8080, published=port)],
-                **{"x-composey": settings},
-            )
-            for name, (port, settings) in per_service.items()
-        }
-    )
-    return normalize(docker_app, "app")
-
-
-def test_publishing_80_does_not_imply_exposure():
-    # There is no port convention. "Publishes 80 so it is public, publishes 8080
-    # so it is unreachable" was not something a reader could work out, and it
-    # silently decided the most consequential property a service has.
-    app = _normalized(web=(80, {}))
-
-    assert app.public_services == []
-
-
-def test_exposure_is_only_ever_declared():
-    app = _normalized(legacy=(80, {}), api=(8080, {"ingress": {"path": "/api"}}))
-
-    assert [s.name for s in app.public_services] == ["api"]
-
-
-def test_public_shorthand_declares_a_default_route():
-    app = _normalized(web=(80, {"ingress": {}}))
-
-    assert [s.name for s in app.public_services] == ["web"]
-    assert app.services[0].ingress.path == "/"
-
-
-def test_ingress_port_defaults_to_the_service_port():
-    app = _normalized(web=(8080, {"ingress": {}}))
-
-    assert app.services[0].ingress.port == 8080
-
-
-def test_ingress_port_can_be_declared():
-    app = _normalized(web=(8080, {"ingress": {"port": 9000}}))
-
-    assert app.services[0].ingress.port == 9000
-
-
-def test_bare_ingress_key_declares_a_default_route():
-    # `ingress:` with nothing under it parses as null. Treating that as "not
-    # exposed" would put back the silent non-exposure this design removes.
-    app = _normalized(web=(80, {"ingress": None}))
-
-    assert [s.name for s in app.public_services] == ["web"]
-    assert app.services[0].ingress.path == "/"
-
-
-def test_the_public_shorthand_is_gone():
-    # One way to declare a route, not two.
-    with pytest.raises(ValidationError, match="public"):
-        _normalized(web=(80, {"public": True}))

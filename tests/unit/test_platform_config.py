@@ -4,6 +4,16 @@
 project baked POSTGRES_PASSWORD, SENTRY_DSN and GITHUB_TOKEN into the Terraform
 manifest as plaintext — alongside ENVIRONMENT=local and POSTGRES_HOST=localhost,
 which are not secret but are simply wrong once deployed.
+
+Restored after the Go port replaced parser.py/normalizer.py with the Go
+binary (0244d4a). The literal-vs-referenced environment split this exercises
+is now Go's splitEnvironment/declaredEnvironment
+(composey-go/internal/compiler/parser.go) rather than Python's
+_split_environment — parse_and_normalize_go takes the place of parse()+
+normalize(). explain() no longer receives a real docker_app on this path (see
+explain.py's docker_app=None branch), so the report-content test below
+exercises the semantic-model-only decisions that branch is able to make
+rather than the docker_app-dependent ones.
 """
 
 import json
@@ -13,8 +23,7 @@ import pytest
 
 from composey.compiler import compile_to_terraform
 from composey.compiler.explain import explain
-from composey.compiler.normalizer import normalize
-from composey.compiler.parser import parse
+from composey.compiler.hybrid import parse_and_normalize_go
 from composey.models.environment import AwsEnvironment
 
 
@@ -24,8 +33,8 @@ def project(tmp_path):
         (tmp_path / ".env").write_text(textwrap.dedent(env_file))
         path = tmp_path / "compose.yml"
         path.write_text(textwrap.dedent(compose))
-        docker_app = parse(str(path))
-        return docker_app, normalize(docker_app, "app"), path
+        app = parse_and_normalize_go(str(path), "app")
+        return app, path
 
     return build
 
@@ -58,13 +67,13 @@ SECRETS_DOT_ENV = """
 
 
 def test_literal_values_cross_over(project):
-    _, app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     assert app.services[0].env == {"LOG_LEVEL": "debug"}
 
 
 def test_env_file_values_do_not_cross_over(project):
-    _, app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     assert "POSTGRES_PASSWORD" in app.services[0].config
     assert "insecure" not in json.dumps(app.services[0].model_dump())
@@ -73,14 +82,14 @@ def test_env_file_values_do_not_cross_over(project):
 def test_interpolated_values_do_not_cross_over(project):
     # `FROM_SHELL: ${SOME_TOKEN}` is written in the compose file, but its value
     # is not — it comes from the same untrusted place as env_file.
-    _, app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     assert "FROM_SHELL" in app.services[0].config
     assert "shhh" not in json.dumps(app.services[0].model_dump())
 
 
 def test_secrets_never_reach_the_manifest(project):
-    _, _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     manifest = compile_to_terraform(str(path), _env(), "app")
 
@@ -89,7 +98,7 @@ def test_secrets_never_reach_the_manifest(project):
 
 
 def test_platform_values_arrive_as_secret_references(project):
-    _, _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     manifest = json.loads(compile_to_terraform(str(path), _env(), "app"))
     container = json.loads(
@@ -106,7 +115,7 @@ def test_platform_values_arrive_as_secret_references(project):
 
 def test_one_secret_holds_every_platform_value(project):
     # Secrets Manager bills per secret, and ECS can select a key from a JSON one.
-    _, _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     manifest = json.loads(compile_to_terraform(str(path), _env(), "app"))
 
@@ -114,7 +123,7 @@ def test_one_secret_holds_every_platform_value(project):
 
 
 def test_placeholders_are_not_reapplied_on_later_runs(project):
-    _, _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    _, path = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
     manifest = json.loads(compile_to_terraform(str(path), _env(), "app"))
     version = manifest["resource"]["aws_secretsmanager_secret_version"]["web_config_v1"]
@@ -123,15 +132,15 @@ def test_placeholders_are_not_reapplied_on_later_runs(project):
 
 
 def test_the_report_names_what_must_be_set(project):
-    docker_app, app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
+    app, _ = project(LITERAL_AND_ENV_FILE, SECRETS_DOT_ENV)
 
-    warnings = [d for d in explain(docker_app, app) if d.source == "warning"]
+    warnings = [d for d in explain(None, app) if d.source == "warning"]
 
     assert any("need values from the platform" in d.decision for d in warnings)
 
 
 def test_a_service_with_no_env_file_is_unaffected(project):
-    _, app, _ = project("""
+    app, _ = project("""
         services:
           web:
             image: web

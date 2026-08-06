@@ -31,8 +31,17 @@
 - Install core dependencies:
   - spf13/cobra (CLI)
   - compose-spec/compose-go (parsing)
-  - hashicorp/terraform-json (generation)
-  - hashicorp/hcl/v2 (HCL output)
+  - ~~hashicorp/terraform-json (generation)~~
+  - ~~hashicorp/hcl/v2 (HCL output)~~
+
+  Neither of the two struck through above was ever actually installed, and
+  neither is correct for what this project needs: the generator emits
+  Terraform's JSON syntax via plain dict-to-JSON marshalling
+  (`json.dumps` in Python, `encoding/json` in Go), never HCL.
+  `terraform-json` parses Terraform plan/state output, it does not
+  generate config. Caught during Phase 3 scoping (2026-08-06), left
+  struck through here rather than silently deleted so the original plan
+  and the correction are both visible.
 - Create project structure:
   - cmd/composey/ (CLI entry point)
   - internal/compiler/ (core logic)
@@ -263,9 +272,76 @@ Output (main.tf.json)
 
 ## ⬜ Phase 3: Port AWS Inference & Generator (Week 4-5) - NOT STARTED
 
+### Scope re-checked before starting (2026-08-06) — larger than planned
+
+Counted before writing any code, rather than discovering mid-phase: AWS
+inference + models + generator is **~3,485 lines of Python** across 32
+model classes and 31 top-level inference functions
+(`composey/models/aws.py`, `composey/compiler/inference/*.py`,
+`composey/compiler/generator.py`), verified against 13 golden AWS examples
+and 21 unit test files that touch inference or generation. Phase 2's
+parser+normalizer, by contrast, was ~940 lines of actual Go logic once
+finished (`composey-go/internal/compiler/{parser,normalizer,constants}.go`)
+and took 15 hours plus a further ~6 hours of hardening after its checkpoint
+was first marked complete. Phase 3 is **roughly 3.7x the code volume** of
+what Phase 2 covered, budgeted at 20 hours — worse hours-per-line than what
+Phase 2 actually needed, before even accounting for the hardening pass
+Phase 2 required. Treat 20 hours as very likely optimistic; re-estimate
+once the AWS models are actually ported and the inference logic's real
+shape is visible, rather than holding the original estimate as a target.
+
+**The listed Go dependencies for this phase are wrong.** `go.mod` has
+neither `hashicorp/terraform-json` nor `hashicorp/hcl/v2`, and neither is
+actually what this phase needs: `generator.py` emits plain Terraform JSON
+syntax via `json.dumps` on nested dicts — the same `encoding/json` approach
+the parser/normalizer already use in Go — never HCL. `terraform-json` is
+for *parsing* Terraform plan/state output, not generating it; `hcl/v2`
+generates HCL syntax, which this project deliberately never uses ("Terraform
+is a compilation target," JSON syntax throughout, per AGENTS.md). Neither
+library is needed. Corrected in Key Dependencies below.
+
+### Review discipline for this phase — decided before starting, not after
+
+Phase 2's checkpoint was marked ✅ complete with `go build`/`go vet`/`go
+test` clean and golden tests passing — and still shipped three silent bugs
+(nondeterministic output, named-volume rejection completely broken, an
+explicit `0` silently overwritten) that only a dedicated follow-up review
+caught. Applying that lesson concretely to this phase, not just noting it
+happened last time:
+
+- **Every ported inference function gets at least one test that goes
+  through the real `Normalize()` → `infer()` boundary against an actual
+  compose file**, not only hand-built `SemanticApplication`/`Service`
+  structs. Hand-built-struct tests stay valuable for edge cases (that's
+  how Phase 2's own `normalizer_contract_test.go` is organized) but must
+  not be the *only* coverage for any function — that combination is
+  exactly what let the volume bug through: 100% coverage of the broken
+  code, 0% coverage of the boundary that was actually broken.
+- **Check determinism explicitly for every new map iteration.** Run the
+  same input through the compiled binary 5+ times, diff the output. Cheap
+  to check as each function is written; expensive to find after the fact
+  (as Phase 2's nondeterminism bug was).
+- **No wholesale test deletion in the same commit as removing the Python
+  it tested.** If a Python test's coverage is superseded by a new Go test,
+  say so in the commit message with which Go test covers it, the way this
+  session's restoration work eventually did — don't delete-and-trust.
+- **Before converting any compose-go/AWS-SDK-shaped type into a local
+  lookalike struct, check whether the upstream type can be used or
+  embedded directly instead.** The volume bug and the dead-field trim
+  earlier in this branch's history were both consequences of hand-copying
+  a type's shape rather than reusing it; AWS inference will be doing this
+  same conversion pattern constantly (Terraform resource attributes,
+  potentially AWS SDK types for validation) and should default to reuse
+  unless there's a specific reason not to.
+- **Re-verify each fix (not just each feature) against real behavior after
+  the whole phase's other changes land**, the way this session re-checked
+  the volume/determinism/env_file fixes still worked after both the
+  compose-go v2 migration and the dead-field trim, rather than assuming
+  earlier fixes are permanent just because their own tests still pass.
+
 ### Goals
 - Port AWS resource inference logic
-- Generate Terraform JSON using terraform-json types
+- Generate Terraform JSON using Go's `encoding/json` (not terraform-json/hcl — see above)
 - Match Python output exactly
 - **Replace Python AWS inference and generator immediately**
 
@@ -297,8 +373,10 @@ Output (main.tf.json)
 **Week 5: Generator & Testing**
 
 **Day 1-3: Port Generator Logic**
-- Use terraform-json for type-safe generation
-- Generate Terraform JSON manifest
+- Generate Terraform JSON manifest with Go's `encoding/json` — matching
+  generator.py's own approach (nested dicts marshalled to JSON), not a
+  dedicated Terraform-authoring library; there isn't one that fits since
+  this project outputs Terraform's JSON syntax, not HCL
 - Handle provider configuration
 - Handle data sources
 - Handle resource dependencies
@@ -320,6 +398,11 @@ Output (main.tf.json)
 - ✅ Output matches Python for all AWS examples
 - ✅ All AWS integration tests pass
 - ✅ **Python AWS inference and generator removed**
+- ✅ **Every item in the review-discipline list above has actually been
+  applied, not just available as a checklist** — Phase 2's checkpoint
+  looked identical to this one and still needed a follow-up hardening
+  pass; do not mark this phase done on the same evidence Phase 2's
+  checkpoint was (wrongly) marked done on.
 
 ---
 
@@ -590,7 +673,7 @@ Instead of running Python and Go in parallel for months:
 | Week 1: Preparation | 10 hrs | ✅ Complete | Setup, testing, harness |
 | Week 2: Parser | 15 hrs | ✅ Complete | compose-go integration |
 | Week 3: Normalizer | 15 hrs + ~6 hrs hardening | ✅ Complete | Logic port, **Python removed**; three silent bugs found and fixed by a follow-up idiom/integration review, not caught by the original checkpoint's own tests |
-| Week 4-5: AWS | 20 hrs | ⬜ Pending | Inference + generation |
+| Week 4-5: AWS | 20 hrs (likely optimistic — see Phase 3's scope note; ~3.7x Phase 2's code volume budgeted at roughly the same hours/line Phase 2 needed *before* its hardening pass) | ⬜ Pending | Inference + generation |
 | Week 5-6: Azure/GCP | 15 hrs | ⬜ Pending | Multi-cloud |
 | Week 6: CLI | 10 hrs | ⬜ Pending | Standalone Go CLI |
 | Week 7: Distribution | 10 hrs | ⬜ Pending | Build, release, docs |
@@ -617,8 +700,16 @@ on its own.
   hardening pass; see Phase 2 above for the three breaking changes involved.
 
 **Terraform:**
-- github.com/hashicorp/terraform-json (Terraform types)
-- github.com/hashicorp/hcl/v2 (HCL generation)
+- No dedicated library. The generator emits Terraform's JSON syntax by
+  marshalling nested structs/maps with Go's own `encoding/json` — the
+  same approach the Python generator uses (`json.dumps` on nested dicts)
+  and the same package the parser/normalizer already depend on. Originally
+  planned as `hashicorp/terraform-json` + `hashicorp/hcl/v2`; neither was
+  ever installed, and neither actually fits — `terraform-json` parses
+  Terraform plan/state output rather than generating config, and `hcl/v2`
+  targets HCL syntax, which this project deliberately never emits (JSON
+  syntax throughout — "Terraform is a compilation target," not something
+  hand-edited). Corrected during Phase 3 scoping (2026-08-06).
 
 **Utilities:**
 - gopkg.in/yaml.v3 — transitive only (via compose-go), not a direct
@@ -813,7 +904,7 @@ migrating, not just that the existing tests still passed.
 
 A single Go binary that:
 - Parses Docker Compose natively (compose-go)
-- Generates Terraform JSON (terraform-json)
+- Generates Terraform JSON (encoding/json, not a dedicated Terraform library — see Key Dependencies)
 - Works on all platforms
 - Installs in seconds
 - Runs 5-10x faster than Python

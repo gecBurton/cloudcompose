@@ -98,7 +98,7 @@
 
 ---
 
-## ✅ Phase 2: Port Semantic Model & Normalizer (Week 3) - COMPLETE
+## ✅ Phase 2: Port Semantic Model & Normalizer (Week 3) - COMPLETE, then hardened
 
 ### Goals
 - Define Go structs matching Python Pydantic models
@@ -143,17 +143,77 @@
 - ✅ **Python parser and normalizer removed from production**
 - ✅ Go parser/normalizer in production use
 
+### What "complete" actually meant, and what it didn't
+
+Getting `go build`/`go vet`/`go test` clean and the golden tests passing was
+not the same thing as the port being correct. Two review passes after the
+checkpoint above was marked done found, in order:
+
+**Missing test coverage, not missing behavior.** ~1,700 lines of Python
+tests were deleted wholesale in the same commit that removed
+parser.py/normalizer.py ("remove unused tests" — they were not unused, they
+encoded specific edge cases, several load-bearing). Restoring them properly
+— actually running each one against real behavior, not just carrying the
+assertions over — surfaced two real regressions the deletion had let through
+unnoticed: `env_file` values leaking into deployed Terraform as plaintext
+(the one thing `platform_env` exists to prevent), and `explain()` degrading
+to three words per service on every real invocation, since the CLI always
+calls it with no compose-side model on the Go path. Both fixed; the second
+review pass below found the deletion had also cost something else.
+
+**Three further bugs found by asking "is this idiomatic Go, and are we
+using compose-go well" rather than "does it pass its own tests."**
+Named-volume rejection was completely broken for every real compose file,
+short- or long-form syntax — a local lookalike type never matched what
+compose-go actually hands back, so a container mounting a named volume
+compiled clean with no error at all. The existing test suite had 100%
+coverage of the broken type switch and 0% coverage of the path production
+actually took, because every test constructed the lookalike type by hand
+rather than going through the real parser. Normalize's own output order was
+nondeterministic (confirmed: five runs of one file, five different service
+orderings), directly violating this project's stated determinism guarantee.
+`min_scale: 0` — a legitimate, validated value — was silently overwritten to
+`1`. All three fixed; two are exactly the kind of thing "the tests pass"
+does not catch, and would not have been caught here either without
+deliberately testing through the real parser boundary rather than around it.
+
+**One clear ecosystem-usage gap, also fixed.** `declaredEnvironment` used a
+hand-rolled second YAML parse (a direct `gopkg.in/yaml.v3` dependency,
+reimplementing compose-go's own environment-form parsing) to work around
+`SkipInterpolation` not covering `env_file` merging. compose-go has an
+official, if under-documented, way to skip exactly that step
+(`loader.Options.SkipResolveEnvironment`) — verified empirically against a
+real `.env` file that it does the same job with ~65 fewer lines and no extra
+dependency. `compose-go` itself is still pinned to the abandoned v1.20.2
+module path (`compose-go` vs the current `compose-go/v2`); migrating that is
+real work, not done here, and worth planning before Phase 3 leans on it
+further.
+
+**Net effect:** the parser/normalizer port is now materially more correct
+than when this phase was first marked complete, and the test suite that
+exists now (50 Go test functions across 9 focused files, plus two that
+specifically go through the real `ParseCompose` boundary rather than
+hand-built structs) is a genuinely stronger signal than what existed at the
+original checkpoint. This is not a one-time cost: any future phase that
+ports Python logic wholesale should assume the same gap exists — passing
+tests copied alongside the port prove the port matches the tests, not that
+either matches production.
+
 ### Files Changed
 **Removed:**
 - `composey/compiler/parser.py` (77 lines)
 - `composey/compiler/normalizer.py` (382 lines)
 
-**Added:**
+**Added (as of the hardening pass, not the original checkpoint):**
 - `composey-go/internal/models/semantic.go` (162 lines)
-- `composey-go/internal/models/compose.go` (113 lines)
-- `composey-go/internal/compiler/normalizer.go` (380 lines)
-- `composey-go/internal/compiler/constants.go` (151 lines)
+- `composey-go/internal/models/compose.go` (306 lines)
+- `composey-go/internal/compiler/normalizer.go` (509 lines)
+- `composey-go/internal/compiler/parser.go` (313 lines)
+- `composey-go/internal/compiler/constants.go` (116 lines)
+- `composey-go/internal/compiler/*_test.go` (9 files, ~1,360 lines)
 - `composey/compiler/hybrid.py` (90 lines)
+- `composey/compiler/explain.py` (reworked to work from the semantic model
+  alone, since the CLI never has a compose-side model on this path)
 
 ### Current Architecture
 ```
@@ -500,14 +560,18 @@ Instead of running Python and Go in parallel for months:
 |-------|-------|--------|-------------|
 | Week 1: Preparation | 10 hrs | ✅ Complete | Setup, testing, harness |
 | Week 2: Parser | 15 hrs | ✅ Complete | compose-go integration |
-| Week 3: Normalizer | 15 hrs | ✅ Complete | Logic port, **Python removed** |
+| Week 3: Normalizer | 15 hrs + ~6 hrs hardening | ✅ Complete | Logic port, **Python removed**; three silent bugs found and fixed by a follow-up idiom/integration review, not caught by the original checkpoint's own tests |
 | Week 4-5: AWS | 20 hrs | ⬜ Pending | Inference + generation |
 | Week 5-6: Azure/GCP | 15 hrs | ⬜ Pending | Multi-cloud |
 | Week 6: CLI | 10 hrs | ⬜ Pending | Standalone Go CLI |
 | Week 7: Distribution | 10 hrs | ⬜ Pending | Build, release, docs |
-| **Total** | **95 hrs** | **42% Complete** | **~7 weeks part-time** |
+| **Total** | **~101 hrs** | **42% Complete** | **~7 weeks part-time** |
 
-**Progress:** Phase 0-2 complete (40%), Python parser/normalizer removed, Go in production.
+**Progress:** Phase 0-2 complete (40%), Python parser/normalizer removed, Go
+in production. Phase 2 required a follow-up hardening pass after its
+original checkpoint — see Phase 2's "what 'complete' actually meant"
+section above before treating any future phase's checkpoint as sufficient
+on its own.
 
 ---
 
@@ -519,14 +583,20 @@ Instead of running Python and Go in parallel for months:
 - github.com/spf13/cobra (CLI framework)
 
 **Parsing:**
-- github.com/compose-spec/compose-go (Docker Compose parsing)
+- github.com/compose-spec/compose-go (Docker Compose parsing) — still on
+  the v1 module path (v1.20.2); upstream has moved to `compose-go/v2`
+  (v2.14.0 as of the last check). Migrate before Phase 3 leans on this
+  further.
 
 **Terraform:**
 - github.com/hashicorp/terraform-json (Terraform types)
 - github.com/hashicorp/hcl/v2 (HCL generation)
 
 **Utilities:**
-- gopkg.in/yaml.v3 (YAML handling)
+- gopkg.in/yaml.v3 — transitive only (via compose-go), not a direct
+  dependency of composey's own code. A direct dependency existed briefly
+  for a hand-rolled second compose-file parse; removed once compose-go's
+  own `SkipResolveEnvironment` was found to do the same job (see Phase 2).
 - encoding/json (standard library)
 
 ---
@@ -540,8 +610,19 @@ Instead of running Python and Go in parallel for months:
 
 ### Risk 2: Logic Translation Errors
 **Impact:** Inference produces wrong output
-**Mitigation:** Test every function, compare all examples
-**Status:** ONGOING - Not yet encountered in Phase 2
+**Mitigation:** Test every function, compare all examples — but see below:
+passing tests are not sufficient on their own if the tests were carried
+over from the same commit that removed the code they were meant to guard,
+without being run against the real parser boundary.
+**Status:** ENCOUNTERED IN PHASE 2. Three silent bugs (nondeterministic
+output order, a validation check that never matched real input, an
+explicit `0` value silently overwritten) shipped past `go build`/`go
+test`/golden tests and were only found by a dedicated idiom-and-integration
+review after the phase was marked complete. Fixed; see Phase 2's "what
+'complete' actually meant" above. Treat this as the expected failure mode
+for every remaining phase, not a one-off: budget review time per phase
+specifically aimed at "does this go through the real boundary," not just
+"do the ported tests pass."
 
 ### Risk 3: Cross-Platform Build Issues
 **Impact:** Binaries don't work on some platforms
@@ -600,10 +681,11 @@ Instead of running Python and Go in parallel for months:
 - `composey/models/` (~2K lines) - Data models
 - `composey/constants.py` (195 lines) - Constants
 
-### Go Codebase (After Phase 2)
-- `composey-go/cmd/composey/main.go` (73 lines) - CLI entry point
-- `composey-go/internal/compiler/` (~530 lines) - Parser + Normalizer
-- `composey-go/internal/models/` (275 lines) - Data models
+### Go Codebase (After Phase 2, post-hardening)
+- `composey-go/cmd/composey/main.go` (105 lines) - CLI entry point
+- `composey-go/internal/compiler/` (~940 lines) - Parser + Normalizer
+- `composey-go/internal/compiler/*_test.go` (~1,360 lines across 9 files) - tests, split by concern
+- `composey-go/internal/models/` (~470 lines) - Data models
 
 ### Removed Python Files (Phase 2)
 - `composey/compiler/parser.py` (77 lines)
@@ -638,7 +720,7 @@ Instead of running Python and Go in parallel for months:
 
 ---
 
-## Current Status (Phase 2 Complete)
+## Current Status (Phase 2 Complete and Hardened)
 
 ### What's Working Now
 
@@ -647,25 +729,55 @@ Instead of running Python and Go in parallel for months:
 - ✅ Normalizes to cloud-agnostic semantic model
 - ✅ Detects capabilities (database, cache, object-storage)
 - ✅ Derives database names
-- ✅ Validates configurations
-- ✅ 100% output parity with Python
+- ✅ Validates configurations, including x-composey (unknown-key and
+  out-of-range rejection, both enforced by hand since compose-go's schema
+  explicitly declines to validate anything under `x-`)
+- ✅ Rejects named volumes correctly against real compose-go input (fixed;
+  was previously broken for every real compose file — see Phase 2 above)
+- ✅ Deterministic output order, independent of Go's own map iteration
+  order (fixed; was previously not the case — see Phase 2 above)
+- ✅ Splits literal environment values from env_file/${VAR}-sourced ones
+  via compose-go's own `SkipResolveEnvironment`, not a hand-rolled second
+  YAML parser
+- ⚠️ "100% output parity with Python" is no longer claimed outright: parity
+  with the Python version that existed at the time of the port is not
+  the same claim as "correct against real compose-go input," and the
+  three bugs above show those can diverge. Treat parity claims for any
+  future phase as needing the same real-parser-boundary verification,
+  not just a diff against Python's old output.
 
 **Inference + Generator (Python):**
 - ✅ AWS resource inference (ECS, RDS, ElastiCache, S3, ALB, CloudFront)
-- ✅ Azure resource inference (Container Apps, PostgreSQL, Redis, Storage)
+- ✅ Azure resource inference (Container Apps, PostgreSQL, Redis, Storage,
+  Managed Redis, Key Vault, Front Door, Container Apps Jobs, image
+  build-and-push via the docker Terraform provider)
 - ✅ Terraform JSON generation
 
 **Integration:**
 - ✅ Go → Python via hybrid layer
 - ✅ All examples compile successfully
-- ✅ Production ready
+- ✅ Production ready for the parser/normalizer stage specifically — most
+  of the AWS/Azure inference and generation this depends on has also been
+  verified against real cloud deployments (see TODO.md for Azure), not
+  just `terraform validate`
 
 ### What's Next
+
+**Before Phase 3: decide on the compose-go v1→v2 migration**
+`go.mod` is still pinned to `github.com/compose-spec/compose-go` v1.20.2 —
+the abandoned v1 module path. The current v2 (module path
+`compose-go/v2`, v2.14.0 as of the last check) is where upstream
+development actually happens. Migrating is a module-path rename plus
+whatever API breaks accompany it — worth doing before Phase 3 builds
+further on the v1 surface, not after.
 
 **Phase 3: AWS Inference & Generator**
 - Port AWS inference logic to Go
 - Port Terraform generator to Go
 - Test and replace Python AWS code
+- Verify against the real parser/inference boundary at every step, not
+  just against golden files copied from the Python version — Phase 2's
+  actual lesson, not just its checkpoint
 - Target: Week 4-5
 
 ---

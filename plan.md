@@ -184,10 +184,10 @@ reimplementing compose-go's own environment-form parsing) to work around
 official, if under-documented, way to skip exactly that step
 (`loader.Options.SkipResolveEnvironment`) — verified empirically against a
 real `.env` file that it does the same job with ~65 fewer lines and no extra
-dependency. `compose-go` itself is still pinned to the abandoned v1.20.2
-module path (`compose-go` vs the current `compose-go/v2`); migrating that is
-real work, not done here, and worth planning before Phase 3 leans on it
-further.
+dependency. `compose-go` itself was pinned to the abandoned v1.20.2 module
+path at the time; migrated to v2.14.0 immediately after this phase's
+hardening pass, before Phase 3 could build further on the v1 surface — see
+below.
 
 **Net effect:** the parser/normalizer port is now materially more correct
 than when this phase was first marked complete, and the test suite that
@@ -198,6 +198,35 @@ original checkpoint. This is not a one-time cost: any future phase that
 ports Python logic wholesale should assume the same gap exists — passing
 tests copied alongside the port prove the port matches the tests, not that
 either matches production.
+
+### compose-go v1 → v2 migration — DONE
+
+Done immediately after the hardening pass above, before Phase 3 could add
+more code against the v1 surface. Three real, confirmed breaking changes,
+all contained to `parser.go` (the only file that imports compose-go
+directly — the containment paid off here):
+
+1. `loader.Load` no longer exists; `loader.LoadWithContext` is the closest
+   equivalent, and requires a `context.Context`. It also folds in what v1
+   needed `loader.Normalize`/`loader.ResolveRelativePaths` as separate
+   calls for — both happen internally by default in v2 now.
+2. v2 hard-requires a project name at load time ("project name must not be
+   empty") where v1 left it for composey's own `Normalize` to assign
+   afterward. Worked around with an imperatively-set placeholder at parse
+   time, specifically to avoid triggering v2's own directory-name-inference
+   fallback — project naming for every cloud already flows entirely through
+   the `project_name` argument `Normalize` takes, not through anything
+   compose-go itself guesses.
+3. `NetworkConfig.External` changed from a struct with its own nested
+   `External` field to a plain named bool type.
+
+`types.ServiceVolumeConfig` and `types.ShellCommand` — the two types the
+volume and command bug fixes above depended on having an exact shape — are
+unchanged in v2; confirmed against the vendored source before migrating,
+and re-verified all three fixes (named-volume rejection, env_file/config
+splitting, deterministic ordering) against real compose files after the
+migration, not just that the existing tests still passed. `go mod tidy`
+dropped several v1-era transitive dependencies no longer pulled in by v2.
 
 ### Files Changed
 **Removed:**
@@ -583,10 +612,9 @@ on its own.
 - github.com/spf13/cobra (CLI framework)
 
 **Parsing:**
-- github.com/compose-spec/compose-go (Docker Compose parsing) — still on
-  the v1 module path (v1.20.2); upstream has moved to `compose-go/v2`
-  (v2.14.0 as of the last check). Migrate before Phase 3 leans on this
-  further.
+- github.com/compose-spec/compose-go/v2 (Docker Compose parsing) — v2.14.0.
+  Migrated from the abandoned v1 module path immediately after Phase 2's
+  hardening pass; see Phase 2 above for the three breaking changes involved.
 
 **Terraform:**
 - github.com/hashicorp/terraform-json (Terraform types)
@@ -763,13 +791,12 @@ specifically aimed at "does this go through the real boundary," not just
 
 ### What's Next
 
-**Before Phase 3: decide on the compose-go v1→v2 migration**
-`go.mod` is still pinned to `github.com/compose-spec/compose-go` v1.20.2 —
-the abandoned v1 module path. The current v2 (module path
-`compose-go/v2`, v2.14.0 as of the last check) is where upstream
-development actually happens. Migrating is a module-path rename plus
-whatever API breaks accompany it — worth doing before Phase 3 builds
-further on the v1 surface, not after.
+**compose-go v1→v2 migration — DONE, before Phase 3 started**
+Migrated to `compose-go/v2` v2.14.0. Three breaking changes, all contained
+to `parser.go`; full detail in Phase 2 above. Confirmed no regression in
+any of Phase 2's own fixes (named-volume rejection, env_file/config
+splitting, deterministic ordering) against real compose files after
+migrating, not just that the existing tests still passed.
 
 **Phase 3: AWS Inference & Generator**
 - Port AWS inference logic to Go

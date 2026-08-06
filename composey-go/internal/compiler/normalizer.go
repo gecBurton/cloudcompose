@@ -141,26 +141,37 @@ func RejectPersistentVolumes(name string, service *models.ComposeService, capabi
 	return fmt.Errorf("service %q mounts named volume(s) %s. Composey cannot provide a persistent filesystem, and running the service without one would lose whatever is written there on every restart. Use a `minio` service for object storage, or drop the volume if the path only needs scratch space, which the task already has", name, strings.Join(unique, ", "))
 }
 
-func NamedVolumeSource(volume interface{}) string {
-	switch v := volume.(type) {
-	case string:
-		parts := strings.Split(v, ":")
-		if len(parts) < 2 {
+// NamedVolumeSource returns the name of the volume a mount refers to, or ""
+// if the mount is local-only (a bind mount or anonymous volume) and
+// therefore not something RejectPersistentVolumes needs to flag.
+//
+// Takes models.VolumeDefinition directly rather than interface{}: every
+// volume entry parser.go produces is already this concrete type, since
+// compose-go itself normalizes both short-form ("db-data:/data") and
+// long-form volume syntax into one struct shape before the loader returns.
+// A prior version of this function type-switched on interface{} expecting
+// either a bare string or this struct, and matched neither in production —
+// what actually flows through parser.go's Volumes field is compose-go's own
+// types.ServiceVolumeConfig, converted here rather than left as a look-alike
+// type nothing ever matches.
+func NamedVolumeSource(volume models.VolumeDefinition) string {
+	if volume.Type != "volume" {
+		return ""
+	}
+	// Belt and suspenders: compose-go's own Type field already distinguishes
+	// a bind mount from a named volume, and a real named volume's Source is
+	// always a bare volume name, never a path — so this loop should never
+	// actually match anything once Type == "volume" is confirmed. Kept
+	// rather than removed: it costs nothing, and it is the only thing
+	// standing between a future compose-go behavior change and this
+	// silently returning a path as if it were a volume name again.
+	source := volume.Source
+	for _, prefix := range BindSourcePrefixes {
+		if strings.HasPrefix(source, prefix) {
 			return ""
 		}
-		source := parts[0]
-		for _, prefix := range BindSourcePrefixes {
-			if strings.HasPrefix(source, prefix) {
-				return ""
-			}
-		}
-		return source
-	case models.VolumeDefinition:
-		if v.Type == "volume" {
-			return v.Source
-		}
 	}
-	return ""
+	return source
 }
 
 func NetworkSegmentsFor(name string, service *models.ComposeService, reserved int) ([]string, error) {
@@ -232,7 +243,22 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 		return nil, err
 	}
 
-	for serviceName, dockerService := range composeApp.Services {
+	// Go map iteration order is randomized per the language spec, so
+	// iterating composeApp.Services directly would make Normalize's own
+	// output order nondeterministic across runs on identical input —
+	// confirmed against a real multi-service compose file 2026-08-06: five
+	// runs produced five different service orderings. Determinism is a
+	// stated project invariant (output must be byte-identical for the same
+	// input), so the iteration order has to be fixed independently of
+	// whatever order the map happens to hand keys back in.
+	serviceNames := make([]string, 0, len(composeApp.Services))
+	for serviceName := range composeApp.Services {
+		serviceNames = append(serviceNames, serviceName)
+	}
+	sort.Strings(serviceNames)
+
+	for _, serviceName := range serviceNames {
+		dockerService := composeApp.Services[serviceName]
 		settings, err := SettingsFor(serviceName, dockerService)
 		if err != nil {
 			return nil, err
@@ -401,21 +427,21 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 			semanticService.Image = "placeholder"
 		}
 
-		if semanticService.MinScale == 0 && settings.MinScale == 0 {
-			semanticService.MinScale = 1
-		}
-
-		if semanticService.MaxScale == 0 && settings.MaxScale == 0 {
-			semanticService.MaxScale = 1
-		}
-
 		if err := semanticService.Validate(); err != nil {
 			return nil, err
 		}
 
 		semanticServices = append(semanticServices, semanticService)
 
+		// Same determinism concern as the outer loop: DependsOn is a map,
+		// so its keys need sorting before use rather than being trusted to
+		// come back in a stable order.
+		depNames := make([]string, 0, len(dockerService.DependsOn))
 		for depName := range dockerService.DependsOn {
+			depNames = append(depNames, depName)
+		}
+		sort.Strings(depNames)
+		for _, depName := range depNames {
 			relationships = append(relationships, models.Relationship{
 				Client: serviceName,
 				Server: depName,
@@ -446,7 +472,19 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 
 func SettingsFor(name string, service models.ComposeService) (*models.XComposey, error) {
 	if service.XComposey == nil {
-		return &models.XComposey{}, nil
+		// Must match UnmarshalJSON's own defaults exactly, not a bare zero
+		// value — MinScale/MaxScale are meaningful at 0 (scale-to-zero is a
+		// real, validated setting: min_scale allows 0, only max_scale
+		// requires >= 1), so a zero value here is indistinguishable from a
+		// service that explicitly asked for 0. A second pass in Normalize
+		// used to paper over exactly this by resetting MinScale/MaxScale to
+		// 1 whenever both were 0 — which also reset an explicit
+		// min_scale: 0 back to 1 for any service that did have an
+		// x-composey block, since there was no way from that check alone to
+		// tell "unset" apart from "deliberately zero" (confirmed against a
+		// real x-composey block 2026-08-06). Fixed at the one place the
+		// default actually needs to live, rather than reapplied downstream.
+		return &models.XComposey{Size: "small", MinScale: 1, MaxScale: 1}, nil
 	}
 
 	settings := &models.XComposey{}

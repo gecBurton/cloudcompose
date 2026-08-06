@@ -21,7 +21,7 @@ type ComposeService struct {
 	Environment map[string]*string     `json:"environment,omitempty"`
 	DependsOn   map[string]Dependency  `json:"depends_on,omitempty"`
 	Networks    map[string]interface{} `json:"networks,omitempty"`
-	Volumes     []interface{}          `json:"volumes,omitempty"`
+	Volumes     []VolumeDefinition     `json:"volumes,omitempty"`
 	Secrets     []interface{}          `json:"secrets,omitempty"`
 	Command     interface{}            `json:"command,omitempty"`
 	XComposey   interface{}            `json:"x-composey,omitempty"`

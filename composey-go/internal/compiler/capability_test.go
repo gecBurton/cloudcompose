@@ -3,6 +3,7 @@ package compiler
 import "testing"
 
 func TestInferCapability(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		image    string
 		expected string
@@ -27,9 +28,12 @@ func TestInferCapability(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result := InferCapability(tc.image)
-		if result != tc.expected {
-			t.Errorf("InferCapability(%s) = %s, want %s", tc.image, result, tc.expected)
-		}
+		t.Run(tc.image, func(t *testing.T) {
+			t.Parallel()
+			result := InferCapability(tc.image)
+			if result != tc.expected {
+				t.Errorf("InferCapability(%s) = %s, want %s", tc.image, result, tc.expected)
+			}
+		})
 	}
 }

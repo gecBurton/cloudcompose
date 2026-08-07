@@ -1,0 +1,436 @@
+package models
+
+// Azure resource models mirroring composey/models/azure.py.
+//
+// Field names and JSON tags match the Python Pydantic models exactly,
+// since both marshal straight into Terraform's JSON syntax: whatever key a
+// struct here emits is the literal Terraform resource attribute name.
+
+type ContainerApp struct {
+	Name                      string            `json:"name"`
+	ResourceGroupName         string            `json:"resource_group_name"`
+	ContainerAppEnvironmentID string            `json:"container_app_environment_id"`
+	RevisionMode              string            `json:"revision_mode"`
+	Template                  any               `json:"template"`
+	Ingress                   any               `json:"ingress,omitempty"`
+	Identity                  any               `json:"identity,omitempty"`
+	Secret                    any               `json:"secret,omitempty"`
+	Registry                  any               `json:"registry,omitempty"`
+	Tags                      map[string]string `json:"tags,omitempty"`
+}
+
+func NewContainerApp() ContainerApp {
+	return ContainerApp{RevisionMode: "Single"}
+}
+
+// ContainerAppJob mirrors ContainerAppJob: a container that runs to
+// completion on a trigger, for services with a schedule. A Container App
+// is always-on, so a nightly task would run continuously, and one that
+// exits when its work is done would be restarted indefinitely.
+type ContainerAppJob struct {
+	Name                      string            `json:"name"`
+	ResourceGroupName         string            `json:"resource_group_name"`
+	Location                  string            `json:"location"`
+	ContainerAppEnvironmentID string            `json:"container_app_environment_id"`
+	ReplicaTimeoutInSeconds   int               `json:"replica_timeout_in_seconds"`
+	ReplicaRetryLimit         int               `json:"replica_retry_limit"`
+	ScheduleTriggerConfig     any               `json:"schedule_trigger_config"`
+	Template                  any               `json:"template"`
+	Identity                  any               `json:"identity,omitempty"`
+	Secret                    any               `json:"secret,omitempty"`
+	Registry                  any               `json:"registry,omitempty"`
+	Tags                      map[string]string `json:"tags,omitempty"`
+}
+
+func NewContainerAppJob() ContainerAppJob {
+	return ContainerAppJob{ReplicaTimeoutInSeconds: 1800, ReplicaRetryLimit: 1}
+}
+
+// ContainerAppEnvironment mirrors ContainerAppEnvironment. Defined for
+// completeness, matching the Python model, but never instantiated by
+// inference: the environment is platform-owned and referenced via a data
+// source instead (see AzureResources doc comment and generator_azure.go).
+type ContainerAppEnvironment struct {
+	Name                        string            `json:"name"`
+	ResourceGroupName           string            `json:"resource_group_name"`
+	Location                    string            `json:"location"`
+	LogAnalyticsWorkspaceID     string            `json:"log_analytics_workspace_id"`
+	InfrastructureSubnetID      *string           `json:"infrastructure_subnet_id,omitempty"`
+	InternalLoadBalancerEnabled bool              `json:"internal_load_balancer_enabled"`
+	Tags                        map[string]string `json:"tags,omitempty"`
+}
+
+type ContainerRegistry struct {
+	Name              string            `json:"name"`
+	ResourceGroupName string            `json:"resource_group_name"`
+	Location          string            `json:"location"`
+	Sku               string            `json:"sku"`
+	AdminEnabled      bool              `json:"admin_enabled"`
+	Tags              map[string]string `json:"tags,omitempty"`
+}
+
+func NewContainerRegistry() ContainerRegistry {
+	return ContainerRegistry{Sku: "Standard"}
+}
+
+// PostgreSQLFlexibleServer mirrors PostgreSQLFlexibleServer.
+//
+// Lifecycle defaults to ignoring the "zone" attribute: Azure assigns the
+// availability zone itself, and nothing in this model configures it.
+// Without ignoring it, any later plan sees a "change" from unset to
+// whatever Azure actually picked and tries to write it back, which the API
+// rejects outright (confirmed against real Azure, open on and off in the
+// azurerm provider since 2022, e.g. hashicorp/terraform-provider-azurerm#16888).
+type PostgreSQLFlexibleServer struct {
+	Name                       string              `json:"name"`
+	ResourceGroupName          string              `json:"resource_group_name"`
+	Location                   string              `json:"location"`
+	Version                    string              `json:"version"`
+	SkuName                    string              `json:"sku_name"`
+	StorageMb                  int                 `json:"storage_mb"`
+	AdministratorLogin         string              `json:"administrator_login"`
+	AdministratorPassword      string              `json:"administrator_password"`
+	DelegatedSubnetID          *string             `json:"delegated_subnet_id,omitempty"`
+	PrivateDnsZoneID           *string             `json:"private_dns_zone_id,omitempty"`
+	PublicNetworkAccessEnabled bool                `json:"public_network_access_enabled"`
+	HighAvailability           map[string]string   `json:"high_availability,omitempty"`
+	DatabaseName               *string             `json:"database_name,omitempty"`
+	DependsOn                  []string            `json:"depends_on,omitempty"`
+	Lifecycle                  map[string][]string `json:"lifecycle"`
+	Tags                       map[string]string   `json:"tags,omitempty"`
+}
+
+func NewPostgreSQLFlexibleServer() PostgreSQLFlexibleServer {
+	return PostgreSQLFlexibleServer{
+		Version:   "14",
+		SkuName:   "B_Standard_B1ms",
+		StorageMb: 32768,
+		Lifecycle: map[string][]string{"ignore_changes": {"zone"}},
+	}
+}
+
+type PostgreSQLFlexibleDatabase struct {
+	Name      string `json:"name"`
+	ServerID  string `json:"server_id"`
+	Charset   string `json:"charset"`
+	Collation string `json:"collation"`
+}
+
+func NewPostgreSQLFlexibleDatabase() PostgreSQLFlexibleDatabase {
+	return PostgreSQLFlexibleDatabase{Charset: "UTF8", Collation: "en_US.utf8"}
+}
+
+type MySQLFlexibleServer struct {
+	Name                       string            `json:"name"`
+	ResourceGroupName          string            `json:"resource_group_name"`
+	Location                   string            `json:"location"`
+	Version                    string            `json:"version"`
+	SkuName                    string            `json:"sku_name"`
+	StorageMb                  int               `json:"storage_mb"`
+	AdministratorLogin         string            `json:"administrator_login"`
+	AdministratorPassword      string            `json:"administrator_password"`
+	DelegatedSubnetID          *string           `json:"delegated_subnet_id,omitempty"`
+	PrivateDnsZoneID           *string           `json:"private_dns_zone_id,omitempty"`
+	PublicNetworkAccessEnabled bool              `json:"public_network_access_enabled"`
+	HighAvailability           map[string]string `json:"high_availability,omitempty"`
+	DependsOn                  []string          `json:"depends_on,omitempty"`
+	Tags                       map[string]string `json:"tags,omitempty"`
+}
+
+func NewMySQLFlexibleServer() MySQLFlexibleServer {
+	return MySQLFlexibleServer{Version: "8.0", SkuName: "B_Standard_B1ms", StorageMb: 32768}
+}
+
+type MySQLFlexibleDatabase struct {
+	Name      string `json:"name"`
+	ServerID  string `json:"server_id"`
+	Charset   string `json:"charset"`
+	Collation string `json:"collation"`
+}
+
+func NewMySQLFlexibleDatabase() MySQLFlexibleDatabase {
+	return MySQLFlexibleDatabase{Charset: "utf8mb4", Collation: "utf8mb4_unicode_ci"}
+}
+
+// PrivateDnsZone mirrors PrivateDnsZone: a server on a delegated subnet is
+// unreachable by name without one, and Azure refuses to create the server
+// otherwise (EmptyPrivateDnsZoneArmResourceId).
+type PrivateDnsZone struct {
+	Name              string            `json:"name"`
+	ResourceGroupName string            `json:"resource_group_name"`
+	Tags              map[string]string `json:"tags,omitempty"`
+}
+
+type PrivateDnsZoneVirtualNetworkLink struct {
+	Name                string            `json:"name"`
+	ResourceGroupName   string            `json:"resource_group_name"`
+	PrivateDnsZoneName  string            `json:"private_dns_zone_name"`
+	VirtualNetworkID    string            `json:"virtual_network_id"`
+	RegistrationEnabled bool              `json:"registration_enabled"`
+	Tags                map[string]string `json:"tags,omitempty"`
+}
+
+type KeyVault struct {
+	Name                    string            `json:"name"`
+	ResourceGroupName       string            `json:"resource_group_name"`
+	Location                string            `json:"location"`
+	TenantID                string            `json:"tenant_id"`
+	SkuName                 string            `json:"sku_name"`
+	SoftDeleteRetentionDays int               `json:"soft_delete_retention_days"`
+	PurgeProtectionEnabled  bool              `json:"purge_protection_enabled"`
+	Tags                    map[string]string `json:"tags,omitempty"`
+}
+
+func NewKeyVault() KeyVault {
+	return KeyVault{SkuName: "standard", SoftDeleteRetentionDays: 7}
+}
+
+// KeyVaultSecret mirrors KeyVaultSecret. Lifecycle defaults to ignoring
+// "value" so the secret's value never shows in Terraform's own plan/apply
+// output.
+type KeyVaultSecret struct {
+	Name       string              `json:"name"`
+	KeyVaultID string              `json:"key_vault_id"`
+	Value      string              `json:"value"`
+	Lifecycle  map[string][]string `json:"lifecycle"`
+}
+
+func NewKeyVaultSecret() KeyVaultSecret {
+	return KeyVaultSecret{Lifecycle: map[string][]string{"ignore_changes": {"value"}}}
+}
+
+// UserAssignedIdentity mirrors UserAssignedIdentity. Defined for
+// completeness, matching the Python model, but never populated by
+// inference today -- _infer_managed_identity only reads
+// env.user_assigned_identity_id, it doesn't create one.
+type UserAssignedIdentity struct {
+	Name              string            `json:"name"`
+	ResourceGroupName string            `json:"resource_group_name"`
+	Location          string            `json:"location"`
+	Tags              map[string]string `json:"tags,omitempty"`
+}
+
+// RoleAssignment mirrors RoleAssignment. Defined for completeness, matching
+// the Python model, but never populated by inference today -- ACR admin
+// credentials are used instead of RBAC (see _registry_auth in
+// compiler/inference/azure for why identity-based auth can't be used: a
+// chicken-and-egg ordering problem).
+type RoleAssignment struct {
+	Scope              string `json:"scope"`
+	RoleDefinitionName string `json:"role_definition_name"`
+	PrincipalID        string `json:"principal_id"`
+}
+
+type StorageAccount struct {
+	Name                    string            `json:"name"`
+	ResourceGroupName       string            `json:"resource_group_name"`
+	Location                string            `json:"location"`
+	AccountTier             string            `json:"account_tier"`
+	AccountReplicationType  string            `json:"account_replication_type"`
+	AccountKind             string            `json:"account_kind"`
+	MinTlsVersion           string            `json:"min_tls_version"`
+	HttpsTrafficOnlyEnabled bool              `json:"https_traffic_only_enabled"`
+	Tags                    map[string]string `json:"tags,omitempty"`
+}
+
+func NewStorageAccount() StorageAccount {
+	return StorageAccount{
+		AccountTier:             "Standard",
+		AccountReplicationType:  "LRS",
+		AccountKind:             "StorageV2",
+		MinTlsVersion:           "TLS1_2",
+		HttpsTrafficOnlyEnabled: true,
+	}
+}
+
+type StorageContainer struct {
+	Name                string `json:"name"`
+	StorageAccountName  string `json:"storage_account_name"`
+	ContainerAccessType string `json:"container_access_type"`
+}
+
+func NewStorageContainer() StorageContainer {
+	return StorageContainer{ContainerAccessType: "private"}
+}
+
+// FrontDoorProfile mirrors FrontDoorProfile: the top-level container for an
+// endpoint, origin groups and origins. Replaces CdnProfile/CdnEndpoint
+// (Azure CDN from Microsoft, classic), which no longer accepts new
+// profiles. Has no Location field: Front Door is a global resource, unlike
+// everything else this inference creates.
+type FrontDoorProfile struct {
+	Name              string            `json:"name"`
+	ResourceGroupName string            `json:"resource_group_name"`
+	SkuName           string            `json:"sku_name"`
+	Tags              map[string]string `json:"tags,omitempty"`
+}
+
+func NewFrontDoorProfile() FrontDoorProfile {
+	return FrontDoorProfile{SkuName: "Standard_AzureFrontDoor"}
+}
+
+type FrontDoorEndpoint struct {
+	Name                  string            `json:"name"`
+	CdnFrontdoorProfileID string            `json:"cdn_frontdoor_profile_id"`
+	Tags                  map[string]string `json:"tags,omitempty"`
+}
+
+type FrontDoorOriginGroup struct {
+	Name                  string         `json:"name"`
+	CdnFrontdoorProfileID string         `json:"cdn_frontdoor_profile_id"`
+	LoadBalancing         map[string]any `json:"load_balancing"`
+	HealthProbe           map[string]any `json:"health_probe,omitempty"`
+}
+
+// FrontDoorOrigin mirrors FrontDoorOrigin: the backend Front Door forwards
+// traffic to -- a Container App's ingress FQDN, in this codebase's case.
+type FrontDoorOrigin struct {
+	Name                        string  `json:"name"`
+	CdnFrontdoorOriginGroupID   string  `json:"cdn_frontdoor_origin_group_id"`
+	HostName                    string  `json:"host_name"`
+	CertificateNameCheckEnabled bool    `json:"certificate_name_check_enabled"`
+	OriginHostHeader            *string `json:"origin_host_header,omitempty"`
+	HttpPort                    int     `json:"http_port"`
+	HttpsPort                   int     `json:"https_port"`
+}
+
+func NewFrontDoorOrigin() FrontDoorOrigin {
+	return FrontDoorOrigin{CertificateNameCheckEnabled: true, HttpPort: 80, HttpsPort: 443}
+}
+
+// FrontDoorRoute mirrors FrontDoorRoute: ties an endpoint to an origin
+// group and says which request paths and protocols reach it.
+// CdnFrontdoorOriginIds is not sent to the Azure API -- Terraform uses it
+// only to order creation and destruction against the FrontDoorOrigin(s) it
+// lists, since the API itself infers origins from the origin group.
+type FrontDoorRoute struct {
+	Name                      string   `json:"name"`
+	CdnFrontdoorEndpointID    string   `json:"cdn_frontdoor_endpoint_id"`
+	CdnFrontdoorOriginGroupID string   `json:"cdn_frontdoor_origin_group_id"`
+	CdnFrontdoorOriginIds     []string `json:"cdn_frontdoor_origin_ids"`
+	PatternsToMatch           []string `json:"patterns_to_match"`
+	SupportedProtocols        []string `json:"supported_protocols"`
+	ForwardingProtocol        string   `json:"forwarding_protocol"`
+	HttpsRedirectEnabled      bool     `json:"https_redirect_enabled"`
+}
+
+func NewFrontDoorRoute() FrontDoorRoute {
+	return FrontDoorRoute{
+		PatternsToMatch:      []string{"/*"},
+		SupportedProtocols:   []string{"Http", "Https"},
+		ForwardingProtocol:   "HttpsOnly",
+		HttpsRedirectEnabled: true,
+	}
+}
+
+// ManagedRedis mirrors ManagedRedis: replaces Azure Cache for Redis
+// (azurerm_redis_cache), which no longer accepts new instances. Only
+// azurerm 4.x exposes this; the 3.x alternative,
+// azurerm_redis_enterprise_cluster, rejects the Balanced SKUs outright and
+// starts at Enterprise_E5. The connection details live on the nested
+// DefaultDatabase block rather than on the cluster: port and
+// primary_access_key both hang off it.
+type ManagedRedis struct {
+	Name                    string            `json:"name"`
+	ResourceGroupName       string            `json:"resource_group_name"`
+	Location                string            `json:"location"`
+	SkuName                 string            `json:"sku_name"`
+	HighAvailabilityEnabled bool              `json:"high_availability_enabled"`
+	DefaultDatabase         []map[string]any  `json:"default_database"`
+	Tags                    map[string]string `json:"tags,omitempty"`
+}
+
+// NewManagedRedis returns a ManagedRedis with Python's own
+// default_database default_factory value reproduced: a single-element
+// list containing a 3-key dict in this exact order.
+//
+// Managed Redis can require Entra ID auth instead; this application wires
+// a password into containers, so the access keys have to be available --
+// confirmed as the deliberate reason for AccessKeysAuthenticationEnabled
+// being true, not an oversight.
+func NewManagedRedis() ManagedRedis {
+	return ManagedRedis{
+		SkuName: "Balanced_B0",
+		DefaultDatabase: []map[string]any{
+			{
+				"access_keys_authentication_enabled": true,
+				"client_protocol":                    "Encrypted",
+				"eviction_policy":                    "AllKeysLRU",
+			},
+		},
+	}
+}
+
+// AzureResources is a registry of the Azure resources the compiler
+// supports, mirroring AzureResources.
+type AzureResources struct {
+	ContainerApp                     map[string]ContainerApp                     `json:"azurerm_container_app,omitempty"`
+	ContainerAppJob                  map[string]ContainerAppJob                  `json:"azurerm_container_app_job,omitempty"`
+	ContainerAppEnvironment          map[string]ContainerAppEnvironment          `json:"azurerm_container_app_environment,omitempty"`
+	ContainerRegistry                map[string]ContainerRegistry                `json:"azurerm_container_registry,omitempty"`
+	PostgreSQLFlexibleServer         map[string]PostgreSQLFlexibleServer         `json:"azurerm_postgresql_flexible_server,omitempty"`
+	PostgreSQLFlexibleServerDatabase map[string]PostgreSQLFlexibleDatabase       `json:"azurerm_postgresql_flexible_server_database,omitempty"`
+	MySQLFlexibleServer              map[string]MySQLFlexibleServer              `json:"azurerm_mysql_flexible_server,omitempty"`
+	MySQLFlexibleDatabase            map[string]MySQLFlexibleDatabase            `json:"azurerm_mysql_flexible_database,omitempty"`
+	PrivateDnsZone                   map[string]PrivateDnsZone                   `json:"azurerm_private_dns_zone,omitempty"`
+	PrivateDnsZoneVirtualNetworkLink map[string]PrivateDnsZoneVirtualNetworkLink `json:"azurerm_private_dns_zone_virtual_network_link,omitempty"`
+	KeyVault                         map[string]KeyVault                         `json:"azurerm_key_vault,omitempty"`
+	KeyVaultSecret                   map[string]KeyVaultSecret                   `json:"azurerm_key_vault_secret,omitempty"`
+	UserAssignedIdentity             map[string]UserAssignedIdentity             `json:"azurerm_user_assigned_identity,omitempty"`
+	RoleAssignment                   map[string]RoleAssignment                   `json:"azurerm_role_assignment,omitempty"`
+	ManagedRedis                     map[string]ManagedRedis                     `json:"azurerm_managed_redis,omitempty"`
+	StorageAccount                   map[string]StorageAccount                   `json:"azurerm_storage_account,omitempty"`
+	StorageContainer                 map[string]StorageContainer                 `json:"azurerm_storage_container,omitempty"`
+	CdnFrontdoorProfile              map[string]FrontDoorProfile                 `json:"azurerm_cdn_frontdoor_profile,omitempty"`
+	CdnFrontdoorEndpoint             map[string]FrontDoorEndpoint                `json:"azurerm_cdn_frontdoor_endpoint,omitempty"`
+	CdnFrontdoorOriginGroup          map[string]FrontDoorOriginGroup             `json:"azurerm_cdn_frontdoor_origin_group,omitempty"`
+	CdnFrontdoorOrigin               map[string]FrontDoorOrigin                  `json:"azurerm_cdn_frontdoor_origin,omitempty"`
+	CdnFrontdoorRoute                map[string]FrontDoorRoute                   `json:"azurerm_cdn_frontdoor_route,omitempty"`
+
+	// Docker provider resources (same models as AWS: build locally, push
+	// to ACR instead of ECR). See handleBuildContext in
+	// compiler/azure_compute.go for how these get populated.
+	DockerImage         map[string]DockerImage         `json:"docker_image,omitempty"`
+	DockerRegistryImage map[string]DockerRegistryImage `json:"docker_registry_image,omitempty"`
+
+	// Random resources for passwords. Typed as RandomPassword directly
+	// (Python's own model types this Dict[str, Any], but every call site
+	// assigns a RandomPassword instance in practice -- confirmed by
+	// grepping every resources.random_password[...] assignment in
+	// compiler/inference/azure/__init__.py).
+	RandomPassword map[string]RandomPassword `json:"random_password,omitempty"`
+}
+
+// NewAzureResources returns an AzureResources with every map initialized,
+// so inference functions can assign into resources.Foo[key] without a
+// nil-map panic. Empty maps are still omitted from JSON output (see struct
+// tags).
+func NewAzureResources() *AzureResources {
+	return &AzureResources{
+		ContainerApp:                     map[string]ContainerApp{},
+		ContainerAppJob:                  map[string]ContainerAppJob{},
+		ContainerAppEnvironment:          map[string]ContainerAppEnvironment{},
+		ContainerRegistry:                map[string]ContainerRegistry{},
+		PostgreSQLFlexibleServer:         map[string]PostgreSQLFlexibleServer{},
+		PostgreSQLFlexibleServerDatabase: map[string]PostgreSQLFlexibleDatabase{},
+		MySQLFlexibleServer:              map[string]MySQLFlexibleServer{},
+		MySQLFlexibleDatabase:            map[string]MySQLFlexibleDatabase{},
+		PrivateDnsZone:                   map[string]PrivateDnsZone{},
+		PrivateDnsZoneVirtualNetworkLink: map[string]PrivateDnsZoneVirtualNetworkLink{},
+		KeyVault:                         map[string]KeyVault{},
+		KeyVaultSecret:                   map[string]KeyVaultSecret{},
+		UserAssignedIdentity:             map[string]UserAssignedIdentity{},
+		RoleAssignment:                   map[string]RoleAssignment{},
+		ManagedRedis:                     map[string]ManagedRedis{},
+		StorageAccount:                   map[string]StorageAccount{},
+		StorageContainer:                 map[string]StorageContainer{},
+		CdnFrontdoorProfile:              map[string]FrontDoorProfile{},
+		CdnFrontdoorEndpoint:             map[string]FrontDoorEndpoint{},
+		CdnFrontdoorOriginGroup:          map[string]FrontDoorOriginGroup{},
+		CdnFrontdoorOrigin:               map[string]FrontDoorOrigin{},
+		CdnFrontdoorRoute:                map[string]FrontDoorRoute{},
+		DockerImage:                      map[string]DockerImage{},
+		DockerRegistryImage:              map[string]DockerRegistryImage{},
+		RandomPassword:                   map[string]RandomPassword{},
+	}
+}

@@ -12,11 +12,7 @@
 docker compose up
 
 # Production deployment (same file!)
-composey up --provider aws
-# or
-composey up --provider azure
-# or
-composey up --provider gcp
+composey main -f docker-compose.yml -e prod-env.yaml
 ```
 
 ---
@@ -107,30 +103,40 @@ services:
 ### Installation
 
 ```bash
-pip install composey
+git clone https://github.com/gecBurton/composey.git
+cd composey/composey-go
+go build -o composey ./cmd/composey
 ```
+
+### Set Up an Environment
+
+Each cloud target needs a one-time shared environment (VPC, ALB/Container
+Apps Environment, ECS cluster, etc.), created once by a platform team:
+
+```bash
+composey init --provider aws --name prod
+cd prod-infrastructure && terraform init && terraform apply
+```
+
+This writes `environment.yml`, which every app deployment references.
 
 ### Deploy to AWS
 
 ```bash
-# Your existing Docker Compose file
-composey up --provider aws
+composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
 ```
 
-That's it. Your app is live at `https://myapp.example.com`.
+That's it. Your app is live behind the shared load balancer / Container App
+ingress / Cloud Run URL.
 
-### Deploy to Azure
-
-```bash
-# Same file, different provider
-composey up --provider azure
-```
-
-### Deploy to GCP
+### Deploy to Azure or GCP
 
 ```bash
-# Same file, different provider
-composey up --provider gcp
+composey init --provider azure --name prod
+composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
+
+composey init --provider gcp --name prod
+composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
 ```
 
 ---
@@ -176,7 +182,7 @@ services:
 
 **Deploy to AWS:**
 ```bash
-composey up --provider aws
+composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
 ```
 
 **What gets created:**
@@ -219,23 +225,23 @@ Standard images are automatically upgraded to managed services:
 ### 🔍 See What Was Inferred
 
 ```bash
-composey explain -f docker-compose.yml
+composey main -f docker-compose.yml --explain
 ```
 
 ```
 api
-  inferred  runs as serverless container
-            image 'myapp' is not a recognized managed service
-  inferred  public endpoint
-            ports published
-  inferred  connects to database
-            depends_on references 'db'
+  inferred  runs as a container
+            image 'myapp' is not a recognised managed service
+  declared  served at / on port 80
+            declared by x-composey: ingress
+  inferred  may connect to db
+            depends_on
 
 db
-  inferred  managed database (RDS)
-            image 'postgres:15' recognized
+  inferred  substituted for a managed database
+            image 'postgres:15' is a recognised database
 
-Estimated monthly cost: ~$15 (scales to $0 when idle)
+7 decision(s)
 ```
 
 ---
@@ -279,36 +285,34 @@ services:
 |-------|--------|---------|----------|-------|---------|
 | **AWS** | ✅ Ready | ECS Fargate | RDS | ElastiCache | S3 |
 | **Azure** | ✅ Ready | Container Apps | Flexible Server | Cache for Redis | Blob Storage |
-| **GCP** | 🚧 Planned | Cloud Run | Cloud SQL | Memorystore | GCS |
+| **GCP** | ✅ Ready | Cloud Run | Cloud SQL | Memorystore | Cloud Storage |
 
 ---
 
 ## Installation
 
 ### Requirements
-- Python 3.14+
-- Docker & Docker Compose v2
+- Go 1.26+ (to build)
+- Docker (for services with a `build:` section)
 - Terraform CLI
 - Cloud credentials (AWS, Azure, or GCP)
 
 ### Install
 
 ```bash
-pip install composey
+git clone https://github.com/gecBurton/composey.git
+cd composey/composey-go
+go build -o composey ./cmd/composey
 ```
 
 ### Quick Test
 
 ```bash
-# Clone examples
-git clone https://github.com/gecBurton/composey.git
-cd composey/examples/hello
+# From the composey-go directory
+./composey init --provider aws --name demo
+(cd demo-infrastructure && terraform init && terraform apply)
 
-# Deploy to AWS
-composey up --provider aws
-
-# Or Azure
-composey up --provider azure
+./composey main -f ../examples/hello/compose.yml -e demo-infrastructure/environment.yml
 ```
 
 ---
@@ -345,11 +349,8 @@ MIT License - see [LICENSE](LICENSE)
 
 ## Project Status
 
-**Current Phase:** Incremental Go migration in progress
+**Current Phase:** Fully migrated to Go. All parsing, normalization, inference, generation, and CLI logic run in `composey-go` — there is no Python runtime dependency anymore.
 
-- ✅ **Parser & Normalizer:** Go implementation (compose-go library)
-- 🚧 **Inference & Generator:** Python (being ported incrementally)
+See [plan.md](plan.md) for the migration history.
 
-See [plan.md](plan.md) for details on the migration strategy and timeline.
-
-**Installation:** Currently requires Python 3.14+. Single binary distribution coming after migration completes.
+**Installation:** Build the `composey-go` binary with Go 1.26+ (see Installation above). Prebuilt cross-platform binaries and a package-manager install path are not yet available.

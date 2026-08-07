@@ -9,15 +9,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v7
-
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        enable-cache: true
-        python-version: "3.14"
 
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v4
@@ -29,43 +23,10 @@ jobs:
       with:
         go-version-file: composey-go/go.mod
 
-    - name: Run Go tests
+    - name: Run go vet and go test
       run: go vet ./... && go test ./...
       working-directory: composey-go
 
-    - name: Build Go parser/normalizer binary
-      # compile_to_terraform (composey/compiler/__init__.py) shells out to
-      # this binary unconditionally — there is no Python fallback anymore,
-      # so every golden/integration test fails at collection-adjacent time
-      # without it. Built once here rather than relying on the
-      # composey_go_binary pytest fixture, which only covers tests that
-      # request it explicitly.
-      run: go build -o composey-go ./cmd/composey
+    - name: Build composey binary
+      run: go build -o composey ./cmd/composey
       working-directory: composey-go
-
-    - name: Install dependencies
-      run: uv sync --all-extras --dev
-
-    - name: Set up Docker Compose
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y docker-compose-v2
-
-    - name: Cache Terraform plugins
-      uses: actions/cache@v6
-      with:
-        path: .terraform_cache
-        key: ${{ runner.os }}-terraform-${{ hashFiles('**/*.tf.json') }}
-        restore-keys: |
-          ${{ runner.os }}-terraform-
-
-    - name: Run linting
-      run: |
-        uv run ruff format --check .
-        uv run ruff check .
-
-    - name: Run tests
-      run: uv run pytest
-      env:
-        TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform_cache
-        PYTHONPATH: .

@@ -57,15 +57,10 @@ jobs:
           terraform_version: "1.10.0"
           terraform_wrapper: false
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.14"
-
-      - name: Set up Docker Compose
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-v2
+          go-version-file: composey-go/go.mod
 
       - name: Install Azure CLI
         run: |

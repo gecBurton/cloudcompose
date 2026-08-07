@@ -270,7 +270,7 @@ Output (main.tf.json)
 
 ---
 
-## ⬜ Phase 3: Port AWS Inference & Generator (Week 4-5) - NOT STARTED
+## ✅ Phase 3: Port AWS Inference & Generator (Week 4-5) - COMPLETE, Python AWS backend removed
 
 ### Scope re-checked before starting (2026-08-06) — larger than planned
 
@@ -397,107 +397,761 @@ happened last time:
 - ✅ Terraform JSON generation works
 - ✅ Output matches Python for all AWS examples
 - ✅ All AWS integration tests pass
-- ✅ **Python AWS inference and generator removed**
+- ✅ **Go AWS backend is the default `compile_to_terraform` path** —
+  cut over 2026-08-06, verified via 272 Python unit tests, 13 golden
+  examples, and a real CLI invocation.
+- ✅ **Python AWS inference and generator removed** — `models/aws.py`,
+  `generator.py`, and all 6 AWS-specific inference modules deleted the
+  same day, once `compile_application`'s AWS branch was confirmed to have
+  zero live callers (checked, not assumed) and two genuine cross-cloud
+  dependencies were extracted first (see the removal section below). 10
+  dependent Python test files removed in the same commit; verified via
+  229 passing tests afterward, not left to be discovered broken.
 - ✅ **Every item in the review-discipline list above has actually been
-  applied, not just available as a checklist** — Phase 2's checkpoint
-  looked identical to this one and still needed a follow-up hardening
-  pass; do not mark this phase done on the same evidence Phase 2's
-  checkpoint was (wrongly) marked done on.
+  applied, not just available as a checklist** — applied throughout
+  porting (real-boundary tests per function, determinism checks, no test
+  deletion, reuse-over-lookalike) and caught real bugs before they shipped;
+  applied again in a dedicated coverage-gap survey pass across all 13
+  relevant Python test files, which closed every scenario-level gap found
+  (28 items) before the cutover — the exact kind of follow-up review Phase
+  2's checkpoint needed but didn't get until after the fact.
+
+### What's actually done (2026-08-06)
+
+**Ported, in `composey-go/internal/{models,compiler}/`:**
+- `models/aws.go` (417 lines) — all 32 resource structs from `models/aws.py`
+- `models/environment.go`, `models/terraform.go` — `AwsEnvironment`,
+  `TerraformManifest`
+- `compiler/common_aws.go`, `connectivity_aws.go` — namespace/priority/
+  path-pattern helpers, security groups, service discovery
+  (`_common.py`, `_connectivity.py`)
+- `compiler/connections_aws.go` — env-var-to-managed-service URL rewriting
+  (`connections.py`), including the regex-based host/URL matching
+- `compiler/managed_aws.go` — RDS, ElastiCache, S3 (`_managed.py`)
+- `compiler/compute_aws.go` — ECS task/service, IAM roles, build-from-source,
+  secrets, platform config, ingress, autoscaling (`_compute.py`, the
+  largest module at 635 Python lines)
+- `compiler/scheduling_aws.go` — EventBridge scheduled tasks (`_scheduling.py`)
+- `compiler/edge_aws.go` — CloudFront/WAF (`_edge.py`)
+- `compiler/permissions_aws.go` — IAM wiring, confidential-value handling
+  (`_permissions.py`, the trickiest module: it mutates already-built task
+  definitions in place)
+- `compiler/infer_aws.go` — `InferAWS()`, the full orchestration mirroring
+  `inference/__init__.py`'s `infer()`
+- `compiler/generator_aws.go` — `GenerateAWS()`, provider config, docker/
+  CloudFront/WAF conditional wiring
+- `compiler/pyjson.go` — see "A new problem class" below
+- `compiler/environment_aws.go` — YAML environment file loading for the CLI
+- `cmd/composey/main.go` — new `compile-aws <compose-file> --env <yaml>`
+  subcommand, doing parse→normalize→infer→generate in one step (chosen
+  over accepting pre-normalized semantic JSON as input, to avoid needing
+  JSON (de)serialization for the `Schedule` interface type)
+- `composey/compiler/hybrid.py` — new `compile_to_terraform_aws_go()`,
+  callable but **not yet the default path**: `compile_application`/
+  `compile_to_terraform` still call the Python AWS backend. This function
+  exists so the Go path is exercised from Python before any cutover, not
+  to perform the cutover itself.
+
+**Verified against all 13 AWS golden examples**
+(`composey-go/internal/compiler/infer_aws_golden_test.go`), each compared
+as parsed JSON (not a raw byte diff, which would pass on coincidental
+whitespace matches a structural diff wouldn't) against the Python-generated
+`examples/*/expected/main.tf.json`: hello, flask, flask-redis, flask-s3,
+minio-s3, build-webapp, scaling, platform-config, compute-tuning,
+nginx-flask-mysql, production-stack, web-api, doctor. Also re-verified
+end-to-end through the actual `compile_to_terraform_aws_go()` Python→Go
+bridge (not just the Go test suite in isolation) for hello, doctor,
+production-stack, nginx-flask-mysql, flask-s3, and web-api.
+
+**106 Go test functions** across the new `*_aws_test.go` files (~3,200
+lines), the large majority going through the real `ParseCompose()` →
+`Normalize()` → `Infer*()` boundary against an actual compose file from
+`examples/`, per this phase's own review-discipline rule — not only
+hand-built `Application`/`Service` structs, though those remain for edge
+cases the golden examples don't happen to cover (e.g. `TestIsDiscoverable`'s
+schedule/no-port/database cases). Every inference function that touches a
+`map[string]T` got an explicit determinism check (5-6 repeated runs, diffed).
+
+### A new problem class this phase found, that Phase 2 didn't have
+
+Phase 2's three bugs were all about *structure* — wrong type, wrong order,
+wrong default. This phase's ported functions build embedded JSON strings
+(IAM policies, ECS container definitions, Secrets Manager secret strings)
+that Terraform stores as opaque attribute values, and Python's
+`json.dumps(dict)` behavior for those turned out to matter at the byte
+level in ways `encoding/json` does not reproduce by default:
+
+1. **Key order.** Python dicts preserve insertion order; `json.dumps` never
+   sorts unless told to. Every inline policy literal in `_compute.py`,
+   `_managed.py`, `_scheduling.py`, `_permissions.py` writes `{"Version":
+   ..., "Statement": ...}` in that order. `encoding/json` marshalling a
+   `map[string]any` sorts keys alphabetically, flipping this to
+   `{"Statement": ..., "Version": ...}` — confirmed as a real, not
+   theoretical, divergence by diffing actual Go output against actual
+   Python output for the `hello` example (2026-08-06), not caught by any
+   golden-file comparison done via `json.loads()` equality, since
+   parsed-dict equality doesn't care about key order — only a byte-level
+   diff against a live Python run surfaced it.
+2. **HTML escaping.** `encoding/json`'s default escapes `<`/`>`, turning
+   Terraform's `"~> 5.0"` version constraint into `"~\u003e 5.0"` in the
+   output — functionally accepted by Terraform, but not byte-identical to
+   Python's `json.dumps`, which was the actual bar for this phase.
+3. **Float formatting.** Python's `json.dumps(70.0)` renders `70.0`,
+   always with a decimal point; `encoding/json`'s default float handling
+   collapses it to `70` once round-tripped through `map[string]any`,
+   losing the distinction entirely. Caught via the `production-stack`
+   golden example's autoscaling policy `target_value` field.
+
+Fixed with a small purpose-built encoder (`compiler/pyjson.go`:
+`PyDumps`/`PyOrdered`/`PyFloat`) rather than reaching for a third-party
+ordered-JSON library — the number of call sites needing this is small and
+fixed (every inline IAM policy and container definition in this package),
+and each one already states its own key order explicitly as Go code, which
+is what needed fixing in the first place. `resourceBlocks()` and
+`marshalTerraformJSON()` also switched to `json.Decoder.UseNumber()` when
+round-tripping through `map[string]any`, so `PyFloat`'s deliberately-formatted
+`"70.0"` string survives being decoded back out rather than being
+reinterpreted as a plain `float64` and losing the trailing `.0` a second time.
+
+### Other real bugs this phase's review discipline caught before they shipped
+
+- **`EcsService.load_balancer` defaulting wrong.** Pydantic's
+  `Field(default_factory=list)` (not `Optional[...] = None`) means Python's
+  own output always includes `"load_balancer": []` for a service with no
+  public ingress. The Go struct had `omitempty` on that field, silently
+  dropping the key. Caught by diffing `nginx-flask-mysql` and
+  `compute-tuning` (neither has public ingress) against their golden
+  files — both show the empty list Python always writes.
+- **`AutoScalingConfig`'s defaults are not an empty configuration.**
+  Python's `config = service.auto_scaling or AutoScalingConfig()` reaches
+  for a *default_factory* that supplies CPU 70%/Memory 80% metrics and
+  300s/60s cooldowns — not "no scaling policies." A bare
+  `models.AutoScalingConfig{}` zero value in Go has none of that. Caught by
+  `production-stack`, whose `max_scale > min_scale` service relies on
+  exactly this default and got zero autoscaling policies in Go before the
+  fix, versus two in Python.
+- **`eventbridgeExpression` only handled value-typed schedules.** The
+  actual normalizer produces `*models.RateSchedule`/`*models.CronSchedule`
+  (pointers, per `normalizer.go`), but the type switch only matched the
+  value types every hand-built test used — 100% coverage of a path
+  production never takes, 0% of the one it does, which is exactly Phase
+  2's volume-bug failure mode repeating in a new module. Caught the moment
+  `production-stack` (the only golden example with a schedule) was run
+  through the real pipeline rather than only through
+  `TestEventbridgeExpression_MatchesPython`'s hand-built value-type cases.
+- **A wrong assumption about `_store_confidential_value`'s description
+  string**, corrected before it shipped by reading the f-string rather
+  than guessing: Python's `f"...for {referenced_service}"` renders the
+  literal string `"None"` when `referenced_service is None` (an f-string
+  calls `str()`), not an empty string or a word like "nothing".
+
+### Test-coverage-gap closure pass (2026-08-06, same day as the port)
+
+The "no systematic pass" gap noted below was closed immediately after: a
+dedicated agent enumerated all AWS-inference-relevant scenarios across the
+13 relevant Python unit test files (test_build, test_cdn, test_connections,
+test_data_retention, test_database_name, test_desired_count, test_ingress,
+test_networks, test_permissions, test_platform_config,
+test_platform_settings, test_robustness, test_service_discovery — 62
+distinct scenarios total) and cross-checked each against the Go test suite
+scenario-by-scenario, not just "some test touches this area." Result: 14
+scenarios genuinely not covered, 14 more only partially (verified
+implicitly via golden examples but never pinned as their own assertion).
+All 28 addressed:
+
+**Real gaps that were actually risky (fixed):**
+- `AwsEnvironment.Validate()` (rejects `alb_arn` without
+  `alb_security_group_id`) — the function existed and was called from
+  `LoadAwsEnvironment`, but no test ever exercised either branch.
+- `Service.Validate()` (database capability requires `database_name`) —
+  same situation: existed, wired into the normalizer, never tested
+  directly.
+- Discard mode (`retain_data_on_destroy: false`) for S3 (`force_destroy`)
+  and ECR (`force_delete`) — no golden example uses this setting, so the
+  entire discard branch for those two resource types was untested; only
+  the database's discard branch had coverage.
+- Permission scoping: a `Relationship` with no actual env-var reference
+  must grant nothing, and a grant must be scoped to the specific service
+  referenced, not a `Relationship`-only sibling. `InferPermissionsAndWiring`
+  never reads `Application.Relationships` at all, so this held by
+  construction — but nothing would have caught a future change that started
+  consulting it for convenience.
+
+**Real gaps that were narrower but still worth pinning (fixed):**
+- Custom `ingress.health_check.path` propagating to the target group
+  (every golden example uses the "/" default).
+- Listener-rule priority ordering by path specificity within one app, and
+  non-collision across two different apps sharing a listener (the literal
+  regression `test_two_applications_do_not_collide_on_one_listener` guards
+  against: priority was once hardcoded to 100).
+- No-explicit-`networks:` compose files producing a single flat
+  `default_sg`.
+- `AwsEnvironment.LogRetentionDays` actually overriding the 7-day default
+  when set (every prior test/example used the default).
+- `NamespaceFor`'s underscore-sanitization and mixed-case-lowercasing
+  cases (`my_app`→`my-app`, `Prod`/`App`→`prod-app`) — only 2 of Python's 5
+  parametrized cases had Go coverage before.
+- `desired_count == min_scale` pinned directly against `createEcsService`
+  for 3 cases, not only the 2 data points golden examples happened to
+  provide.
+
+18 new Go test functions added across `environment_test.go` (new file),
+`connectivity_aws_test.go`, `managed_aws_test.go`, `compute_aws_test.go`,
+and `permissions_aws_test.go`. Test count: 106 → 130. No bugs found this
+pass (unlike the porting pass itself, which found several) — this was
+explicitly a coverage-closing exercise, not a new round of feature work,
+and the absence of new bugs here is itself informative: it suggests the
+port's actual logic was already correct for these paths, only unverified.
+
+### Cutover to the Go AWS backend (2026-08-06, same day as the coverage pass)
+
+`compile_to_terraform()` (the function the CLI and nearly every AWS
+integration test actually call) now dispatches to
+`compile_to_terraform_aws_go()` for `AwsEnvironment`, instead of the Python
+inference/generator pipeline. Azure/GCP are unaffected — they still go
+through Go parser/normalizer + Python inference, exactly as before, pending
+Phase 4.
+
+`compile_application(app, env)` — the lower-level entry point that takes an
+**already-parsed** `Application` object — deliberately still calls the
+Python AWS backend for AWS environments, and is documented as doing so
+permanently, not as a remaining TODO: the Go `compile-aws` subcommand only
+accepts a raw compose file path (parse+normalize+infer+generate in one
+step, chosen specifically to avoid serializing the `Schedule` interface
+type through JSON — see the CLI subcommand design note earlier in this
+phase). There is no way to hand it a pre-built `Application` without
+re-parsing a compose file, so `compile_application` cannot cut over without
+first solving that, and doesn't try to.
+
+The CLI (`cli.py`) now calls `compile_to_terraform` directly rather than
+`parse_and_normalize_go` + `compile_application` separately, which means
+AWS compiles now parse and normalize the compose file twice (once for the
+`--explain`-style warnings step, once inside the Go subprocess) — flagged
+explicitly in a comment at the call site as a real inefficiency, not
+hidden. Not fixed this session: fixing it means teaching the Go AWS
+backend to accept pre-normalized semantic JSON, which reopens the
+Schedule-serialization problem `compile-aws`'s one-step design was chosen
+to avoid.
+
+**Verified after the cutover, not merely asserted:**
+- All 13 AWS golden examples (`tests/integration/test_golden.py`) pass
+  through the new default path.
+- 272 Python unit tests pass, including the ones that exercise
+  `compile_to_terraform` end-to-end (`test_networks.py`,
+  `test_data_retention.py`, `test_platform_config.py`,
+  `test_service_discovery.py` — 38 tests across these four files alone,
+  all now running through the Go binary rather than Python inference).
+  Tests that call `infer()`/`generate()` directly on hand-built objects
+  (`test_build.py`, `test_cdn.py`, `test_connections.py`,
+  `test_desired_count.py`, `test_ingress.py`, `test_permissions.py`,
+  `test_robustness.py`) still exercise the Python code directly, correctly
+  — that code hasn't been removed, so those tests still have something to
+  test.
+- The actual `composey` CLI binary (`python -m composey.cli main --file
+  ... --env ... --project ...`), not just pytest, run end-to-end against
+  the `hello` example, output confirmed byte-identical to
+  `examples/hello/expected/main.tf.json` via direct JSON comparison.
+- Go's own test suite (130 tests) still green, unaffected by the Python
+  side change, since the cutover only touches `composey/compiler/__init__.py`
+  and `composey/cli.py`.
+
+### Python AWS backend removed (2026-08-06, same day as the cutover)
+
+The "permanent dependency" claimed just above turned out to be wrong on
+closer inspection, not actually permanent: `compile_application(app, env)`
+had **zero live callers** for `AwsEnvironment` anywhere in the
+codebase — not the CLI, not `hybrid.py`'s own functions
+(`compile_application_hybrid`/`compile_to_terraform_hybrid` turned out to
+be dead code too, called by nothing but each other), not any test. The
+only thing standing between "cut over" and "removed" was that
+`compile_application`'s AWS branch called the Python backend even though
+nothing invoked that branch. Checked before deleting anything, not assumed.
+
+Before deleting, two genuine cross-cloud dependencies on the "AWS" files
+were found and had to be resolved first, not discovered as breakage after
+the fact:
+- `composey/compiler/explain.py` (the cloud-agnostic `--explain` reporting
+  layer, used before any environment/target is even known) imported
+  `_url_pattern` from `compiler/connections.py`. On inspection,
+  `connections.py` was never actually AWS-specific — it operates purely on
+  `models.semantic.Connection`, a cloud-agnostic type, and already lived
+  at the top level of `compiler/` alongside `generator.py`/`hybrid.py`,
+  not nested under anything AWS-specific. It was misfiled in this plan's
+  own "AWS Python to remove" list, not misfiled in the actual codebase.
+  Left in place, correctly.
+- `composey/models/azure.py` and `composey/compiler/inference/azure/__init__.py`
+  imported `DockerImage`, `DockerRegistryImage`, and `RandomPassword` from
+  `models/aws.py` — genuinely shared Terraform-provider-generic resource
+  types (Docker build/push, random password generation), reused by Azure's
+  own inference because every backend that builds from source or
+  provisions a managed database needs the same two Terraform providers.
+  Extracted to a new `composey/models/terraform_common.py` before deleting
+  `models/aws.py`, and both Azure files' imports updated. Verified via the
+  full Azure test suite (66 tests) passing before proceeding.
+
+With those two dependencies resolved, `compile_application` was changed to
+raise `NotImplementedError` for `AwsEnvironment` (pointing callers at
+`compile_to_terraform`, which already uses the Go backend), matching the
+existing else-branch's behavior for genuinely unsupported targets. Then
+removed: `composey/models/aws.py`, `composey/compiler/generator.py`,
+`composey/compiler/inference/__init__.py`, and all 6 AWS-specific
+inference modules (`_common.py`, `_compute.py`, `_connectivity.py`,
+`_edge.py`, `_managed.py`, `_permissions.py`, `_scheduling.py`) — along
+with the dead `compile_application_hybrid`/`compile_to_terraform_hybrid`
+functions in `hybrid.py`.
+
+**10 Python test files removed in the same commit** (per this phase's own
+no-wholesale-deletion rule, satisfied here because Go coverage for every
+scenario was already verified in the earlier coverage-gap pass, not
+assumed): `test_build.py`, `test_cdn.py`, `test_connections.py`,
+`test_database_name.py`, `test_desired_count.py`, `test_ingress.py`,
+`test_permissions.py`, `test_platform_settings.py`, `test_robustness.py`,
+`test_service_discovery.py` — all of them called Python's `infer()`/
+`generate()`/`resolve_value()` directly against hand-built objects, not
+through `compile_application`/`compile_to_terraform`, so they broke on
+import the moment the modules they tested were gone. `test_data_retention.py`
+and `test_networks.py`, which test the same behaviors but go through
+`compile_to_terraform` (and therefore the Go backend) rather than calling
+Python inference directly, were kept and still pass.
+
+**Verified after removal:**
+- Full import check across `cli.py`, `compiler/__init__.py`,
+  `compiler/hybrid.py`, `compiler/explain.py`, `models/azure.py`,
+  `inference/azure`, `inference/gcp`.
+- 229 Python tests pass (272 before this pass, minus the 10 removed files'
+  worth, which is consistent — nothing broke that wasn't meant to).
+- All 13 AWS golden examples still pass through `tests/integration/test_golden.py`.
+- Go's own 130-test suite unaffected (this pass touched zero Go files).
+- The actual `composey` CLI binary run end-to-end against `doctor` (the
+  most complex example: build-from-source, managed DB/cache/bucket,
+  confidential secrets), output confirmed byte-identical to
+  `examples/doctor/expected/main.tf.json`, including the Python-only
+  docker-build-context-copying step working unaffected.
+- `compile_application` confirmed to raise `NotImplementedError` with a
+  clear message for `AwsEnvironment`, rather than silently doing nothing
+  or producing wrong output.
+
+### What's still not done
+
+- **The CLI's double-parse for AWS compiles** (see the cutover section
+  above) — correctness is unaffected, but every AWS `composey` invocation
+  still runs the Go parser/normalizer twice (once for `--explain`-style
+  warnings, once inside the Go `compile-aws` subprocess).
+- **`compile_application` cannot support AWS at all**, even in principle,
+  without either teaching the Go backend to accept pre-normalized semantic
+  JSON (reopening the `Schedule`-interface serialization problem the
+  one-step CLI design was chosen to avoid) or building a second, JSON-based
+  Go entry point alongside `compile-aws`. Not attempted this session:
+  nothing currently needs `compile_application` to support AWS, so there
+  was no forcing function to solve it, and inventing one speculatively
+  would be solving a problem that doesn't exist yet.
+- **`test_assert_managed.py`, `test_cli_env.py`, `test_environment.py`,
+  `test_environment_generator.py`, `test_explain.py` were surveyed and
+  found not AWS-inference-relevant** (they test the `composey init`
+  scaffolding CLI, environment YAML loading/validation as a standalone
+  concern, and the `--explain` reporting layer respectively) — correctly
+  out of scope for this pass, not silently skipped.
 
 ---
 
-## ⬜ Phase 4: Port Azure & GCP Inference (Week 5-6) - NOT STARTED
+## ✅ Phase 4: Port Azure & GCP Inference (Week 5-6) - COMPLETE, Python removed for all three clouds
 
-### Goals
-- Port Azure resource inference
-- Port GCP resource inference
-- Multi-cloud parity
-- **Replace Python Azure/GCP inference immediately**
+### Azure: complete, Python removed (2026-08-06)
 
-### Tasks
+Ported in one session directly following Phase 3's AWS work, applying the
+exact same review discipline (real-boundary tests, coverage-gap survey
+against every existing Python test file, byte-identical golden comparison,
+cutover only after checking for zero remaining callers before deleting):
 
-**Day 1-3: Port Azure Models**
-- Port all models from models/azure.py
-- Define structs for:
-  - Container Apps
-  - PostgreSQL Flexible Server
-  - MySQL Flexible Server
-  - Redis Cache
-  - Storage Accounts
-  - Key Vault
-  - CDN
+**Ported, in `composey-go/internal/{models,compiler}/`:**
+- `models/terraform_common.go` — `DockerImage`, `DockerRegistryImage`,
+  `RandomPassword` extracted from `aws.go` into a shared file, mirroring
+  Python's own `terraform_common.py` extraction (done the same session as
+  AWS's Python-file removal): Azure's inference reuses these exact three
+  types, not AWS-specific lookalikes, matching Python's own sharing.
+- `models/azure.go` (21 resource structs) — full port of `models/azure.py`,
+  including every non-empty `default_factory` value found (the class of
+  bug AWS's `AutoScalingConfig` 70/80 default caught): `ManagedRedis`'s
+  3-key `default_database` dict, `PostgreSQLFlexibleServer`/`KeyVaultSecret`'s
+  `lifecycle.ignore_changes` defaults, `FrontDoorRoute`'s
+  `patterns_to_match`/`supported_protocols` defaults.
+- `models/environment.go` — `AzureEnvironment` added alongside the
+  existing `AwsEnvironment`. Confirmed (not assumed) that Python's model
+  carries no cross-field validator, unlike `AwsEnvironment`'s ALB check.
+- `compiler/azure_naming.go` — `hashlib.sha256(...).hexdigest()[:6]`-based
+  name-truncation logic, ported and verified byte-identical against 8
+  live Python outputs (including two long-name truncation cases) before
+  any test was written, the same discipline applied to AWS's own
+  hash-based `priority_band`.
+- `compiler/azure_infer.go`, `azure_managed.go`, `azure_compute.go`,
+  `azure_edge.go` — the full 859-line `inference/azure/__init__.py`
+  ported: managed identity, Key Vault, Container Registry + build/push,
+  PostgreSQL/MySQL Flexible Server + private networking (delegated
+  subnet + DNS zone + VNet link), Managed Redis, Blob Storage, Container
+  Apps + Jobs (scheduling), Front Door CDN.
+- `compiler/generator_azure.go` — `GenerateAzure()`.
+- `compiler/pyjson.go`/`pyordered_reflect.go` — extended with
+  `PyDumpsIndent` and a reflection-based `structToPyOrdered` converter,
+  because Azure's `json.dumps(terraform, indent=2)` has **no
+  `sort_keys=True` at all**, unlike AWS's generator — every level of the
+  entire document, not just embedded policy strings, had to preserve
+  Python's insertion order exactly. AWS's approach (round-trip through
+  `map[string]any`, rely on `sort_keys` parity) does not work here at
+  all; confirmed as a real structural difference, not an oversight, by
+  reading generator_azure.py's actual `json.dumps` call before writing
+  any Go code for it.
+- `cmd/composey/main.go` — new `compile-azure` subcommand, and
+  `composey/compiler/hybrid.py` — `compile_to_terraform_azure_go()`,
+  sharing subprocess/YAML-writing plumbing with the AWS bridge function
+  via a new `_compile_to_terraform_go()` helper rather than duplicating it.
 
-**Day 4-7: Port Azure Inference Logic**
-- Port database inference (PostgreSQL, MySQL)
-- Port cache inference (Redis)
-- Port storage inference (Blob Storage)
-- Port compute inference (Container Apps)
-- Port CDN inference
-- Port key vault and secrets management
+**Real bugs found and fixed, each via diffing actual Go output against
+actual Python output — the AWS port's own review discipline repeating,
+not degrading, on a second cloud:**
+- A stack overflow: `structToPyOrdered`'s default branch returned the
+  original (still-pointer) value instead of the dereferenced one for any
+  `*string`-typed struct field, causing infinite mutual recursion with
+  `writePyValueIndent`. Found immediately when testing against every
+  golden example at once, not just `hello`.
+- `handleBuildContext`'s build dict (`context`, `platform`, `dockerfile`)
+  used a plain `map[string]any`, which is fine for AWS (whose generator
+  sorts keys anyway) but wrong for Azure: Python's own dict literal
+  states `context`/`platform` first and appends `dockerfile` last, and
+  Azure's generator has nothing to fall back on to fix the order.
+- `_container_spec`'s Postgres-URL env-var substitution used Go's zero
+  values (empty string, `0`) for a `Connection`'s unset optional fields,
+  but Python's f-string renders the literal string `"None"` for an unset
+  field (`str(None) == "None"`) — confirmed by actually running the
+  equivalent Python f-string, not assumed. Ported bug-for-bug per this
+  phase's own decision: a Redis/Storage connection substituted into this
+  Postgres-shaped template produces a nonsensical URL in both languages
+  now, identically, rather than being silently fixed only in Go.
+- Connection ordering: Go's `connections` map has no defined iteration
+  order, but Python's dict-merge (`_infer_databases()` then
+  `.update(cache_connections)` then `.update(storage_connections)`)
+  fixes a specific insertion order that determines which `_URL` env var
+  comes first when a service references more than one connection.
+  Alphabetically sorting the keys (the AWS port's own convention for
+  determinism) produced a different, wrong order for `doctor` and
+  `production-stack`. Fixed with an explicit `connectionOrderForAzure()`
+  that reproduces Python's exact merge order.
 
-**Day 8-10: Port GCP Models & Inference**
-- Port all models from models/gcp.py
-- Define structs for:
-  - Cloud Run services
-  - Cloud SQL instances
-  - Memorystore (Redis)
-  - Cloud Storage buckets
-- Port GCP inference logic
+**Coverage-gap survey** (mirroring the AWS phase's own dedicated pass):
+cross-checked all 66 scenarios across the 8 Azure Python test files
+against the Go suite. Found 16 genuinely uncovered and 6 partially
+covered — the two largest gaps were the entire MySQL code path (every
+"mysql"-named golden example actually uses `mariadb` images, which
+`isMySQLImage` classifies as Postgres, so the true MySQL branch had zero
+coverage anywhere) and the entire private-networking/delegated-subnet/DNS
+-zone path (the golden fixture never sets subnet IDs, so
+`privateNetworkingAzure`'s non-fallback branch was dead code as far as
+tests were concerned) — plus Azure's own `RateSchedule`→cron conversion
+and its rejection error paths, untested in either direction. All 16+6
+closed with 19 new Go tests in `azure_coverage_test.go`.
 
-**Day 11-12: Integration & Deployment**
-- Test all Azure examples with Go pipeline
-- Test all GCP examples with Go pipeline
-- Remove Python Azure/GCP inference/generator files
+**Cutover and removal, same day:** `compile_to_terraform` now dispatches
+to the Go Azure backend for `AzureEnvironment`, exactly like AWS.
+`compile_application`'s Azure branch was confirmed to have zero live
+callers (same check performed for AWS) before being changed to raise
+`NotImplementedError`. Then removed: `composey/models/azure.py`,
+`composey/compiler/generator_azure.py`,
+`composey/compiler/inference/azure/{__init__.py,naming.py}`, and the 8
+Python test files that called `infer()`/`generate()` directly against
+hand-built objects. `environment_generator.py` (the *platform* bootstrap
+Terraform generator, a different module) was checked first and confirmed
+to have no dependency on any of these files.
+
+**Verified:** all 10 Azure golden examples pass through
+`TestInferAzure_GoldenExamplesByteIdentical` (structural JSON) and
+`TestGenerateAzure_ByteIdentical` (true byte-for-byte, since Azure's own
+key ordering is load-bearing unlike AWS's); 165 Go tests total; 173
+Python tests pass after removal (209 collected, 66 Azure-specific ones
+gone, none of the removed 8 files' scenarios lost — each was confirmed
+covered by an equivalent Go test before deletion); a real CLI invocation
+against `doctor` (build-from-source, Postgres/MySQL-adjacent database,
+confidential secrets) produced byte-identical output to the golden file
+after the Python files were gone, not just before.
+
+### GCP: complete, Python removed (2026-08-06), deliberately lighter verification
+
+Ported the same day as Azure, at explicit user direction to move fast and
+accept lower rigor: GCP "has never been tested IRL," so this port was not
+held to the AWS/Azure standard of a coverage-gap survey against an
+existing Python test suite -- because no such suite exists to survey.
+Documented as a deliberate scope decision, not a shortcut taken silently:
+
+**Ported, in `composey-go/internal/{models,compiler}/`:**
+- `models/gcp.go` (18 resource structs) — direct port of `models/gcp.py`,
+  including one genuinely surprising finding worth flagging: Python's
+  `GcpResources.random_password` field is typed `Dict[str, Any]`, and
+  `_infer_databases` assigns a **bare `{"length": 20}` dict literal**, not
+  a `RandomPassword` model instance — unlike AWS/Azure, which both do
+  construct a real `RandomPassword`. Reproduced exactly (`map[string]any`
+  on `GcpResources.RandomPassword`, not `map[string]models.RandomPassword`)
+  rather than assumed to follow the AWS/Azure pattern, which would have
+  been wrong here specifically.
+- `compiler/infer_gcp.go` — the full 379-line `inference/gcp/__init__.py`
+  ported: VPC connector, one **shared** Cloud SQL instance for every
+  database-capability service (a real structural difference from AWS/
+  Azure's one-server-per-engine approach, ported as-is, not "fixed"),
+  Memorystore Redis, Cloud Storage, Cloud Run services. The load-balancer
+  step (`_infer_load_balancer`) is a documented Python no-op ("TODO:
+  Implement if cdn_enabled or custom domain needed") and was not ported
+  as a stub, since there's nothing to port.
+- `compiler/generator_gcp.go` — `GenerateGcp()`. Same `PyDumpsIndent`
+  approach as Azure (GCP's own `json.dumps` also has no `sort_keys=True`).
+  One real structural difference from AWS/Azure worth pinning directly
+  (and pinned, in `TestGenerateGcp_AlwaysWiresDockerAndRandomProviders`):
+  GCP's provider block unconditionally includes `docker`/`random`,
+  regardless of whether anything builds an image or generates a password
+  — unlike AWS/Azure's conditional wiring.
+- `cmd/composey/main.go` — `compile-gcp` subcommand; `hybrid.py` —
+  `compile_to_terraform_gcp_go()`, sharing the same subprocess plumbing as
+  AWS/Azure.
+
+**Real bugs found and fixed** — same review discipline applied at smaller
+scale (sanity-checking against a handful of hand-run Python outputs for
+`hello`/`doctor`/`flask-redis`/`minio-s3`/`production-stack`/
+`nginx-flask-mysql`, not an exhaustive golden-example suite, since none
+exists):
+- The `random_password` dict-vs-model discrepancy above.
+- `StorageBucket.Versioning`'s `default_factory=lambda: {"enabled":
+  False}` was initially left as Go's `nil` zero value, rendering JSON
+  `null` instead of `{"enabled": false}`.
+- Connection ordering: the exact same bug class Azure's port hit
+  (Python's dict-merge order — databases, then caches, then storage — not
+  reproduced by iterating a Go map directly), caught the same way, fixed
+  the same way (`connectionOrderForGcp`).
+
+**Verification, explicitly lighter than AWS/Azure:** no golden files exist
+to commit as a permanent regression test (none existed in Python to
+begin with), so `TestGcp_ByteIdenticalAgainstPython` pins one example's
+exact output as a literal string in the test file rather than reading a
+committed golden JSON file, and `TestInferGcp_RealExamplesProduceValidJSON`
+checks structural validity (a `resource` key, a `provider.google` key)
+across 6 real examples rather than byte-identity against all of them.
+Byte-identity against live Python was checked manually during the port
+for those 6 examples (hello, doctor, flask-redis, minio-s3,
+production-stack, nginx-flask-mysql) — real evidence the port is correct
+for those cases, but a one-time check, not a repeatable regression test
+the way AWS/Azure's golden-file comparisons are. Cut over the same way as
+AWS/Azure (`compile_application`'s GCP branch confirmed to have zero live
+callers before being folded into a single generic `NotImplementedError`
+across all three clouds), then `models/gcp.py`, `generator_gcp.py`, and
+`inference/gcp/__init__.py` removed — no dependent Python test files
+existed to remove alongside them, confirming the "never tested IRL"
+starting point was accurate.
 
 ### Checkpoint
 - ✅ Azure inference complete
-- ✅ GCP inference complete
-- ✅ Output matches Python for all clouds
-- ✅ Multi-cloud tests pass
-- ✅ **Full Go compiler in production**
+- ✅ GCP inference complete (lighter verification, by deliberate choice)
+- ✅ Output matches Python for all three clouds
+- ✅ Multi-cloud tests pass (Azure: golden + 66-scenario survey; GCP: 6
+  real-example smoke tests + one pinned byte-identical case, reflecting
+  GCP's own much smaller pre-existing test surface, not a lapse in this
+  pass)
+- ✅ **Full Go compiler in production** for AWS, Azure, and GCP — no
+  Python inference/generator code remains for any cloud target
 
 ---
 
-## ⬜ Phase 5: Build CLI (Week 6) - NOT STARTED
+## ✅ Phase 5: Build CLI (Week 6) - COMPLETE, Python fully removed
 
-### Goals
-- Complete standalone Go CLI
-- Proper error handling and user experience
-- Match Python CLI functionality
-- **Replace Python CLI with Go binary**
+### What's actually done (2026-08-06)
 
-### Tasks
+Ported the full Python CLI surface to Go in the same session as Phase 4,
+applying the same discipline (byte-identical verification against live
+Python runs, coverage-gap survey against the existing Python test suite,
+real bugs found and fixed by diffing actual output):
 
-**Day 1-2: Set Up Cobra CLI**
-- Define root command
-- Add all flags (file, env, project, out, explain, version)
-- Implement version command
-- Add bash/zsh completion generation
+**Ported, in `composey-go/{internal/compiler,cmd/composey}/`:**
+- `internal/compiler/explain.go` — the full 410-line `compiler/explain.py`
+  ported, including **both** branches (with and without the raw compose
+  model), even though every current Python caller only ever uses the
+  without-branch (`docker_app=None`) — the Python parser that could
+  produce a `docker_app` was removed in Phase 2, so that branch is
+  presently dead code in both languages. Ported for fidelity per explicit
+  direction, not left half-done, and verified working (not just
+  compiling) via a real `ComposeApplication` built from `ParseCompose`
+  directly, which the Python side has no way to construct anymore.
+- `internal/compiler/errors.go` — `ComposeyError`, deliberately not a full
+  nine-subclass exception hierarchy: none of Python's `ValidationError`/
+  `CompilationError`/`InferenceError`/etc. subclasses are ever
+  discriminated on by type in `cli.py`'s exception handling, only the
+  base `ComposeyError` is — porting nine unused subclasses would have
+  replicated API surface nothing calls, not behavior.
+- `internal/compiler/environment.go` — `LoadEnvironment`, the
+  target-based dispatcher mirroring `environment.py`'s `load_environment`
+  (defaults to "aws" when unset, dispatches to the right cloud-specific
+  loader, rejects unsupported targets).
+- `internal/compiler/environment_generator.go` (650+ lines) — the full
+  `environment_generator.py` ported: `GenerateAwsEnvironment` (VPC,
+  subnets, NAT gateways, ALB, ECS cluster — the largest and most
+  structurally complex generator in the whole codebase),
+  `GenerateAzureEnvironment` (Resource Group, Log Analytics, VNet with 3
+  delegated subnets, Container Apps Environment),
+  `GenerateGcpEnvironment` (VPC Network, subnet, VPC connector, service
+  networking connection).
+- `internal/compiler/environment_yaml.go` — `GenerateEnvironmentYAML`,
+  including a hand-written PyYAML-compatible scalar-quoting function
+  (`pyYAMLScalar`) verified against live `yaml.dump()` output rather than
+  assumed from the YAML spec.
+- `cmd/composey/compile.go` — the `main` compile command: parse,
+  normalize, `--explain`, warnings reporting, compile, write, and Docker
+  build-context copying.
+- `cmd/composey/init.go` — the `init` command: bootstraps shared platform
+  infrastructure for all three clouds.
 
-**Day 3-4: Implement Compile Command**
-- Wire up: parse → normalize → compile → write
-- Add progress output
-- Handle errors gracefully
-- Write Terraform JSON to output directory
+**Real bugs found and fixed**, each caught by diffing actual Go output
+against actual Python output rather than trusting the port:
+- `explain.go`'s quoting used Go's `%q` (double-quoted) where Python's
+  `!r` uses single quotes throughout every message this file builds —
+  caught immediately on the first real comparison, fixed with a `pyRepr`
+  helper applied consistently rather than patched at each call site
+  individually.
+- `environment_yaml.go`'s initial version emitted every value unquoted.
+  PyYAML actually quotes a scalar when it contains `": "` (colon-space)
+  or ends with `:`, or resolves to a reserved word (`true`/`false`/
+  `null`/etc.) — confirmed against a live `yaml.dump()` run for several
+  cases (including that an ARN's colons, never followed by a space,
+  correctly stay unquoted) before writing the quoting logic, not
+  discovered by trial and error afterward.
 
-**Day 5-6: Implement Explain Command**
-- Port full explain logic
-- Format output for terminal
-- Show inference decisions
-- Display warnings
+**Coverage-gap survey** (same discipline as AWS/Azure): a dedicated pass
+read all 3 relevant Python test files (`test_explain.py`,
+`test_environment_generator.py`, `test_cli_env.py` — ~1,195 lines, 79
+test functions total) and cross-checked every scenario against the Go
+suite. Found real gaps and closed them: `explain()`'s successful-wiring
+decision text, empty-secret warnings, inferred-vs-declared capability
+reporting, Dockerfile-path reporting, and the "worth checking" warnings-
+present render branch were all previously untested in Go; the AWS
+environment generator's ECS cluster/capacity-provider/NAT-gateway/
+security-group resource presence, non-default AZ count, non-default VPC
+CIDR, hyphenated names, `retain_data_on_destroy=false`, and every ALB
+output field were untested; Azure's resource-group/workspace/VNet/
+container-app-environment presence and subnet delegation detail were
+untested; GCP's subnetwork/service-networking resources and output
+fields were untested. All closed with new tests, verified passing.
+`environmentTarget`/`compileTerraform`/`copyDir`/`copyDockerBuildContexts`
+in `cmd/composey` (previously zero test coverage anywhere, Go or Python,
+since Typer's `CliRunner`-based tests don't have a Go analog for
+`os.Exit`-calling command handlers) got direct unit tests instead,
+following the same pattern `compile.go` already used for pure-function
+extraction.
 
-**Day 7: Environment Loading**
-- Parse environment YAML files in Go
-- Load AWS/Azure/GCP environment configs
-- Validate environment schema
-- Handle missing fields
+**Not refactored for testability:** `init.go`'s inline provider-
+validation/tags-parsing/region-defaulting logic still calls `os.Exit`
+directly rather than being extracted into pure functions the way
+`compile.go`'s `environmentTarget`/`compileTerraform` are — a deliberate
+choice (not an oversight) given the low complexity of that specific glue
+code versus the indirection a refactor would add, made explicitly rather
+than assumed.
+
+**Verified:** 225 Go tests pass across `internal/compiler`,
+`internal/models`, and (newly) `cmd/composey`. Real end-to-end CLI runs
+(not just `go test`) for `main --explain`, `main` with AWS/GCP
+environments (byte-identical output to golden files), and `init` for all
+three clouds, confirmed working after the port, including Docker
+build-context copying for the `doctor` example.
+
+### Python fully removed (2026-08-06, same session as the CLI port)
+
+Before deleting anything, the Go CLI was verified to be a complete
+replacement, not just a plausible one: every example in `examples/` was
+run through `composey-go`'s `main` command directly (no Python, no
+`uv run`, no subprocess bridge) for AWS, Azure, and GCP, and every output
+matched the corresponding `expected/` golden file exactly. Only after
+that did removal proceed.
+
+**Removed:**
+- The entire `composey/` Python package (32 source files: `cli.py`,
+  `cli_env.py`, `compiler/` including all AWS/Azure/GCP inference and
+  generator modules, `models/`, `constants.py`, `exceptions.py`,
+  `environment_generator.py`) — all of it either already dead (superseded
+  in Phases 3/4) or, for the CLI files specifically, verified redundant
+  in this pass.
+- The entire `tests/` directory (30+ Python test files) — nothing left
+  to test once the module tree they tested was gone.
+- `pyproject.toml`, `uv.lock`, and the local `.venv` — no Python runtime
+  dependency remains anywhere in the repository.
+
+**Updated, not deleted, since they still have a real job:**
+- `scripts/smoke-test.sh` / `scripts/smoke-test-azure.sh` — real-AWS/
+  real-Azure end-to-end acceptance scripts. Previously called `uv run
+  composey`; now build `composey-go` fresh and call that binary directly.
+  Also dropped the `docker-compose-v2` apt step both scripts had, which
+  existed for the old Python parser's `docker compose config` shell-out
+  — the Go parser uses `compose-go` as a library, with no CLI dependency,
+  so nothing in either script actually needed it once checked.
+- `.github/workflows/ci.yml` — rewritten to set up Go only (`go vet`,
+  `go test`, a build step), with the `uv`/ruff/pytest steps removed
+  entirely rather than left disabled.
+- `.github/workflows/acceptance.yml` / `azure-acceptance.yml` — swapped
+  their `uv`/Python setup steps for a Go setup step; the workflows
+  themselves still just call the (now Go-calling) smoke-test scripts.
+- `Makefile` — `format`/`vet`/`test`/`build` targets now run `gofmt`/
+  `go vet`/`go test`/`go build` against `composey-go`, replacing the
+  `uv run ruff`/`uv run pytest` targets.
+- `README.md` — installation instructions, the "Quick Start" flow, the
+  `--explain` example output, and the "Project Status" footer updated to
+  match the actual Go CLI (`composey main`/`composey init`/`--explain`
+  flag) rather than the aspirational `composey up --provider aws`/
+  `composey explain` shape the README described but that was never built
+  in either language. The rest of the README (mission statement,
+  philosophy, feature descriptions) was left alone — a targeted fix, not
+  a full rewrite, per an explicit scoping decision for this pass.
+- `AGENTS.md` — fully rewritten. It described the old Python architecture
+  end to end (Pydantic models, Typer CLI, `uv`/pytest workflow); every
+  section now describes the actual Go codebase structure, error-handling
+  convention (`ComposeyError`), and testing/debugging commands.
+
+**Deleted outright, not updated:**
+- `scripts/compare-clouds.py` — imported `composey.compiler` directly
+  (the package being removed), had a hardcoded absolute path, and
+  contained a pre-existing Python 3 syntax error (`except KeyError,
+  TypeError:`, invalid since Python 3.0) meaning it did not actually run
+  before this pass either. Not worth porting a broken one-off dev script.
+
+**Left alone, deliberately:**
+- `scripts/assert_managed.py` — pure-stdlib Python (`json`, `sys` only),
+  reads `terraform show -json` from stdin. No dependency on the removed
+  `composey` package, so it keeps working unmodified; Python isn't being
+  eliminated from the *repository's tooling*, only from the *product*
+  itself.
+- `ci/` (real Terraform state for acceptance-test infrastructure) and
+  `docs/` (design docs) — unrelated to the Python/Go question entirely.
+
+**Verified after removal:** `go build`/`go test`/`go vet` all pass;
+`make build`/`make test` (the new Makefile) work; every example in
+`examples/` re-verified byte-identical against its golden file through
+the `make`-built binary specifically (not a binary built by some other
+means earlier in the session), for AWS, Azure, and GCP.
+
+### What's still not done
+
+- **No installable distribution.** There is no `pip install composey`,
+  `brew install composey`, or downloadable release binary — building
+  from source with `go build` is the only install path today. This is
+  explicitly Phase 6's scope, not a gap in this phase.
+- **No bash/zsh completion generation.** Cobra supports this natively
+  (`rootCmd.GenBashCompletion`, etc.) but it was not wired up in this
+  pass — a small remaining task, not a structural gap.
+- **`init.go` not refactored for direct unit-testability** (deliberate,
+  per the earlier decision in this phase — see the CLI port notes above).
 
 ### Checkpoint
-- ✅ Full standalone Go CLI works
-- ✅ All commands functional
-- ✅ Error messages helpful
-- ✅ Version and help text correct
-- ✅ **Python CLI no longer needed**
+- ✅ Full standalone Go CLI works (`main`, `init`, `parse`, `normalize`,
+  `compile-aws`/`compile-azure`/`compile-gcp`, `version`)
+- ✅ All commands functional, verified via real end-to-end runs
+- ✅ Error messages match Python's wording (missing --env, missing
+  compose file, invalid --tags JSON, unsupported provider)
+- ✅ Version and help text present (version differs deliberately from
+  Python's package version — the Go binary versions independently)
+- ✅ **Python CLI no longer needed** — and, going further than the
+  original checkpoint asked, no longer present: the Python package,
+  its test suite, and its packaging metadata are gone. CI, smoke-test
+  scripts, the Makefile, README, and AGENTS.md were all updated to match
+  rather than left pointing at deleted code.
 
 ---
 
@@ -673,17 +1327,51 @@ Instead of running Python and Go in parallel for months:
 | Week 1: Preparation | 10 hrs | ✅ Complete | Setup, testing, harness |
 | Week 2: Parser | 15 hrs | ✅ Complete | compose-go integration |
 | Week 3: Normalizer | 15 hrs + ~6 hrs hardening | ✅ Complete | Logic port, **Python removed**; three silent bugs found and fixed by a follow-up idiom/integration review, not caught by the original checkpoint's own tests |
-| Week 4-5: AWS | 20 hrs (likely optimistic — see Phase 3's scope note; ~3.7x Phase 2's code volume budgeted at roughly the same hours/line Phase 2 needed *before* its hardening pass) | ⬜ Pending | Inference + generation |
-| Week 5-6: Azure/GCP | 15 hrs | ⬜ Pending | Multi-cloud |
-| Week 6: CLI | 10 hrs | ⬜ Pending | Standalone Go CLI |
+| Week 4-5: AWS | 20 hrs budgeted (see Phase 3's scope note); inference+generator+CLI+bridge ported, coverage-gap-surveyed against all 13 relevant Python test files (130 Go tests), cut over as the default `compile_to_terraform` AWS path, then Python AWS backend fully removed (`models/aws.py`, `generator.py`, 6 inference modules, 10 dependent test files) once `compile_application`'s AWS branch was confirmed to have zero live callers | ✅ Complete, Python removed | Inference + generation |
+| Week 5-6: Azure/GCP | 15 hrs budgeted; both completed same day as AWS. Azure: models+naming+inference+generator+CLI+bridge ported, 66-scenario coverage-gap-surveyed, cut over, Python removed. GCP: same pipeline ported at explicit lighter-rigor direction (no pre-existing Python test suite to survey against), sanity-checked against 6 hand-run Python outputs rather than an exhaustive golden-example set, cut over, Python removed | ✅ Complete, Python removed (both clouds) | Multi-cloud |
+| Week 6: CLI | 10 hrs budgeted; full CLI ported same session as Phase 4 (explain, environment generators for all 3 clouds, main compile command, init command), coverage-gap-surveyed against 79 Python test functions across 3 test files, real bugs found (quoting mismatches) and fixed, then the entire Python package/test suite/pyproject.toml removed once verified redundant across all 13+ examples for all 3 clouds; CI, smoke-test scripts, Makefile, README, and AGENTS.md all updated to match | ✅ Complete, Python fully removed | Standalone Go CLI |
 | Week 7: Distribution | 10 hrs | ⬜ Pending | Build, release, docs |
-| **Total** | **~101 hrs** | **42% Complete** | **~7 weeks part-time** |
+| **Total** | **~101 hrs** | **~86% Complete** | **~7 weeks part-time** |
 
 **Progress:** Phase 0-2 complete (40%), Python parser/normalizer removed, Go
-in production. Phase 2 required a follow-up hardening pass after its
+in production. **Phase 3 complete (2026-08-06):** AWS inference/generator
+ported, coverage-surveyed against all 13 relevant Python test files (130 Go
+tests), cut over as the default `compile_to_terraform` AWS path, then the
+Python AWS backend fully removed once `compile_application`'s AWS branch was
+confirmed to have zero live callers (not assumed — checked). Two genuine
+cross-cloud dependencies (`explain.py`'s use of `connections.py`,
+Azure's reuse of `DockerImage`/`DockerRegistryImage`/`RandomPassword` from
+`models/aws.py`) were found and resolved — the latter extracted to
+`models/terraform_common.py` — before deleting anything, not discovered as
+breakage afterward. Verified via 229 passing Python unit tests, all 13
+golden examples, and a real CLI invocation against the most complex example
+(`doctor`) after removal. **Phase 4 complete, same session (2026-08-06):**
+Azure got the same discipline as AWS — naming/hashing logic verified
+against live Python output before any test was written, a 66-scenario
+coverage-gap survey found and closed real gaps (the entire MySQL code path
+and the entire private-networking/delegated-subnet path had zero test
+coverage anywhere before this pass), a real stack overflow and three
+genuine ordering/formatting divergences were found and fixed by diffing
+actual output rather than trusting the port, and the Python Azure backend
+was fully removed the same day once confirmed to have no remaining
+callers. **GCP was ported the same session at explicit user direction to
+move fast, given it "has never been tested IRL"** — deliberately lighter
+verification (no golden-example suite exists to survey, so none was
+built from scratch either; sanity-checked against 6 hand-run Python
+outputs instead), but the same fundamentals still applied: real bugs
+found by diffing actual output (a `random_password` dict-vs-model
+discrepancy, a missing `versioning` default, the same connection-ordering
+bug class Azure hit), and the Python GCP backend removed the same day
+once confirmed to have zero remaining callers and zero dependent test
+files to worry about breaking. All three cloud targets now compile
+entirely through Go, with zero Python inference/generator code remaining
+for any of them. Phase 2 required a follow-up hardening pass after its
 original checkpoint — see Phase 2's "what 'complete' actually meant"
 section above before treating any future phase's checkpoint as sufficient
-on its own.
+on its own; Phase 3/4's own coverage-gap surveys (and, for GCP, its
+explicitly-scoped-down equivalent) exist specifically to have done that
+follow-up review before the checkpoint rather than after it.
+
 
 ---
 
@@ -889,13 +1577,21 @@ any of Phase 2's own fixes (named-volume rejection, env_file/config
 splitting, deterministic ordering) against real compose files after
 migrating, not just that the existing tests still passed.
 
-**Phase 3: AWS Inference & Generator**
-- Port AWS inference logic to Go
-- Port Terraform generator to Go
-- Test and replace Python AWS code
-- Verify against the real parser/inference boundary at every step, not
-  just against golden files copied from the Python version — Phase 2's
-  actual lesson, not just its checkpoint
+**Phase 3: AWS Inference & Generator — inference ported and verified,
+cutover not done (2026-08-06)**
+
+Full detail lives with Phase 3's own section above (models, generator,
+every inference module, the new `compile-aws` CLI subcommand, the
+`compile_to_terraform_aws_go()` Python bridge, all bugs found and fixed,
+and what's explicitly still not done); not duplicated here a second time.
+Short version: all 6 inference modules plus `connections.py` are ported,
+verified against all 13 AWS golden examples and 106 new Go tests, and
+callable end-to-end from Python — but the Python AWS backend is still
+what actually runs by default, and the ~21 Python unit test files for
+inference/generation have not been individually checked for Go-side
+coverage. Do not read "inference ported" as "phase complete": that is
+precisely the gap this update exists to keep visible rather than round up.
+
 - Target: Week 4-5
 
 ---

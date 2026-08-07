@@ -1,6 +1,11 @@
 format:
-	uv run ruff format .
-	uv run ruff check . --fix --extend-select I
+	cd composey-go && gofmt -w .
+
+vet:
+	cd composey-go && go vet ./...
 
 test:
-	uv run pytest
+	cd composey-go && go test ./...
+
+build:
+	cd composey-go && go build -o composey ./cmd/composey

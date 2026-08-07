@@ -1,22 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {}
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -28,20 +10,43 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "random": {}
+  },
   "resource": {
     "azurerm_container_app": {
       "web": {
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 5000,
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
         "name": "prod-flask-s3-web",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [
             {
-              "name": "web",
-              "image": "flask-app",
               "cpu": 0.25,
-              "memory": "0.5Gi",
               "env": [
                 {
                   "name": "BUCKET_NAME",
@@ -55,67 +60,64 @@
                   "name": "BLOBS_URL",
                   "value": "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
                 }
-              ]
+              ],
+              "image": "flask-app",
+              "memory": "0.5Gi",
+              "name": "web"
             }
           ],
-          "min_replicas": 1,
-          "max_replicas": 1,
           "http_scale_rule": [
             {
-              "name": "http-default",
-              "concurrent_requests": "100"
+              "concurrent_requests": "100",
+              "name": "http-default"
             }
-          ]
-        },
-        "ingress": {
-          "external_enabled": true,
-          "target_port": 5000,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
-          }
-        },
-        "identity": {
-          "type": "SystemAssigned"
+          ],
+          "max_replicas": 1,
+          "min_replicas": 1
         }
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-flask-s3-kv",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-flask-s3-kv",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     },
     "azurerm_storage_account": {
       "blobs_storage": {
-        "name": "prodflasks3blobs",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "account_tier": "Standard",
-        "account_replication_type": "LRS",
         "account_kind": "StorageV2",
+        "account_replication_type": "LRS",
+        "account_tier": "Standard",
+        "https_traffic_only_enabled": true,
+        "location": "eastus",
         "min_tls_version": "TLS1_2",
-        "https_traffic_only_enabled": true
+        "name": "prodflasks3blobs",
+        "resource_group_name": "prod"
       }
     },
     "azurerm_storage_container": {
       "blobs_container": {
+        "container_access_type": "private",
         "name": "blobs",
-        "storage_account_name": "${azurerm_storage_account.blobs_storage.name}",
-        "container_access_type": "private"
+        "storage_account_name": "${azurerm_storage_account.blobs_storage.name}"
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

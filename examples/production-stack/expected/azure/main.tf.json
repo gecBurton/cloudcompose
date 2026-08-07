@@ -1,22 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {}
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -28,20 +10,93 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "random": {}
+  },
   "resource": {
+    "azurerm_cdn_frontdoor_endpoint": {
+      "web": {
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
+        "name": "prod-production-stack-web-fd"
+      }
+    },
+    "azurerm_cdn_frontdoor_origin": {
+      "web": {
+        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
+        "certificate_name_check_enabled": true,
+        "host_name": "${azurerm_container_app.web.ingress[0].fqdn}",
+        "http_port": 80,
+        "https_port": 443,
+        "name": "web",
+        "origin_host_header": "${azurerm_container_app.web.ingress[0].fqdn}"
+      }
+    },
+    "azurerm_cdn_frontdoor_origin_group": {
+      "web": {
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
+        "load_balancing": {},
+        "name": "web"
+      }
+    },
+    "azurerm_cdn_frontdoor_profile": {
+      "main": {
+        "name": "prod-production-stack-fd",
+        "resource_group_name": "prod",
+        "sku_name": "Standard_AzureFrontDoor"
+      }
+    },
+    "azurerm_cdn_frontdoor_route": {
+      "web": {
+        "cdn_frontdoor_endpoint_id": "${azurerm_cdn_frontdoor_endpoint.web.id}",
+        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
+        "cdn_frontdoor_origin_ids": [
+          "${azurerm_cdn_frontdoor_origin.web.id}"
+        ],
+        "forwarding_protocol": "HttpsOnly",
+        "https_redirect_enabled": true,
+        "name": "default",
+        "patterns_to_match": [
+          "/*"
+        ],
+        "supported_protocols": [
+          "Http",
+          "Https"
+        ]
+      }
+    },
     "azurerm_container_app": {
       "web": {
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 80,
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
         "name": "prod-production-stack-web",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [
             {
-              "name": "web",
-              "image": "nginx:latest",
               "cpu": 0.5,
-              "memory": "1Gi",
               "env": [
                 {
                   "name": "DB_HOST",
@@ -59,40 +114,34 @@
                   "name": "CACHE_URL",
                   "value": "postgresql://None:${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.cache_redis.hostname}:10000/None"
                 }
-              ]
+              ],
+              "image": "nginx:latest",
+              "memory": "1Gi",
+              "name": "web"
             }
           ],
-          "min_replicas": 2,
-          "max_replicas": 10,
           "http_scale_rule": [
             {
-              "name": "http-default",
-              "concurrent_requests": "100"
+              "concurrent_requests": "100",
+              "name": "http-default"
             }
-          ]
-        },
-        "ingress": {
-          "external_enabled": true,
-          "target_port": 80,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
-          }
-        },
-        "identity": {
-          "type": "SystemAssigned"
+          ],
+          "max_replicas": 10,
+          "min_replicas": 2
         }
       }
     },
     "azurerm_container_app_job": {
       "cleanup": {
-        "name": "prod-production-stack-cleanup",
-        "resource_group_name": "prod",
-        "location": "eastus",
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
-        "replica_timeout_in_seconds": 1800,
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "location": "eastus",
+        "name": "prod-production-stack-cleanup",
         "replica_retry_limit": 1,
+        "replica_timeout_in_seconds": 1800,
+        "resource_group_name": "prod",
         "schedule_trigger_config": [
           {
             "cron_expression": "0 2 * * *"
@@ -102,125 +151,72 @@
           {
             "container": [
               {
-                "name": "cleanup",
-                "image": "busybox",
-                "cpu": 0.25,
-                "memory": "0.5Gi",
                 "args": [
                   "echo",
                   "cleaning up..."
                 ],
-                "env": []
+                "cpu": 0.25,
+                "env": [],
+                "image": "busybox",
+                "memory": "0.5Gi",
+                "name": "cleanup"
               }
             ]
           }
-        ],
-        "identity": {
-          "type": "SystemAssigned"
-        }
-      }
-    },
-    "azurerm_postgresql_flexible_server": {
-      "main": {
-        "name": "prod-production-stack-pg",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "version": "14",
-        "sku_name": "B_Standard_B1ms",
-        "storage_mb": 32768,
-        "administrator_login": "composey",
-        "administrator_password": "${random_password.postgres_admin.result}",
-        "public_network_access_enabled": true,
-        "lifecycle": {
-          "ignore_changes": [
-            "zone"
-          ]
-        }
-      }
-    },
-    "azurerm_postgresql_flexible_server_database": {
-      "db_db": {
-        "name": "production_stack_db",
-        "server_id": "${azurerm_postgresql_flexible_server.main.id}",
-        "charset": "UTF8",
-        "collation": "en_US.utf8"
+        ]
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-production-stack-kv",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-production-stack-kv",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     },
     "azurerm_managed_redis": {
       "cache_redis": {
-        "name": "prod-production-stack-cache",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "sku_name": "Balanced_B0",
-        "high_availability_enabled": false,
         "default_database": [
           {
             "access_keys_authentication_enabled": true,
             "client_protocol": "Encrypted",
             "eviction_policy": "AllKeysLRU"
           }
-        ]
-      }
-    },
-    "azurerm_cdn_frontdoor_profile": {
-      "main": {
-        "name": "prod-production-stack-fd",
+        ],
+        "high_availability_enabled": false,
+        "location": "eastus",
+        "name": "prod-production-stack-cache",
         "resource_group_name": "prod",
-        "sku_name": "Standard_AzureFrontDoor"
+        "sku_name": "Balanced_B0"
       }
     },
-    "azurerm_cdn_frontdoor_endpoint": {
-      "web": {
-        "name": "prod-production-stack-web-fd",
-        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}"
+    "azurerm_postgresql_flexible_server": {
+      "main": {
+        "administrator_login": "composey",
+        "administrator_password": "${random_password.postgres_admin.result}",
+        "lifecycle": {
+          "ignore_changes": [
+            "zone"
+          ]
+        },
+        "location": "eastus",
+        "name": "prod-production-stack-pg",
+        "public_network_access_enabled": true,
+        "resource_group_name": "prod",
+        "sku_name": "B_Standard_B1ms",
+        "storage_mb": 32768,
+        "version": "14"
       }
     },
-    "azurerm_cdn_frontdoor_origin_group": {
-      "web": {
-        "name": "web",
-        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
-        "load_balancing": {}
-      }
-    },
-    "azurerm_cdn_frontdoor_origin": {
-      "web": {
-        "name": "web",
-        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
-        "host_name": "${azurerm_container_app.web.ingress[0].fqdn}",
-        "certificate_name_check_enabled": true,
-        "origin_host_header": "${azurerm_container_app.web.ingress[0].fqdn}",
-        "http_port": 80,
-        "https_port": 443
-      }
-    },
-    "azurerm_cdn_frontdoor_route": {
-      "web": {
-        "name": "default",
-        "cdn_frontdoor_endpoint_id": "${azurerm_cdn_frontdoor_endpoint.web.id}",
-        "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
-        "cdn_frontdoor_origin_ids": [
-          "${azurerm_cdn_frontdoor_origin.web.id}"
-        ],
-        "patterns_to_match": [
-          "/*"
-        ],
-        "supported_protocols": [
-          "Http",
-          "Https"
-        ],
-        "forwarding_protocol": "HttpsOnly",
-        "https_redirect_enabled": true
+    "azurerm_postgresql_flexible_server_database": {
+      "db_db": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8",
+        "name": "production_stack_db",
+        "server_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
     "random_password": {
@@ -230,10 +226,16 @@
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

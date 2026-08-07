@@ -1459,6 +1459,87 @@ strict three-tier layout —
 
 ---
 
+## ✅ Terraform Schema Verification Tool (`cmd/schema-check`, 2026-08-07) - COMPLETE
+
+Prompted by a user question ("are we using Terraform as well as we
+could — could we use its API more directly, or to write the JSON for
+us?"). Investigated and rejected two alternatives before building this:
+
+- **A Terraform Go SDK for authoring config**: doesn't exist. HashiCorp
+  publishes `hashicorp/terraform-json` (parses `terraform show -json`
+  plan/state output — the opposite direction from generating config) and
+  the provider plugin protocol (for *implementing* a provider, not
+  consuming one). Neither helps write config.
+- **CDKTF**: does generate typed, schema-accurate provider bindings you
+  author against — genuinely closer to "Terraform via an API" — but its
+  Go support is jsii-generated bindings around a TypeScript core, which
+  would reintroduce exactly the non-Go runtime dependency the Python
+  migration and idiomatic-Go cleanup pass both spent effort removing.
+  Rejected for that reason, not on technical merit.
+
+What's genuinely available and useful: `terraform providers schema
+-json` — the authoritative, versioned schema for every resource/attribute
+a provider exposes, including nested-block cardinality
+(`nesting_mode`/`max_items`). This is precisely the information that,
+read by hand, was previously only checked ad hoc (see the "Idiomatic-Go
+Cleanup Pass" section above for the `ContainerAppIngress.TrafficWeight`
+bug that hand-checking already caught once).
+
+### What was built
+
+`cmd/schema-check` (dev tool, not shipped in the `composey` binary):
+shells out to `terraform init` + `terraform providers schema -json` in a
+scratch directory declaring every provider composey generates config for
+(`hashicorp/aws ~> 5.0`, `hashicorp/azurerm ~> 4.0`, `hashicorp/google
+~> 5.0`, `kreuzwerker/docker ~> 3.0`, `hashicorp/random ~> 3.6` — the
+exact versions pinned in each cloud's `generator.go`), then reflects over
+`models.AWSResources`/`AzureResources`/`GcpResources` and every nested
+struct reachable from them, matching each JSON-tagged field against the
+schema's `block_types` by name and comparing cardinality: a schema block
+with no `max_items` cap needs a Go slice; a struct field can only ever
+express one entry.
+
+### What it found
+
+Run for the first time against the real schemas, it found exactly one
+real bug beyond what had already been fixed by hand: `azurerm_container_app`'s
+`ingress.traffic_weight` has `nesting_mode: "list"` with **no max_items
+cap** — genuinely repeatable (Azure supports weighted traffic splits
+across multiple revisions, e.g. canary/blue-green deploys), not just
+single-item array shorthand. `ContainerAppIngress.TrafficWeight` was a
+bare `ContainerAppTrafficWeight` struct, not a slice — composey has
+always emitted exactly one 100%-weighted entry, so this produced valid
+JSON in practice (Terraform's JSON syntax accepts either shape for what
+*looks* like single cardinality), but the Go type couldn't express more
+than one revision if that's ever needed, and nothing would have caught
+the mismatch except rereading provider docs by hand. Fixed: the field is
+now `[]ContainerAppTrafficWeight`; the one call site
+(`azure/compute.go`) and all 10 Azure golden fixtures
+(`examples/*/expected/azure/main.tf.json`) updated to match (regenerated
+via the real compiler pipeline, not hand-edited).
+
+Three other findings were confirmed as *not* bugs, reported only as
+informational: `ContainerAppJob.ScheduleTriggerConfig`/`.Template` and
+`ManagedRedis.DefaultDatabase` are all Go slices for blocks the schema
+caps at exactly one item (`max_items: 1`) — valid, since Terraform's JSON
+syntax accepts a one-element array as an alternate spelling of a bare
+object for single-cardinality blocks, just not the more minimal encoding.
+Zero mismatches on the AWS or GCP side (29 and 12 resource types
+respectively) — both were already correct.
+
+### Checkpoint
+- ✅ `go run ./cmd/schema-check` reports 0 mismatches across all three
+  clouds' resource models
+- ✅ Wired into CI (`.github/workflows/ci.yml`) so a future provider
+  version bump that changes a block's cardinality fails the build
+- ✅ `gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean,
+  `go test ./...` passing (Azure golden fixtures regenerated and
+  reverified against the real pipeline, not hand-edited)
+- ✅ Documented in `AGENTS.md`'s "Verifying Terraform schema
+  compatibility" section
+
+---
+
 ## ⬜ Phase 6: Build & Distribution (Week 7) - NOT STARTED
 
 ### Goals

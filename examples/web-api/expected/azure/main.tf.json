@@ -1,22 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {}
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -28,89 +10,109 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "random": {}
+  },
   "resource": {
     "azurerm_container_app": {
       "api": {
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
         "name": "prod-web-api-api",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [
             {
-              "name": "api",
-              "image": "nginxdemos/hello:plain-text",
               "cpu": 0.25,
+              "env": [],
+              "image": "nginxdemos/hello:plain-text",
               "memory": "0.5Gi",
-              "env": []
+              "name": "api"
             }
           ],
-          "min_replicas": 1,
-          "max_replicas": 1
-        },
-        "identity": {
-          "type": "SystemAssigned"
+          "max_replicas": 1,
+          "min_replicas": 1
         }
       },
       "web": {
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 80,
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
         "name": "prod-web-api-web",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [
             {
-              "name": "web",
-              "image": "nginxdemos/hello:plain-text",
               "cpu": 0.25,
-              "memory": "0.5Gi",
               "env": [
                 {
                   "name": "API_URL",
                   "value": "http://api"
                 }
-              ]
+              ],
+              "image": "nginxdemos/hello:plain-text",
+              "memory": "0.5Gi",
+              "name": "web"
             }
           ],
-          "min_replicas": 1,
-          "max_replicas": 1,
           "http_scale_rule": [
             {
-              "name": "http-default",
-              "concurrent_requests": "100"
+              "concurrent_requests": "100",
+              "name": "http-default"
             }
-          ]
-        },
-        "ingress": {
-          "external_enabled": true,
-          "target_port": 80,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
-          }
-        },
-        "identity": {
-          "type": "SystemAssigned"
+          ],
+          "max_replicas": 1,
+          "min_replicas": 1
         }
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-web-api-kv",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-web-api-kv",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

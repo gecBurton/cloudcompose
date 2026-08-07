@@ -1,35 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      },
-      "docker": {
-        "source": "kreuzwerker/docker",
-        "version": "~> 3.0"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {},
-    "docker": {
-      "registry_auth": [
-        {
-          "address": "${azurerm_container_registry.main.login_server}",
-          "username": "${azurerm_container_registry.main.admin_username}",
-          "password": "${azurerm_container_registry.main.admin_password}"
-        }
-      ]
-    }
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -41,20 +10,65 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.doctor.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "docker": {
+      "registry_auth": [
+        {
+          "address": "${azurerm_container_registry.main.login_server}",
+          "password": "${azurerm_container_registry.main.admin_password}",
+          "username": "${azurerm_container_registry.main.admin_username}"
+        }
+      ]
+    },
+    "random": {}
+  },
   "resource": {
     "azurerm_container_app": {
       "doctor": {
-        "name": "prod-doctor-doctor",
-        "resource_group_name": "prod",
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 80,
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
+        "name": "prod-doctor-doctor",
+        "registry": [
+          {
+            "password_secret_name": "acr-password",
+            "server": "${azurerm_container_registry.main.login_server}",
+            "username": "${azurerm_container_registry.main.admin_username}"
+          }
+        ],
+        "resource_group_name": "prod",
         "revision_mode": "Single",
+        "secret": [
+          {
+            "name": "acr-password",
+            "value": "${azurerm_container_registry.main.admin_password}"
+          }
+        ],
         "template": {
           "container": [
             {
-              "name": "doctor",
-              "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",
               "cpu": 0.25,
-              "memory": "0.5Gi",
               "env": [
                 {
                   "name": "BUCKET_NAME",
@@ -84,140 +98,118 @@
                   "name": "BLOBS_URL",
                   "value": "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
                 }
-              ]
+              ],
+              "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",
+              "memory": "0.5Gi",
+              "name": "doctor"
             }
           ],
-          "min_replicas": 1,
-          "max_replicas": 1,
           "http_scale_rule": [
             {
-              "name": "http-default",
-              "concurrent_requests": "100"
+              "concurrent_requests": "100",
+              "name": "http-default"
             }
-          ]
-        },
-        "ingress": {
-          "external_enabled": true,
-          "target_port": 80,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
-          }
-        },
-        "identity": {
-          "type": "SystemAssigned"
-        },
-        "secret": [
-          {
-            "name": "acr-password",
-            "value": "${azurerm_container_registry.main.admin_password}"
-          }
-        ],
-        "registry": [
-          {
-            "server": "${azurerm_container_registry.main.login_server}",
-            "username": "${azurerm_container_registry.main.admin_username}",
-            "password_secret_name": "acr-password"
-          }
-        ]
+          ],
+          "max_replicas": 1,
+          "min_replicas": 1
+        }
       }
     },
     "azurerm_container_registry": {
       "main": {
+        "admin_enabled": true,
+        "location": "eastus",
         "name": "prodacr",
         "resource_group_name": "prod",
-        "location": "eastus",
-        "sku": "Standard",
-        "admin_enabled": true
-      }
-    },
-    "azurerm_postgresql_flexible_server": {
-      "main": {
-        "name": "prod-doctor-pg",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "version": "14",
-        "sku_name": "B_Standard_B1ms",
-        "storage_mb": 32768,
-        "administrator_login": "composey",
-        "administrator_password": "${random_password.postgres_admin.result}",
-        "public_network_access_enabled": true,
-        "lifecycle": {
-          "ignore_changes": [
-            "zone"
-          ]
-        }
-      }
-    },
-    "azurerm_postgresql_flexible_server_database": {
-      "db_db": {
-        "name": "doctor_db",
-        "server_id": "${azurerm_postgresql_flexible_server.main.id}",
-        "charset": "UTF8",
-        "collation": "en_US.utf8"
+        "sku": "Standard"
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-doctor-kv",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-doctor-kv",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     },
     "azurerm_managed_redis": {
       "cache_redis": {
-        "name": "prod-doctor-cache",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "sku_name": "Balanced_B0",
-        "high_availability_enabled": false,
         "default_database": [
           {
             "access_keys_authentication_enabled": true,
             "client_protocol": "Encrypted",
             "eviction_policy": "AllKeysLRU"
           }
-        ]
+        ],
+        "high_availability_enabled": false,
+        "location": "eastus",
+        "name": "prod-doctor-cache",
+        "resource_group_name": "prod",
+        "sku_name": "Balanced_B0"
+      }
+    },
+    "azurerm_postgresql_flexible_server": {
+      "main": {
+        "administrator_login": "composey",
+        "administrator_password": "${random_password.postgres_admin.result}",
+        "lifecycle": {
+          "ignore_changes": [
+            "zone"
+          ]
+        },
+        "location": "eastus",
+        "name": "prod-doctor-pg",
+        "public_network_access_enabled": true,
+        "resource_group_name": "prod",
+        "sku_name": "B_Standard_B1ms",
+        "storage_mb": 32768,
+        "version": "14"
+      }
+    },
+    "azurerm_postgresql_flexible_server_database": {
+      "db_db": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8",
+        "name": "doctor_db",
+        "server_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
     "azurerm_storage_account": {
       "blobs_storage": {
-        "name": "proddoctorblobs",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "account_tier": "Standard",
-        "account_replication_type": "LRS",
         "account_kind": "StorageV2",
+        "account_replication_type": "LRS",
+        "account_tier": "Standard",
+        "https_traffic_only_enabled": true,
+        "location": "eastus",
         "min_tls_version": "TLS1_2",
-        "https_traffic_only_enabled": true
+        "name": "proddoctorblobs",
+        "resource_group_name": "prod"
       }
     },
     "azurerm_storage_container": {
       "blobs_container": {
+        "container_access_type": "private",
         "name": "blobs",
-        "storage_account_name": "${azurerm_storage_account.blobs_storage.name}",
-        "container_access_type": "private"
+        "storage_account_name": "${azurerm_storage_account.blobs_storage.name}"
       }
     },
     "docker_image": {
       "doctor_image": {
-        "name": "${azurerm_container_registry.main.login_server}/doctor:latest",
         "build": {
           "context": "app",
-          "platform": "linux/amd64",
-          "dockerfile": "Dockerfile"
-        }
+          "dockerfile": "Dockerfile",
+          "platform": "linux/amd64"
+        },
+        "name": "${azurerm_container_registry.main.login_server}/doctor:latest"
       }
     },
     "docker_registry_image": {
       "doctor_push": {
-        "name": "${docker_image.doctor_image.name}",
-        "keep_remotely": true
+        "keep_remotely": true,
+        "name": "${docker_image.doctor_image.name}"
       }
     },
     "random_password": {
@@ -227,10 +219,20 @@
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.doctor.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

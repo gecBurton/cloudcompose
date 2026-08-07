@@ -348,7 +348,7 @@ func inferContainerApps(
 				ExternalEnabled: true,
 				TargetPort:      port,
 				Transport:       "auto",
-				TrafficWeight:   models.ContainerAppTrafficWeight{LatestRevision: true, Percentage: 100},
+				TrafficWeight:   []models.ContainerAppTrafficWeight{{LatestRevision: true, Percentage: 100}},
 			}
 		}
 

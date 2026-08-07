@@ -55,12 +55,20 @@ type ContainerAppHTTPScaleRule struct {
 }
 
 type ContainerAppIngress struct {
-	ExternalEnabled bool                      `json:"external_enabled"`
-	TargetPort      int                       `json:"target_port"`
-	Transport       string                    `json:"transport"`
-	TrafficWeight   ContainerAppTrafficWeight `json:"traffic_weight"`
+	ExternalEnabled bool                        `json:"external_enabled"`
+	TargetPort      int                         `json:"target_port"`
+	Transport       string                      `json:"transport"`
+	TrafficWeight   []ContainerAppTrafficWeight `json:"traffic_weight"`
 }
 
+// ContainerAppTrafficWeight is one entry in `ingress.traffic_weight`.
+// azurerm's schema allows any number of these (no max_items cap) --
+// composey only ever emits one, weighted 100% to the latest revision,
+// but the field is a slice because the schema genuinely supports more
+// (e.g. canary/blue-green splits across multiple revisions), not just as
+// single-item JSON-array shorthand. Confirmed against the real azurerm
+// provider schema via `go run ./cmd/schema-check` (nesting_mode=list,
+// no max_items), not assumed from provider docs.
 type ContainerAppTrafficWeight struct {
 	LatestRevision bool `json:"latest_revision"`
 	Percentage     int  `json:"percentage"`

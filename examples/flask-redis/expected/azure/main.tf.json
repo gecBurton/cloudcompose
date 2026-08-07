@@ -1,22 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {}
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -28,20 +10,43 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "random": {}
+  },
   "resource": {
     "azurerm_container_app": {
       "web": {
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "ingress": {
+          "external_enabled": true,
+          "target_port": 8000,
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
         "name": "prod-flask-redis-web",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [
             {
-              "name": "web",
-              "image": "flask-redis-web:latest",
               "cpu": 0.25,
-              "memory": "0.5Gi",
               "env": [
                 {
                   "name": "REDIS_HOST",
@@ -51,64 +56,61 @@
                   "name": "REDIS_URL",
                   "value": "postgresql://None:${azurerm_managed_redis.redis_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.redis_redis.hostname}:10000/None"
                 }
-              ]
+              ],
+              "image": "flask-redis-web:latest",
+              "memory": "0.5Gi",
+              "name": "web"
             }
           ],
-          "min_replicas": 1,
-          "max_replicas": 1,
           "http_scale_rule": [
             {
-              "name": "http-default",
-              "concurrent_requests": "100"
+              "concurrent_requests": "100",
+              "name": "http-default"
             }
-          ]
-        },
-        "ingress": {
-          "external_enabled": true,
-          "target_port": 8000,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
-          }
-        },
-        "identity": {
-          "type": "SystemAssigned"
+          ],
+          "max_replicas": 1,
+          "min_replicas": 1
         }
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-flask-redis-kv",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-flask-redis-kv",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     },
     "azurerm_managed_redis": {
       "redis_redis": {
-        "name": "prod-flask-redis-redis",
-        "resource_group_name": "prod",
-        "location": "eastus",
-        "sku_name": "Balanced_B0",
-        "high_availability_enabled": false,
         "default_database": [
           {
             "access_keys_authentication_enabled": true,
             "client_protocol": "Encrypted",
             "eviction_policy": "AllKeysLRU"
           }
-        ]
+        ],
+        "high_availability_enabled": false,
+        "location": "eastus",
+        "name": "prod-flask-redis-redis",
+        "resource_group_name": "prod",
+        "sku_name": "Balanced_B0"
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

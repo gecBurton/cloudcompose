@@ -28,6 +28,10 @@ jobs:
       run: go vet ./... && go test ./...
       working-directory: composey-go
 
+    - name: Check Terraform schema compatibility
+      run: go run ./cmd/schema-check
+      working-directory: composey-go
+
     - name: Build composey binary
       run: go build -o composey ./cmd/composey
       working-directory: composey-go

@@ -1,22 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {}
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -28,20 +10,32 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.proxy.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "random": {}
+  },
   "resource": {
     "azurerm_container_app": {
       "backend": {
+        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "identity": {
+          "type": "SystemAssigned"
+        },
         "name": "prod-nginx-flask-mysql-backend",
         "resource_group_name": "prod",
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "revision_mode": "Single",
         "template": {
           "container": [
             {
-              "name": "backend",
-              "image": "flask-backend:latest",
               "cpu": 0.25,
-              "memory": "0.5Gi",
               "env": [
                 {
                   "name": "DATABASE_HOST",
@@ -51,89 +45,91 @@
                   "name": "DB_URL",
                   "value": "postgresql://composey:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/example"
                 }
-              ]
+              ],
+              "image": "flask-backend:latest",
+              "memory": "0.5Gi",
+              "name": "backend"
             }
           ],
-          "min_replicas": 1,
-          "max_replicas": 1
-        },
-        "identity": {
-          "type": "SystemAssigned"
+          "max_replicas": 1,
+          "min_replicas": 1
         }
       },
       "proxy": {
-        "name": "prod-nginx-flask-mysql-proxy",
-        "resource_group_name": "prod",
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
-        "revision_mode": "Single",
-        "template": {
-          "container": [
-            {
-              "name": "proxy",
-              "image": "nginx-proxy:latest",
-              "cpu": 0.25,
-              "memory": "0.5Gi",
-              "env": []
-            }
-          ],
-          "min_replicas": 1,
-          "max_replicas": 1,
-          "http_scale_rule": [
-            {
-              "name": "http-default",
-              "concurrent_requests": "100"
-            }
-          ]
+        "identity": {
+          "type": "SystemAssigned"
         },
         "ingress": {
           "external_enabled": true,
           "target_port": 80,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
-          }
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
         },
-        "identity": {
-          "type": "SystemAssigned"
-        }
-      }
-    },
-    "azurerm_postgresql_flexible_server": {
-      "main": {
-        "name": "prod-nginx-flask-mysql-pg",
+        "name": "prod-nginx-flask-mysql-proxy",
         "resource_group_name": "prod",
-        "location": "eastus",
-        "version": "14",
-        "sku_name": "B_Standard_B1ms",
-        "storage_mb": 32768,
-        "administrator_login": "composey",
-        "administrator_password": "${random_password.postgres_admin.result}",
-        "public_network_access_enabled": true,
-        "lifecycle": {
-          "ignore_changes": [
-            "zone"
-          ]
+        "revision_mode": "Single",
+        "template": {
+          "container": [
+            {
+              "cpu": 0.25,
+              "env": [],
+              "image": "nginx-proxy:latest",
+              "memory": "0.5Gi",
+              "name": "proxy"
+            }
+          ],
+          "http_scale_rule": [
+            {
+              "concurrent_requests": "100",
+              "name": "http-default"
+            }
+          ],
+          "max_replicas": 1,
+          "min_replicas": 1
         }
-      }
-    },
-    "azurerm_postgresql_flexible_server_database": {
-      "db_db": {
-        "name": "example",
-        "server_id": "${azurerm_postgresql_flexible_server.main.id}",
-        "charset": "UTF8",
-        "collation": "en_US.utf8"
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-nginx-flask-7de682",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-nginx-flask-7de682",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
+      }
+    },
+    "azurerm_postgresql_flexible_server": {
+      "main": {
+        "administrator_login": "composey",
+        "administrator_password": "${random_password.postgres_admin.result}",
+        "lifecycle": {
+          "ignore_changes": [
+            "zone"
+          ]
+        },
+        "location": "eastus",
+        "name": "prod-nginx-flask-mysql-pg",
+        "public_network_access_enabled": true,
+        "resource_group_name": "prod",
+        "sku_name": "B_Standard_B1ms",
+        "storage_mb": 32768,
+        "version": "14"
+      }
+    },
+    "azurerm_postgresql_flexible_server_database": {
+      "db_db": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8",
+        "name": "example",
+        "server_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
     "random_password": {
@@ -143,10 +139,16 @@
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.proxy.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

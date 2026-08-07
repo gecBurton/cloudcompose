@@ -1,35 +1,4 @@
 {
-  "terraform": {
-    "required_providers": {
-      "azurerm": {
-        "source": "hashicorp/azurerm",
-        "version": "~> 4.0"
-      },
-      "random": {
-        "source": "hashicorp/random",
-        "version": "~> 3.6"
-      },
-      "docker": {
-        "source": "kreuzwerker/docker",
-        "version": "~> 3.0"
-      }
-    }
-  },
-  "provider": {
-    "azurerm": {
-      "features": {}
-    },
-    "random": {},
-    "docker": {
-      "registry_auth": [
-        {
-          "address": "${azurerm_container_registry.main.login_server}",
-          "username": "${azurerm_container_registry.main.admin_username}",
-          "password": "${azurerm_container_registry.main.admin_password}"
-        }
-      ]
-    }
-  },
   "data": {
     "azurerm_client_config": {
       "current": {}
@@ -41,100 +10,133 @@
       }
     }
   },
+  "output": {
+    "fqdn": {
+      "description": "Public hostname of the ingress-enabled service.",
+      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    }
+  },
+  "provider": {
+    "azurerm": {
+      "features": {}
+    },
+    "docker": {
+      "registry_auth": [
+        {
+          "address": "${azurerm_container_registry.main.login_server}",
+          "password": "${azurerm_container_registry.main.admin_password}",
+          "username": "${azurerm_container_registry.main.admin_username}"
+        }
+      ]
+    },
+    "random": {}
+  },
   "resource": {
     "azurerm_container_app": {
       "web": {
-        "name": "prod-build-webapp-web",
-        "resource_group_name": "prod",
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
-        "revision_mode": "Single",
-        "template": {
-          "container": [
-            {
-              "name": "web",
-              "image": "${azurerm_container_registry.main.login_server}/web@${docker_registry_image.web_push.sha256_digest}",
-              "cpu": 0.25,
-              "memory": "0.5Gi",
-              "env": []
-            }
-          ],
-          "min_replicas": 1,
-          "max_replicas": 1,
-          "http_scale_rule": [
-            {
-              "name": "http-default",
-              "concurrent_requests": "100"
-            }
-          ]
+        "identity": {
+          "type": "SystemAssigned"
         },
         "ingress": {
           "external_enabled": true,
           "target_port": 80,
-          "transport": "auto",
-          "traffic_weight": {
-            "latest_revision": true,
-            "percentage": 100
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
+        "name": "prod-build-webapp-web",
+        "registry": [
+          {
+            "password_secret_name": "acr-password",
+            "server": "${azurerm_container_registry.main.login_server}",
+            "username": "${azurerm_container_registry.main.admin_username}"
           }
-        },
-        "identity": {
-          "type": "SystemAssigned"
-        },
+        ],
+        "resource_group_name": "prod",
+        "revision_mode": "Single",
         "secret": [
           {
             "name": "acr-password",
             "value": "${azurerm_container_registry.main.admin_password}"
           }
         ],
-        "registry": [
-          {
-            "server": "${azurerm_container_registry.main.login_server}",
-            "username": "${azurerm_container_registry.main.admin_username}",
-            "password_secret_name": "acr-password"
-          }
-        ]
+        "template": {
+          "container": [
+            {
+              "cpu": 0.25,
+              "env": [],
+              "image": "${azurerm_container_registry.main.login_server}/web@${docker_registry_image.web_push.sha256_digest}",
+              "memory": "0.5Gi",
+              "name": "web"
+            }
+          ],
+          "http_scale_rule": [
+            {
+              "concurrent_requests": "100",
+              "name": "http-default"
+            }
+          ],
+          "max_replicas": 1,
+          "min_replicas": 1
+        }
       }
     },
     "azurerm_container_registry": {
       "main": {
+        "admin_enabled": true,
+        "location": "eastus",
         "name": "prodacr",
         "resource_group_name": "prod",
-        "location": "eastus",
-        "sku": "Standard",
-        "admin_enabled": true
+        "sku": "Standard"
       }
     },
     "azurerm_key_vault": {
       "main": {
-        "name": "prod-build-webapp-kv",
-        "resource_group_name": "prod",
         "location": "eastus",
-        "tenant_id": "${data.azurerm_client_config.current.tenant_id}",
+        "name": "prod-build-webapp-kv",
+        "purge_protection_enabled": false,
+        "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
-        "purge_protection_enabled": false
+        "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     },
     "docker_image": {
       "web_image": {
-        "name": "${azurerm_container_registry.main.login_server}/web:latest",
         "build": {
           "context": "app",
-          "platform": "linux/amd64",
-          "dockerfile": "Dockerfile"
-        }
+          "dockerfile": "Dockerfile",
+          "platform": "linux/amd64"
+        },
+        "name": "${azurerm_container_registry.main.login_server}/web:latest"
       }
     },
     "docker_registry_image": {
       "web_push": {
-        "name": "${docker_image.web_image.name}",
-        "keep_remotely": true
+        "keep_remotely": true,
+        "name": "${docker_image.web_image.name}"
       }
     }
   },
-  "output": {
-    "fqdn": {
-      "description": "Public hostname of the ingress-enabled service.",
-      "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+  "terraform": {
+    "required_providers": {
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "~> 4.0"
+      },
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
     }
   }
 }

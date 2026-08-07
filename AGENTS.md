@@ -58,6 +58,11 @@ composey-go/
 │   │                            #   copying
 │   └── init.go                  # `init` command: shared platform
 │                                  #   infrastructure bootstrap
+├── cmd/schema-check/            # Dev tool (not shipped): cross-checks
+│                                  #   internal/models's structs against
+│                                  #   the real Terraform provider schema
+│                                  #   (see "Verifying Terraform schema
+│                                  #   compatibility" below)
 ├── internal/
 │   ├── models/
 │   │   ├── compose.go            # Docker Compose models
@@ -179,6 +184,34 @@ Azure inference (`TestInferAWS_GoldenExamplesByteIdentical`,
 `TestInferAzure_GoldenExamplesByteIdentical`). GCP has no committed golden
 files (see `plan.md`'s Phase 4 section for why); its own tests pin
 individual outputs directly or check structural validity instead.
+
+### Verifying Terraform schema compatibility
+
+`internal/models/{aws,azure,gcp}.go` are hand-written Go structs, not
+generated from anything (see "Terraform is a compilation target" below
+for why no codegen/SDK approach was adopted). The risk this creates:
+Terraform's JSON syntax accepts a bare object as shorthand for a
+single-element list only when a nested block's schema says
+`nesting_mode` is `"single"`, or `"list"`/`"set"` with `max_items <= 1`.
+A block that's genuinely repeatable (no `max_items` cap) needs a Go
+slice; a bare struct field can only ever express one entry, which is
+silently wrong rather than a compile error — this is exactly the bug
+`cmd/schema-check` found in `ContainerAppIngress.TrafficWeight`.
+
+```bash
+cd composey-go
+go run ./cmd/schema-check
+```
+
+This shells out to `terraform providers schema -json` for every provider
+composey generates config for, at the exact versions pinned in each
+cloud's `generator.go`, and reflects over the models package's
+`*Resources` structs to flag any nested block whose Go shape (slice vs.
+non-slice) disagrees with the schema's cardinality. It's run in CI
+(`.github/workflows/ci.yml`) so a provider version bump that changes a
+block's cardinality fails the build rather than shipping silently wrong
+JSON. Requires network access and the `terraform` CLI; not part of the
+shipped `composey` binary.
 
 ### Code Style
 

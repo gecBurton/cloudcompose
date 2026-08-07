@@ -22,6 +22,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: composey-go/go.mod
+        cache-dependency-path: composey-go/go.sum
 
     - name: Run go vet and go test
       run: go vet ./... && go test ./...

@@ -1,13 +1,23 @@
 # Revised Design: Environment Initialization + App Deployment
 
+> **Design doc that shipped, with minor naming differences.** The
+> two-step init/deploy split described here is exactly what was built.
+> Two naming details differ from what's below: the command is
+> `composey init` (not `composey init env`), and app deployment is
+> `composey main -f compose.yml -e prod/environment.yml` (not
+> `composey up --env prod.yml`). Everything else — the per-cloud flags,
+> the generated `environment.yml` shape, the rationale — matches current
+> behavior; see `cmd/composey/{init,compile}.go` and `README.md` for the
+> exact current flag names.
+
 ## Core Commands
 
 ```bash
 # Step 1: Initialize environment (platform team, one-time)
-composey init env --provider aws --name prod
+composey init --provider aws --name prod
 
 # Step 2: Deploy apps (developers, many times)
-composey up --env prod.yml
+composey main -f compose.yml -e prod-infrastructure/environment.yml
 ```
 
 ---

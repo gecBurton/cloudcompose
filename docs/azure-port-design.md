@@ -1,5 +1,29 @@
 # Azure Port Design Analysis
 
+> **Historical design doc, written before Azure support existed at all**
+> (pre-dates the Python→Go migration described in `plan.md`). Kept for the
+> "why Container Apps over AKS, why KEDA/managed-identity mattered" design
+> reasoning, which turned out to be substantially correct — but read the
+> note below before treating anything here as current.
+>
+> **What actually happened**: "Option 1: Minimal Azure MVP" (Container
+> Apps + Flexible Server + system-assigned managed identity) is what
+> shipped, and it's since been verified against real Azure deployments
+> (see `docs/azure-todo.md`). KEDA-style HTTP/queue scaling, Key Vault, and
+> Container Apps Jobs (scheduled tasks) were all eventually added too —
+> see `plan.md`'s Phase 4 for the actual Azure port history.
+>
+> **What did NOT happen**: the cloud-agnostic `Identity`/`SecretRef`/
+> `ScalingRule` unified semantic model this doc proposes in "Semantic
+> Model Gaps" and "Revised Semantic Model" (Option 2) was **not** adopted.
+> AWS and Azure inference logic stayed separate, in their own
+> `internal/compiler/{aws,azure}` packages, each with its own
+> cloud-specific config on the resource structs rather than one shared
+> abstract type. If you're looking for how identity/secrets/scaling
+> actually work today, read `internal/compiler/azure/managed.go` and
+> `internal/models/azure.go` directly rather than this doc's proposed
+> models.
+
 This document analyzes what an Azure port would look like and identifies gaps in our current abstraction.
 
 ## Why Azure is a Good Test

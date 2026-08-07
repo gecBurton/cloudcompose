@@ -140,7 +140,7 @@ jobs:
               # First real-Azure exercise of image build+push (docker_image /
               # docker_registry_image -> ACR). If this fails at the pull
               # step, the registry identity likely also needs an explicit
-              # AcrPull role assignment — see TODO.md.
+              # AcrPull role assignment — see docs/azure-todo.md.
               export COMPOSE=examples/build-webapp/compose.yml PROJECT=buildwebapp \
                      EXPECT="hello from a composey-built image" ;;
             *)

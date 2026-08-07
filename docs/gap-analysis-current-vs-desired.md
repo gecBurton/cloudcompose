@@ -1,5 +1,14 @@
 # Gap Analysis: Current State vs. Desired State
 
+> **Historical snapshot, written 2026-08-01** — the same day initial GCP
+> support was added, and well before the Python→Go migration (`plan.md`)
+> or the current CLI shape existed. Read as "here's what was still missing
+> at that point," not as current fact: GCP is now fully implemented (with
+> its own `internal/compiler/gcp` package), the CLI is `composey init` +
+> `composey main --env` (not `composey up`, see `docs/revised-design-env-init.md`),
+> and there is no Python codebase left to migrate. For current status, see
+> `README.md` and `plan.md`.
+
 **Analysis Date**: Current  
 **Purpose**: Identify what needs to be built to achieve the core mission
 

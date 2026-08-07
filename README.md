@@ -12,7 +12,7 @@
 docker compose up
 
 # Production deployment (same file!)
-composey main -f docker-compose.yml -e prod-env.yaml
+composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
 ```
 
 ---
@@ -200,17 +200,6 @@ composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
 
 ## Features
 
-### 🚀 Serverless by Default
-
-Services scale to zero when not in use. You pay only for what you use.
-
-```yaml
-services:
-  api:
-    image: myapp
-    # Implicit: scale to zero, auto-scale up
-```
-
 ### 🔒 HTTPS Automatically
 
 Every public service gets HTTPS with automatic certificate management.
@@ -221,6 +210,28 @@ Standard images are automatically upgraded to managed services:
 - `postgres` → Managed database
 - `redis` → Managed cache
 - `minio` → Object storage
+
+### 📈 Autoscaling
+
+Set how many instances a service should keep running, and scale on CPU,
+memory, or request count:
+
+```yaml
+services:
+  api:
+    image: myapp
+    x-composey:
+      min_scale: 2   # Always at least 2 instances
+      max_scale: 10
+      auto_scaling:
+        metrics:
+          - type: cpu
+            target_value: 70
+```
+
+Composey translates the same declaration into ECS target-tracking (AWS),
+KEDA scale rules (Azure), or Cloud Run autoscaling (GCP) — whichever is
+idiomatic for the target cloud.
 
 ### 🔍 See What Was Inferred
 
@@ -265,17 +276,9 @@ services:
       min_scale: 2  # Always keep 2 instances warm
 ```
 
-### Escape Hatches
-
-For special cases, cloud-specific overrides are available:
-
-```yaml
-services:
-  websocket:
-    image: myapp
-    x-composey:
-      type: persistent  # Don't scale to zero
-```
+Unknown keys under `x-composey` are a hard error rather than silently
+ignored, so a typo in one of these hints fails at compile time, not at
+runtime.
 
 ---
 
@@ -319,11 +322,10 @@ go build -o composey ./cmd/composey
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Configuration Reference](docs/configuration.md)
-- [Cloud Providers](docs/providers.md)
+- [Design history and migration log](plan.md)
+- [Azure deployment status](docs/azure-todo.md)
+- [Design docs and spikes](docs/)
 - [Examples](examples/)
-- [Architecture](docs/architecture.md)
 
 ---
 
@@ -337,13 +339,14 @@ We believe deploying to the cloud should be as easy as running locally. No netwo
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+See `AGENTS.md` for architecture, package layout, and development
+workflow. There is no `CONTRIBUTING.md` yet.
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+No license file has been added to this repository yet.
 
 ---
 

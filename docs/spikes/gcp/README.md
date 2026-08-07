@@ -3,7 +3,10 @@
 **Status:** design spike, 2026-07-25. No compiler code, nothing deployed.
 Companion to [`../azure/README.md`](../azure/README.md), same method: the same
 three examples, hand-written by hand as the Terraform composey *should* produce,
-then compared against the AWS output it produces today.
+then compared against the AWS output it produces today. GCP was implemented
+shortly after this spike (with lighter verification than AWS/Azure — see
+`plan.md`'s Phase 4 GCP section); annotations below note which of this
+spike's findings were addressed in the shipped Go code (checked 2026-08-07).
 
 Target platform is **Cloud Run**. GKE Autopilot is too heavy and Cloud Run is
 the direct analogue of Fargate and Container Apps.
@@ -29,6 +32,12 @@ So two of three clouds enforce it and Azure is the outlier. `Relationship`
 should keep its place in the model, with the docstring qualified to say
 enforcement is best-effort per target rather than dropping the claim.
 
+> **Status: still open.** This reversal was never implemented in code:
+> `models.Relationship` (`semantic.go`) carries no enforcement-mode field
+> or qualified docstring, and GCP's inference (`gcp/infer.go`) does not
+> emit a `roles/run.invoker` binding — so the "GCP enforces it" half of
+> this finding isn't actually true of the shipped compiler yet.
+
 ### New fault 1: `RateSchedule` is not always renderable
 
 This one is a direct consequence of yesterday's fix, so it deserves plain
@@ -44,6 +53,14 @@ Options: constrain `RateSchedule` to values that divide evenly, convert to cron
 in the normalizer and drop the rate form entirely, or let a backend reject an
 unrenderable schedule with a clear error. The third is most honest and matches
 what a `size` ceiling needs anyway (see below).
+
+> **Status: moot for now.** GCP has no schedule/Cloud Scheduler inference
+> at all yet — `gcp/infer.go` contains no schedule-rendering code, so
+> scheduled services simply aren't handled on GCP, and this question
+> doesn't arise in practice. Azure and AWS *do* both reject unrenderable
+> schedules with clear errors (`azure/compute.go`'s `cronExpressionAzure`,
+> `aws/scheduling.go`'s `cronExpression`), so the rejection pattern this
+> section recommends is implemented — just not for GCP.
 
 ### New fault 2: a database endpoint is not always a hostname
 
@@ -62,12 +79,21 @@ attention. A managed service's connection details are a small structured thing
 be substituted by name-matching heuristics. It is the same conclusion the
 ecs_composex comparison reached from a different direction.
 
+> **Status: still open.** `models.Connection` (`semantic.go`) is a flat
+> struct closer to a descriptor than a raw string, but injection is still
+> name-matching: AWS's `ResolveValue`/`URLPattern` (`aws/connections.go`)
+> and `Connection.BareReference()` substitute by matching env-var names
+> like `BUCKET`/`URL`. GCP's `buildConnectionURLGcp` (`gcp/infer.go`)
+> hardcodes a `postgresql://` URL shape regardless of capability, with no
+> unix-socket/Cloud SQL connector path implemented.
+
 ### Confirmed from the Azure spike
 
 - **`size` needs a per-backend rejection mechanism.** `large` (4096/8192) is
   fine on Cloud Run, which allows up to 8 vCPU, but breaches the 2 vCPU ceiling
   on a Container Apps consumption replica. So the constraint is per-target, not
   universal — a backend must be able to refuse a size with a clear error.
+  (Still open as of 2026-08-07: no backend implements size-ceiling rejection.)
 - **`public_service` is singular only because AWS has a shared ALB.** Cloud Run
   gives every service its own HTTPS URL.
 - **`startup_grace_period` is the right rename.** Cloud Run has a genuine
@@ -98,6 +124,15 @@ ecs_composex comparison reached from a different direction.
   injects `PORT`. composey already takes `ports[0]`, so nothing breaks, but
   multi-port services are unrepresentable on this target.
 
+> **Status (2026-08-07) on the two items above with a code-checkable
+> claim:** both still open. `models.Service.CDNEnabled` (`semantic.go`) is
+> still a bare bool with no `domain` field anywhere in the models package,
+> and GCP's CDN/load-balancer path (`gcp/infer.go`) remains an explicit
+> no-op. `LogRetentionDays` still exists on all three environment types
+> (`models/environment.go`), not narrowed to `AwsEnvironment` — Azure's
+> platform generator hardcodes its own 30-day retention independent of it,
+> and GCP's inference never reads it at all.
+
 ## Three-cloud comparison
 
 Resources emitted for `examples/hello`:
@@ -122,6 +157,13 @@ Resources emitted for `examples/hello`:
 | size ceiling | none reached | 2 vCPU / 4 GiB | 8 vCPU |
 
 ## Recommended actions
+
+> **Status (2026-08-07): none of items 1-5 below were implemented.**
+> GCP shipped by reusing the existing model largely as-is rather than
+> acting on this list — see the per-item annotations above for specifics.
+> This list remains a legitimate backlog if GCP support gets hardened
+> further (per `plan.md`'s note that GCP verification is intentionally
+> lighter than AWS/Azure's).
 
 **Revisions to earlier conclusions:**
 

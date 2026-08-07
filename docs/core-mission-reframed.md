@@ -1,5 +1,14 @@
 # Composey: Core Mission Reframed
 
+> **Historical vision doc** (pre-dates the Python→Go migration in
+> `plan.md`). The mission/philosophy here is still the spirit of the
+> project — kept for that reason — but the specific CLI shape shown
+> throughout (`composey up --provider aws`) was never implemented.
+> The actual two-step CLI is `composey init --provider aws --name prod`
+> (one-time platform bootstrap) followed by `composey main -f compose.yml
+> -e prod/environment.yml` (per-app deploy) — see `docs/revised-design-env-init.md`
+> for the design that was actually built, or `README.md` for current usage.
+
 **The Problem**: Running services locally via Docker Compose is easy. Running them on the cloud is unnecessarily hard.  
 **The Mission**: Bridge that gap.
 

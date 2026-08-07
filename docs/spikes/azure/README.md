@@ -1,6 +1,10 @@
 # Spike: can the semantic model express Azure?
 
 **Status:** design spike, 2026-07-25. No compiler code, nothing deployed.
+Azure was implemented shortly after this spike and has since been verified
+against real Azure deployments (see `docs/azure-todo.md`); annotations below note
+which of this spike's findings were addressed and which are still open in
+the shipped Go code (checked 2026-08-07).
 
 ## Method
 
@@ -55,6 +59,12 @@ needs an explicit decision: either it is *intent* that each backend enforces as
 precisely as it can (with Azure enforcing it barely), or the claim in the
 docstring gets qualified. It cannot stay as written.
 
+> **Status (2026-08-07): still open.** `models.Relationship` (`semantic.go`)
+> is unchanged — still no enforcement-mode field or qualified docstring —
+> and GCP's inference (`gcp/infer.go`) does not emit a `roles/run.invoker`
+> binding, so the "two of three clouds enforce it" resolution proposed by
+> the GCP spike was never implemented in code.
+
 ### 2. `schedule` carries EventBridge syntax
 
 Already suspected; now demonstrated. `production-stack` says
@@ -65,6 +75,12 @@ day-of-week placeholder are both meaningless there.
 Worse, `rate(1 hour)` has no cron equivalent at all, so a string field cannot be
 translated mechanically. The semantic model needs either standard 5-field cron
 or a small structured type, with each backend rendering its own dialect.
+
+> **Status: resolved.** `models.Schedule` (`semantic.go`) is now a
+> cloud-neutral interface with `CronSchedule{Expression}` (standard 5-field
+> cron) and `RateSchedule{Value, Unit}`. AWS-only EventBridge dialect
+> translation (the `cron(...)` wrapper, `?` placeholder, 6-field cron) is
+> isolated to `aws/scheduling.go`.
 
 ### 3. `size: large` is not expressible
 
@@ -77,6 +93,11 @@ backend must be able to *reject* a size with a clear error, or `Environment`
 must declare which sizes it supports. Today neither is possible — `size` is a
 `Literal` that inference silently maps to whatever it likes.
 
+> **Status: still open.** `getCPUCoresAzure`/`getMemoryGBAzure`
+> (`azure/compute.go`) and GCP's `cpuLimitGcp`/`memoryLimitGcp`
+> (`gcp/infer.go`) still silently map `size: large` to a fixed value with
+> no ceiling check or rejection path on any backend.
+
 ### 4. `health_check_grace_period` is an ECS concept
 
 It means "seconds the *load balancer* health check is ignored after a task
@@ -87,6 +108,10 @@ a 10s interval, which is approximate rather than equivalent.
 It should be restated cloud-neutrally (`startup_grace_seconds`) or dropped from
 the semantic model and pushed into an AWS-specific escape hatch.
 
+> **Status: resolved.** Renamed to `StartupGracePeriod` in `models.Service`
+> (`semantic.go`); the AWS backend maps it to the ECS-specific
+> `HealthCheckGracePeriodSecs` (`aws/compute.go`).
+
 ### 5. `public_service` is singular because AWS has a shared ALB
 
 The model allows exactly one `public_service`, routed at `/*` on a shared
@@ -96,6 +121,12 @@ priority, one path pattern.
 Container Apps gives **every** app its own FQDN and terminates TLS itself. There
 is no shared listener, no priority, and no reason to nominate one public
 service. The model under-expresses here — Azure would happily expose several.
+
+> **Status: partially resolved.** `Application.PublicServices()`
+> (`semantic.go`) already returns a slice, not a single value, so the
+> model itself supports more than one public service. Whether AWS's
+> shared-ALB backend and Azure/GCP's per-service-FQDN backends all handle
+> N>1 correctly is untested.
 
 ## What the spike also confirmed
 
@@ -131,6 +162,10 @@ service. The model under-expresses here — Azure would happily expose several.
   attribute-to-variable mapping.
 
 ## Recommended actions
+
+> **Status (2026-08-07):** items 1-2 shipped; 3 did not (see the GCP
+> spike's revision on this point); 4-6 are still open, per the
+> per-finding annotations above.
 
 **Worth doing now, independent of Azure** — each is small and each improves the
 AWS backend on its own merits:

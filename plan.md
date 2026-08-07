@@ -1202,7 +1202,7 @@ Terraform output's meaning.
     single nested block per the [JSON syntax spec's Nested Block
     Mapping rules](https://developer.hashicorp.com/terraform/language/syntax/json),
     but the struct wasn't consistent with what the golden fixtures —
-    verified against real Azure deployments per `TODO.md` — already
+    verified against real Azure deployments per `docs/azure-todo.md` — already
     used).
   - `ContainerAppJob`'s `schedule_trigger_config`/`template` needed to be
     `[]T` (arrays), the opposite shape from `ContainerApp`'s equivalent
@@ -1517,114 +1517,13 @@ strict three-tier layout —
 
 ---
 
-## Testing Strategy
-
-### Throughout Migration
-
-**Unit Tests**
-- Write Go tests for each function
-- Compare output to Python
-- Test edge cases explicitly
-
-**Integration Tests**
-- Run full pipeline on all examples
-- Compare Terraform JSON outputs
-- Verify with `terraform plan` (optional)
-
-**Parity Tests**
-- For each example:
-  1. Run Python compiler → save output
-  2. Run Go compiler → save output
-  3. Compare (must be identical or explainably different)
-
-**Golden Tests**
-- Store expected outputs for each example
-- Run on every commit
-- Fail if output changes unexpectedly
-
----
-
-## Incremental Migration Strategy
-
-### Key Principle: Replace Immediately
-
-Instead of running Python and Go in parallel for months:
-
-1. **Port a stage** (parser, normalizer, inference, generator)
-2. **Test thoroughly** with parity tests
-3. **Replace Python immediately** once tests pass
-4. **Remove old code** (git is the rollback mechanism)
-5. **Continue to next stage**
-
-### Benefits
-
-- ✅ Go code tested in production immediately
-- ✅ No parallel maintenance burden
-- ✅ Faster feedback on issues
-- ✅ Smaller PRs, easier reviews
-- ✅ Can still rollback if needed (`.deprecated/` files)
-
-### Rollback Strategy
-
-**If critical issues are found:**
-- Use git to revert to previous commit: `git revert HEAD`
-- Or checkout specific files: `git checkout HEAD~1 -- composey/compiler/`
-- Tag current state before migration to make rollback easier
-
-**Git is the rollback mechanism - no separate backup directory needed.**
-
----
-
-## Migration Tools & Techniques
-
-### AI-Assisted Translation
-
-**Models (30% of codebase):**
-- Use Claude/GPT-4 to translate Pydantic models → Go structs
-- Manually review and validate
-- Time saved: 2-3 days
-
-**Boilerplate (10% of codebase):**
-- Use AI for CLI scaffold, constants, helper functions
-- Time saved: 1-2 days
-
-### Manual Translation
-
-**Logic (60% of codebase):**
-- No shortcuts for inference logic
-- Keep Python code open for reference
-- Understand logic before translating
-- Write idiomatic Go
-- Test incrementally
-
----
-
-## Success Criteria
-
-### Technical
-- ✅ Single binary works on Linux/macOS/Windows
-- ✅ No Python dependencies required
-- ✅ Parser uses compose-go (no Docker CLI)
-- ✅ Output matches Python (byte-identical for same inputs)
-- ✅ All tests pass
-- ✅ All examples compile successfully
-
-### User Experience
-- ✅ `composey --version` works
-- ✅ `brew install composey` works
-- ✅ `curl -sSL https://get.composey.ai | bash` works
-- ✅ Clear error messages
-- ✅ Fast execution (5-10x faster than Python)
-
-### Distribution
-- ✅ GitHub releases with binaries
-- ✅ Homebrew formula published
-- ✅ Install script functional
-- ✅ Documentation updated
-
----
-
 ## Time Investment
+
+> The paragraph-form recaps that used to follow this table duplicated
+> detail already recorded in each phase's own section above; trimmed
+> 2026-08-07 to just the table, which stays useful as an at-a-glance
+> summary. See each ✅ Phase section for the full account of what
+> happened, what broke, and how it was verified.
 
 | Phase | Hours | Status | Description |
 |-------|-------|--------|-------------|
@@ -1634,48 +1533,9 @@ Instead of running Python and Go in parallel for months:
 | Week 4-5: AWS | 20 hrs budgeted (see Phase 3's scope note); inference+generator+CLI+bridge ported, coverage-gap-surveyed against all 13 relevant Python test files (130 Go tests), cut over as the default `compile_to_terraform` AWS path, then Python AWS backend fully removed (`models/aws.py`, `generator.py`, 6 inference modules, 10 dependent test files) once `compile_application`'s AWS branch was confirmed to have zero live callers | ✅ Complete, Python removed | Inference + generation |
 | Week 5-6: Azure/GCP | 15 hrs budgeted; both completed same day as AWS. Azure: models+naming+inference+generator+CLI+bridge ported, 66-scenario coverage-gap-surveyed, cut over, Python removed. GCP: same pipeline ported at explicit lighter-rigor direction (no pre-existing Python test suite to survey against), sanity-checked against 6 hand-run Python outputs rather than an exhaustive golden-example set, cut over, Python removed | ✅ Complete, Python removed (both clouds) | Multi-cloud |
 | Week 6: CLI | 10 hrs budgeted; full CLI ported same session as Phase 4 (explain, environment generators for all 3 clouds, main compile command, init command), coverage-gap-surveyed against 79 Python test functions across 3 test files, real bugs found (quoting mismatches) and fixed, then the entire Python package/test suite/pyproject.toml removed once verified redundant across all 13+ examples for all 3 clouds; CI, smoke-test scripts, Makefile, README, and AGENTS.md all updated to match | ✅ Complete, Python fully removed | Standalone Go CLI |
+| Idiomatic-Go cleanup + package split | ~unbudgeted, done post-migration (2026-08-07) | ✅ Complete | See the two sections above this one |
 | Week 7: Distribution | 10 hrs | ⬜ Pending | Build, release, docs |
-| **Total** | **~101 hrs** | **~86% Complete** | **~7 weeks part-time** |
-
-**Progress:** Phase 0-2 complete (40%), Python parser/normalizer removed, Go
-in production. **Phase 3 complete (2026-08-06):** AWS inference/generator
-ported, coverage-surveyed against all 13 relevant Python test files (130 Go
-tests), cut over as the default `compile_to_terraform` AWS path, then the
-Python AWS backend fully removed once `compile_application`'s AWS branch was
-confirmed to have zero live callers (not assumed — checked). Two genuine
-cross-cloud dependencies (`explain.py`'s use of `connections.py`,
-Azure's reuse of `DockerImage`/`DockerRegistryImage`/`RandomPassword` from
-`models/aws.py`) were found and resolved — the latter extracted to
-`models/terraform_common.py` — before deleting anything, not discovered as
-breakage afterward. Verified via 229 passing Python unit tests, all 13
-golden examples, and a real CLI invocation against the most complex example
-(`doctor`) after removal. **Phase 4 complete, same session (2026-08-06):**
-Azure got the same discipline as AWS — naming/hashing logic verified
-against live Python output before any test was written, a 66-scenario
-coverage-gap survey found and closed real gaps (the entire MySQL code path
-and the entire private-networking/delegated-subnet path had zero test
-coverage anywhere before this pass), a real stack overflow and three
-genuine ordering/formatting divergences were found and fixed by diffing
-actual output rather than trusting the port, and the Python Azure backend
-was fully removed the same day once confirmed to have no remaining
-callers. **GCP was ported the same session at explicit user direction to
-move fast, given it "has never been tested IRL"** — deliberately lighter
-verification (no golden-example suite exists to survey, so none was
-built from scratch either; sanity-checked against 6 hand-run Python
-outputs instead), but the same fundamentals still applied: real bugs
-found by diffing actual output (a `random_password` dict-vs-model
-discrepancy, a missing `versioning` default, the same connection-ordering
-bug class Azure hit), and the Python GCP backend removed the same day
-once confirmed to have zero remaining callers and zero dependent test
-files to worry about breaking. All three cloud targets now compile
-entirely through Go, with zero Python inference/generator code remaining
-for any of them. Phase 2 required a follow-up hardening pass after its
-original checkpoint — see Phase 2's "what 'complete' actually meant"
-section above before treating any future phase's checkpoint as sufficient
-on its own; Phase 3/4's own coverage-gap surveys (and, for GCP, its
-explicitly-scoped-down equivalent) exist specifically to have done that
-follow-up review before the checkpoint rather than after it.
-
+| **Total** | **~101 hrs + cleanup** | **Migration 100% complete; distribution (Phase 6) pending** | **~7 weeks part-time** |
 
 ---
 
@@ -1694,232 +1554,20 @@ follow-up review before the checkpoint rather than after it.
 **Terraform:**
 - No dedicated library. The generator emits Terraform's JSON syntax by
   marshalling nested structs/maps with Go's own `encoding/json` — the
-  same approach the Python generator uses (`json.dumps` on nested dicts)
+  same approach the Python generator used (`json.dumps` on nested dicts)
   and the same package the parser/normalizer already depend on. Originally
   planned as `hashicorp/terraform-json` + `hashicorp/hcl/v2`; neither was
   ever installed, and neither actually fits — `terraform-json` parses
   Terraform plan/state output rather than generating config, and `hcl/v2`
   targets HCL syntax, which this project deliberately never emits (JSON
   syntax throughout — "Terraform is a compilation target," not something
-  hand-edited). Corrected during Phase 3 scoping (2026-08-06).
+  hand-edited). Corrected during Phase 3 scoping (2026-08-06); re-confirmed
+  during the idiomatic-Go cleanup pass (2026-08-07) that no such library
+  exists to adopt in its place either (see that section above).
 
 **Utilities:**
 - gopkg.in/yaml.v3 — transitive only (via compose-go), not a direct
-  dependency of composey's own code. A direct dependency existed briefly
-  for a hand-rolled second compose-file parse; removed once compose-go's
-  own `SkipResolveEnvironment` was found to do the same job (see Phase 2).
+  dependency of composey's own code.
 - encoding/json (standard library)
 
 ---
-
-## Risks & Mitigations
-
-### Risk 1: Compose-go API Differences
-**Impact:** Parser output differs from Python
-**Mitigation:** ✅ Extensive parity testing completed, manual field mapping done
-**Status:** RESOLVED
-
-### Risk 2: Logic Translation Errors
-**Impact:** Inference produces wrong output
-**Mitigation:** Test every function, compare all examples — but see below:
-passing tests are not sufficient on their own if the tests were carried
-over from the same commit that removed the code they were meant to guard,
-without being run against the real parser boundary.
-**Status:** ENCOUNTERED IN PHASE 2. Three silent bugs (nondeterministic
-output order, a validation check that never matched real input, an
-explicit `0` value silently overwritten) shipped past `go build`/`go
-test`/golden tests and were only found by a dedicated idiom-and-integration
-review after the phase was marked complete. Fixed; see Phase 2's "what
-'complete' actually meant" above. Treat this as the expected failure mode
-for every remaining phase, not a one-off: budget review time per phase
-specifically aimed at "does this go through the real boundary," not just
-"do the ported tests pass."
-
-### Risk 3: Cross-Platform Build Issues
-**Impact:** Binaries don't work on some platforms
-**Mitigation:** Test on VMs for each platform, use CI matrix
-**Status:** NOT YET APPLICABLE - Phase 6
-
-### Risk 4: User Resistance to Switch
-**Impact:** Users stay on Python version
-**Mitigation:** ✅ Incremental approach allows testing each stage in production
-**Status:** MITIGATED - Already using Go for parser/normalizer in production
-
----
-
-## Post-Migration Tasks
-
-### Immediate (Week 8+)
-- Monitor GitHub issues for bugs
-- Respond to user questions
-- Fix critical bugs if found
-
-### Short-term (Month 2)
-- Optimize performance based on usage
-- Add additional examples
-- Improve error messages
-
-### Long-term (Month 3+)
-- Consider adding HCL output option
-- Consider embedded Terraform execution
-- Evaluate additional cloud providers
-- Build community via examples and docs
-
----
-
-## Decision Points
-
-### Continue or Abort Criteria
-
-**Continue if:**
-- ✅ Phase 2 parity tests passed
-- ✅ Performance improvements visible (50ms vs 200ms)
-- ✅ Binary size reasonable (10MB)
-- Next phases show similar results
-
-**Abort if:**
-- Critical logic errors found
-- Compose-go lacks required features (RESOLVED - works fine)
-- Time significantly exceeds 10 weeks
-
----
-
-## References
-
-###Python Codebase (Before Migration)
-- `composey/cli.py` (172 lines) - CLI entry point
-- `composey/compiler/` (~8K lines) - Core logic
-- `composey/models/` (~2K lines) - Data models
-- `composey/constants.py` (195 lines) - Constants
-
-### Go Codebase (After Phase 2, post-hardening)
-- `composey-go/cmd/composey/main.go` (105 lines) - CLI entry point
-- `composey-go/internal/compiler/` (~940 lines) - Parser + Normalizer
-- `composey-go/internal/compiler/*_test.go` (~1,360 lines across 9 files) - tests, split by concern
-- `composey-go/internal/models/` (~470 lines) - Data models
-
-### Removed Python Files (Phase 2)
-- `composey/compiler/parser.py` (77 lines)
-- `composey/compiler/normalizer.py` (382 lines)
-
----
-
-## Final Deliverables
-
-**Code:**
-- Go codebase (github.com/gecburton/composey)
-- All tests passing
-- CI/CD pipeline functional
-
-**Binaries (Phase 6):**
-- composey-linux-amd64
-- composey-linux-arm64
-- composey-darwin-amd64
-- composey-darwin-arm64
-- composey-windows-amd64.exe
-
-**Distribution:**
-- GitHub release with binaries
-- Homebrew formula
-- Install script (get.composey.ai)
-
-**Documentation:**
-- Updated README
-- Migration guide (for users)
-- AGENTS.md updated
-- Examples verified
-
----
-
-## Current Status (Phase 2 Complete and Hardened)
-
-### What's Working Now
-
-**Parser + Normalizer (Go):**
-- ✅ Parses compose files with compose-go (no Docker CLI)
-- ✅ Normalizes to cloud-agnostic semantic model
-- ✅ Detects capabilities (database, cache, object-storage)
-- ✅ Derives database names
-- ✅ Validates configurations, including x-composey (unknown-key and
-  out-of-range rejection, both enforced by hand since compose-go's schema
-  explicitly declines to validate anything under `x-`)
-- ✅ Rejects named volumes correctly against real compose-go input (fixed;
-  was previously broken for every real compose file — see Phase 2 above)
-- ✅ Deterministic output order, independent of Go's own map iteration
-  order (fixed; was previously not the case — see Phase 2 above)
-- ✅ Splits literal environment values from env_file/${VAR}-sourced ones
-  via compose-go's own `SkipResolveEnvironment`, not a hand-rolled second
-  YAML parser
-- ⚠️ "100% output parity with Python" is no longer claimed outright: parity
-  with the Python version that existed at the time of the port is not
-  the same claim as "correct against real compose-go input," and the
-  three bugs above show those can diverge. Treat parity claims for any
-  future phase as needing the same real-parser-boundary verification,
-  not just a diff against Python's old output.
-
-**Inference + Generator (Python):**
-- ✅ AWS resource inference (ECS, RDS, ElastiCache, S3, ALB, CloudFront)
-- ✅ Azure resource inference (Container Apps, PostgreSQL, Redis, Storage,
-  Managed Redis, Key Vault, Front Door, Container Apps Jobs, image
-  build-and-push via the docker Terraform provider)
-- ✅ Terraform JSON generation
-
-**Integration:**
-- ✅ Go → Python via hybrid layer
-- ✅ All examples compile successfully
-- ✅ Production ready for the parser/normalizer stage specifically — most
-  of the AWS/Azure inference and generation this depends on has also been
-  verified against real cloud deployments (see TODO.md for Azure), not
-  just `terraform validate`
-
-### What's Next
-
-**compose-go v1→v2 migration — DONE, before Phase 3 started**
-Migrated to `compose-go/v2` v2.14.0. Three breaking changes, all contained
-to `parser.go`; full detail in Phase 2 above. Confirmed no regression in
-any of Phase 2's own fixes (named-volume rejection, env_file/config
-splitting, deterministic ordering) against real compose files after
-migrating, not just that the existing tests still passed.
-
-**Phase 3: AWS Inference & Generator — inference ported and verified,
-cutover not done (2026-08-06)**
-
-Full detail lives with Phase 3's own section above (models, generator,
-every inference module, the new `compile-aws` CLI subcommand, the
-`compile_to_terraform_aws_go()` Python bridge, all bugs found and fixed,
-and what's explicitly still not done); not duplicated here a second time.
-Short version: all 6 inference modules plus `connections.py` are ported,
-verified against all 13 AWS golden examples and 106 new Go tests, and
-callable end-to-end from Python — but the Python AWS backend is still
-what actually runs by default, and the ~21 Python unit test files for
-inference/generation have not been individually checked for Go-side
-coverage. Do not read "inference ported" as "phase complete": that is
-precisely the gap this update exists to keep visible rather than round up.
-
-- Target: Week 4-5
-
----
-
-## End State (After Phase 6)
-
-A single Go binary that:
-- Parses Docker Compose natively (compose-go)
-- Generates Terraform JSON (encoding/json, not a dedicated Terraform library — see Key Dependencies)
-- Works on all platforms
-- Installs in seconds
-- Runs 5-10x faster than Python
-- Produces identical output to current Python version
-
-**No more:**
-- Python installation
-- pip dependencies
-- Docker CLI subprocess
-- "Works on my machine" issues
-
-**Just:**
-```
-curl -sSL https://get.composey.ai | bash
-composey -f docker-compose.yml -e prod.yaml
-```
-
-Done.

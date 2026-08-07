@@ -284,11 +284,15 @@ runtime.
 
 ## Supported Clouds
 
-| Cloud | Status | Compute | Database | Cache | Storage |
-|-------|--------|---------|----------|-------|---------|
-| **AWS** | ✅ Ready | ECS Fargate | RDS | ElastiCache | S3 |
-| **Azure** | ✅ Ready | Container Apps | Flexible Server | Cache for Redis | Blob Storage |
-| **GCP** | ✅ Ready | Cloud Run | Cloud SQL | Memorystore | Cloud Storage |
+| Cloud | Status | Compute | Database | Cache | Storage | Scheduled tasks | CDN |
+|-------|--------|---------|----------|-------|---------|------------------|-----|
+| **AWS** | ✅ Verified against real deployments | ECS Fargate | RDS | ElastiCache | S3 | ✅ EventBridge | ✅ CloudFront + WAF |
+| **Azure** | ✅ Verified against real deployments (see [`docs/azure-todo.md`](docs/azure-todo.md)) | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
+| **GCP** | ⚠️ Compiles and passes structural tests; not yet verified against a real deployment or covered by golden-file regression tests | Cloud Run | Cloud SQL | Memorystore | Cloud Storage | ❌ not implemented | ❌ not implemented |
+
+GCP support is intentionally less mature than AWS/Azure — see `plan.md`'s
+Phase 4 section for why, and `AGENTS.md`'s "GCP has no committed golden
+files" note for the testing gap specifically.
 
 ---
 

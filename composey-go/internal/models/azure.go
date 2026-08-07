@@ -7,20 +7,88 @@ package models
 // struct here emits is the literal Terraform resource attribute name.
 
 type ContainerApp struct {
-	Name                      string            `json:"name"`
-	ResourceGroupName         string            `json:"resource_group_name"`
-	ContainerAppEnvironmentID string            `json:"container_app_environment_id"`
-	RevisionMode              string            `json:"revision_mode"`
-	Template                  any               `json:"template"`
-	Ingress                   any               `json:"ingress,omitempty"`
-	Identity                  any               `json:"identity,omitempty"`
-	Secret                    any               `json:"secret,omitempty"`
-	Registry                  any               `json:"registry,omitempty"`
-	Tags                      map[string]string `json:"tags,omitempty"`
+	Name                      string                 `json:"name"`
+	ResourceGroupName         string                 `json:"resource_group_name"`
+	ContainerAppEnvironmentID string                 `json:"container_app_environment_id"`
+	RevisionMode              string                 `json:"revision_mode"`
+	Template                  ContainerAppTemplate   `json:"template"`
+	Ingress                   *ContainerAppIngress   `json:"ingress,omitempty"`
+	Identity                  *ManagedIdentity       `json:"identity,omitempty"`
+	Secret                    []ContainerAppSecret   `json:"secret,omitempty"`
+	Registry                  []ContainerAppRegistry `json:"registry,omitempty"`
+	Tags                      map[string]string      `json:"tags,omitempty"`
 }
 
 func NewContainerApp() ContainerApp {
 	return ContainerApp{RevisionMode: "Single"}
+}
+
+// ContainerAppTemplate is azurerm_container_app's `template` block: the
+// container(s) to run, replica bounds, and any HTTP-based scale rules.
+type ContainerAppTemplate struct {
+	Container     []ContainerAppContainer     `json:"container"`
+	MinReplicas   int                         `json:"min_replicas,omitempty"`
+	MaxReplicas   int                         `json:"max_replicas,omitempty"`
+	HTTPScaleRule []ContainerAppHTTPScaleRule `json:"http_scale_rule,omitempty"`
+}
+
+// ContainerAppContainer is one entry in a template's `container` block.
+// cpu/memory sit directly on it; azurerm has no nested "resources" block
+// the way ECS does.
+type ContainerAppContainer struct {
+	Name   string               `json:"name"`
+	Image  string               `json:"image"`
+	CPU    float64              `json:"cpu"`
+	Memory string               `json:"memory"`
+	Args   []string             `json:"args,omitempty"`
+	Env    []ContainerAppEnvVar `json:"env"`
+}
+
+type ContainerAppEnvVar struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type ContainerAppHTTPScaleRule struct {
+	Name               string `json:"name"`
+	ConcurrentRequests string `json:"concurrent_requests"`
+}
+
+type ContainerAppIngress struct {
+	ExternalEnabled bool                      `json:"external_enabled"`
+	TargetPort      int                       `json:"target_port"`
+	Transport       string                    `json:"transport"`
+	TrafficWeight   ContainerAppTrafficWeight `json:"traffic_weight"`
+}
+
+type ContainerAppTrafficWeight struct {
+	LatestRevision bool `json:"latest_revision"`
+	Percentage     int  `json:"percentage"`
+}
+
+// ManagedIdentity is the `identity` block shared by ContainerApp and
+// ContainerAppJob: either a system-assigned identity (Azure creates and
+// manages it) or one or more user-assigned identities the caller already
+// created.
+type ManagedIdentity struct {
+	Type        string   `json:"type"`
+	IdentityIDs []string `json:"identity_ids,omitempty"`
+}
+
+// ContainerAppSecret is one entry in the `secret` block: a named value
+// (here, always the ACR admin password) other blocks reference by name
+// rather than embedding directly.
+type ContainerAppSecret struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// ContainerAppRegistry is one entry in the `registry` block: how to
+// authenticate when pulling the image.
+type ContainerAppRegistry struct {
+	Server             string `json:"server"`
+	Username           string `json:"username"`
+	PasswordSecretName string `json:"password_secret_name"`
 }
 
 // ContainerAppJob mirrors ContainerAppJob: a container that runs to
@@ -28,18 +96,31 @@ func NewContainerApp() ContainerApp {
 // is always-on, so a nightly task would run continuously, and one that
 // exits when its work is done would be restarted indefinitely.
 type ContainerAppJob struct {
-	Name                      string            `json:"name"`
-	ResourceGroupName         string            `json:"resource_group_name"`
-	Location                  string            `json:"location"`
-	ContainerAppEnvironmentID string            `json:"container_app_environment_id"`
-	ReplicaTimeoutInSeconds   int               `json:"replica_timeout_in_seconds"`
-	ReplicaRetryLimit         int               `json:"replica_retry_limit"`
-	ScheduleTriggerConfig     any               `json:"schedule_trigger_config"`
-	Template                  any               `json:"template"`
-	Identity                  any               `json:"identity,omitempty"`
-	Secret                    any               `json:"secret,omitempty"`
-	Registry                  any               `json:"registry,omitempty"`
-	Tags                      map[string]string `json:"tags,omitempty"`
+	Name                      string                           `json:"name"`
+	ResourceGroupName         string                           `json:"resource_group_name"`
+	Location                  string                           `json:"location"`
+	ContainerAppEnvironmentID string                           `json:"container_app_environment_id"`
+	ReplicaTimeoutInSeconds   int                              `json:"replica_timeout_in_seconds"`
+	ReplicaRetryLimit         int                              `json:"replica_retry_limit"`
+	ScheduleTriggerConfig     []ContainerAppJobScheduleTrigger `json:"schedule_trigger_config"`
+	Template                  []ContainerAppJobTemplate        `json:"template"`
+	Identity                  *ManagedIdentity                 `json:"identity,omitempty"`
+	Secret                    []ContainerAppSecret             `json:"secret,omitempty"`
+	Registry                  []ContainerAppRegistry           `json:"registry,omitempty"`
+	Tags                      map[string]string                `json:"tags,omitempty"`
+}
+
+// ContainerAppJobScheduleTrigger is the `schedule_trigger_config` block:
+// when the job runs.
+type ContainerAppJobScheduleTrigger struct {
+	CronExpression string `json:"cron_expression"`
+}
+
+// ContainerAppJobTemplate is a Job's `template` block. Unlike a
+// ContainerApp's template, a Job has no replica bounds or scale rules --
+// it runs to completion on its trigger and stops.
+type ContainerAppJobTemplate struct {
+	Container []ContainerAppContainer `json:"container"`
 }
 
 func NewContainerAppJob() ContainerAppJob {

@@ -71,41 +71,67 @@ composey-go/
 │   │                               #   build/push, random_password) shared
 │   │                               #   across AWS/Azure
 │   └── compiler/
-│       ├── parser.go              # Stage 1: parse Compose via compose-go
-│       ├── normalizer.go          # Stage 2: normalize to semantic model
-│       ├── infer_aws.go, infer_azure.go, infer_gcp.go
-│       │                          # Stage 3: orchestrate inference per cloud
-│       ├── compute_aws.go, managed_aws.go, connectivity_aws.go,
-│       │   scheduling_aws.go, edge_aws.go, permissions_aws.go
-│       │                          # AWS inference: ECS, RDS/ElastiCache/S3,
-│       │                          #   networking, EventBridge, CloudFront/WAF,
-│       │                          #   IAM wiring
-│       ├── azure_compute.go, azure_managed.go, azure_edge.go,
-│       │   azure_naming.go
-│       │                          # Azure inference: Container Apps/Jobs,
-│       │                          #   Flexible Server/Redis/Storage, Front
-│       │                          #   Door, hash-based name truncation
-│       ├── infer_gcp.go            # GCP inference: Cloud Run, Cloud SQL,
-│       │                          #   Memorystore, Cloud Storage
-│       ├── generator_aws.go, generator_azure.go, generator_gcp.go
-│       │                          # Stage 4: Terraform JSON generation
-│       ├── connections_aws.go      # Connection string resolution
-│       ├── explain.go              # Inference reporting (--explain flag)
-│       ├── environment.go          # LoadEnvironment target dispatcher
-│       ├── environment_aws.go, environment_azure.go, environment_gcp.go
-│       │                          # Per-cloud environment YAML loaders
-│       ├── environment_generator.go, environment_yaml.go
-│       │                          # `composey init`'s platform bootstrap
-│       │                          #   Terraform generators
-│       ├── constants.go            # Centralized constants
-│       ├── errors.go               # ComposeyError
-│       └── pyjson.go, pyordered_reflect.go
-│                                  # Ordered-JSON rendering: Azure/GCP's
-│                                  #   generators have no sort_keys
-│                                  #   equivalent, so key order must be
-│                                  #   preserved exactly through these
-│                                  #   rather than round-tripped through a
-│                                  #   plain map
+│       ├── parser.go              # Re-exports shared.ParseCompose (thin
+│       │                          #   wrappers so cmd/composey's import
+│       │                          #   shape didn't need to change)
+│       ├── explain.go             # Inference reporting (--explain flag),
+│       │                          #   cloud-agnostic
+│       ├── environment.go         # LoadEnvironment target dispatcher;
+│       │                          #   imports aws/azure/gcp below to
+│       │                          #   dispatch on declared `target:`
+│       ├── shared/                # Leaf package: no dependency on any
+│       │   │                      #   cloud or on the orchestration root
+│       │   │                      #   above. Everything genuinely
+│       │   │                      #   cloud-agnostic lives here so
+│       │   │                      #   aws/azure/gcp can share it without
+│       │   │                      #   an import cycle back to the root.
+│       │   ├── parser.go           # Stage 1: parse Compose via compose-go
+│       │   ├── normalizer.go       # Stage 2: normalize to semantic model
+│       │   ├── constants.go        # Centralized cloud-agnostic constants
+│       │   ├── errors.go           # ComposeyError
+│       │   ├── terraform_json.go   # Shared Terraform-JSON marshalling
+│       │   │                       #   helpers used by every generator
+│       │   ├── environment_helpers.go
+│       │   │                       # CIDR/tag helpers for `composey init`'s
+│       │   │                       #   per-cloud platform generators
+│       │   ├── sorted_keys.go, url_pattern.go, schedule.go
+│       │                           # Small cloud-agnostic helpers used by
+│       │                           #   more than one cloud package
+│       ├── aws/                   # AWS inference + generation
+│       │   ├── infer.go            # Stage 3 orchestrator (InferAWS)
+│       │   ├── compute.go, managed.go, connectivity.go, scheduling.go,
+│       │   │   edge.go, permissions.go, connections.go
+│       │   │                       # ECS, RDS/ElastiCache/S3, networking,
+│       │   │                       #   EventBridge, CloudFront/WAF, IAM
+│       │   │                       #   wiring, connection strings
+│       │   ├── generator.go        # Stage 4: Terraform JSON generation
+│       │   ├── iam_policy.go       # AWS-only IAM policy document types
+│       │   ├── environment.go, environment_yaml.go
+│       │   │                       # AWS environment YAML loader/writer
+│       │   └── environment_generator.go
+│       │                           # `composey init`'s AWS platform
+│       │                           #   bootstrap Terraform generator
+│       ├── azure/                 # Azure inference + generation
+│       │   ├── infer.go            # Stage 3 orchestrator (InferAzure)
+│       │   ├── compute.go, managed.go, edge.go, naming.go
+│       │   │                       # Container Apps/Jobs, Flexible
+│       │   │                       #   Server/Redis/Storage, Front Door,
+│       │   │                       #   hash-based name truncation
+│       │   ├── generator.go        # Stage 4: Terraform JSON generation
+│       │   ├── environment.go      # Azure environment YAML loader
+│       │   └── environment_generator.go
+│       │                           # `composey init`'s Azure platform
+│       │                           #   bootstrap Terraform generator
+│       └── gcp/                   # GCP inference + generation
+│           ├── infer.go            # Stage 3 orchestrator (InferGcp) +
+│           │                       #   Stage 4 generator (GenerateGcp):
+│           │                       #   Cloud Run, Cloud SQL, Memorystore,
+│           │                       #   Cloud Storage
+│           ├── generator.go        # Stage 4: Terraform JSON generation
+│           ├── environment.go      # GCP environment YAML loader
+│           └── environment_generator.go
+│                                   # `composey init`'s GCP platform
+│                                   #   bootstrap Terraform generator
 └── go.mod
 ```
 
@@ -138,7 +164,7 @@ cd composey-go
 go test ./...
 
 # Run a specific package
-go test ./internal/compiler/...
+go test ./internal/compiler/aws/...
 
 # Verbose output
 go test ./... -v
@@ -162,19 +188,19 @@ individual outputs directly or check structural validity instead.
 - Comments should explain *why*, not restate *what* the code already
   says — especially for anything mirroring specific Python behavior that
   looks like it could be a bug (several genuinely are, ported faithfully
-  rather than silently "fixed"; see e.g. `azure_compute.go`'s
+  rather than silently "fixed"; see e.g. `azure/compute.go`'s
   `containerSpecAzure` for one documented example)
 
 ### Error Handling
 
 ```go
-import "github.com/gecburton/composey/internal/compiler"
+import "github.com/gecburton/composey/internal/compiler/shared"
 
 // For user-facing CLI errors:
-err := compiler.NewComposeyError("service X is invalid because ...")
+err := shared.NewComposeyError("service X is invalid because ...")
 
 // With additional detail shown beneath the main message:
-err := compiler.NewComposeyErrorWithDetails("message", "details")
+err := shared.NewComposeyErrorWithDetails("message", "details")
 ```
 
 Everywhere else, return plain `error` values with `fmt.Errorf`-style
@@ -183,7 +209,11 @@ show-without-stack-trace behavior, not as a general error type.
 
 ### Key Constants
 
-Located in `composey-go/internal/compiler/constants.go`:
+Located in `composey-go/internal/compiler/shared/constants.go` (only the
+constants genuinely shared across clouds live here; AWS-only constants
+like `SizeMappings`/`DBInstanceClasses` are still centralized in this same
+file for now rather than split further — see the package-split section
+of `plan.md` for why):
 - `DatabaseDefaultUsername` — Default DB username
 - `SecretsPlaceholderValue` — Placeholder for unset secrets
 - `DefaultPortForDatabase`/`DefaultPortRedis`/etc. — Default ports for
@@ -197,7 +227,7 @@ Located in `composey-go/internal/compiler/constants.go`:
 1. Add a struct to `internal/models/aws.go` with JSON tags matching the
    Terraform attribute names exactly.
 2. Add a field to `AWSResources` and its `NewAWSResources()` initializer.
-3. Add inference logic to the appropriate `internal/compiler/*_aws.go`
+3. Add inference logic to the appropriate `internal/compiler/aws/*.go`
    file.
 4. Add unit tests, including a real-boundary test against an actual
    `examples/` compose file where one exists that exercises it.
@@ -207,9 +237,10 @@ Located in `composey-go/internal/compiler/constants.go`:
 ### Modifying the Semantic Model
 
 1. Update `internal/models/semantic.go`.
-2. Update `internal/compiler/normalizer.go` to produce the new structure.
-3. Update every `internal/compiler/infer_*.go`/`*_aws.go`/`*_azure.go`
-   file that consumes the model.
+2. Update `internal/compiler/shared/normalizer.go` to produce the new
+   structure.
+3. Update every `internal/compiler/{aws,azure,gcp}/infer.go` (and any
+   other file in those packages) that consumes the model.
 4. Run tests and update `examples/*/expected/` golden files if the change
    affects generated output.
 
@@ -217,13 +248,14 @@ Located in `composey-go/internal/compiler/constants.go`:
 
 1. Add a new `cobra.Command` in `cmd/composey/` (see `compile.go`/`init.go`
    for the existing pattern).
-2. Keep business logic in `internal/compiler/` as plain functions
-   returning `(result, error)`, and keep `cmd/composey/`'s command
-   handlers thin wrappers that call `os.Exit(1)` on error — this is what
-   makes the business logic unit-testable without needing to capture
-   `os.Exit` (see `environmentTarget`/`compileTerraform` in `compile.go`
-   for the pattern; `init.go`'s inline validation is a deliberate
-   exception, not the norm — see `plan.md`'s Phase 5 section).
+2. Keep business logic in `internal/compiler/` (or its `shared`/`aws`/
+   `azure`/`gcp` sub-packages) as plain functions returning
+   `(result, error)`, and keep `cmd/composey/`'s command handlers thin
+   wrappers that call `os.Exit(1)` on error — this is what makes the
+   business logic unit-testable without needing to capture `os.Exit`
+   (see `environmentTarget`/`compileTerraform` in `compile.go` for the
+   pattern; `init.go`'s inline validation is a deliberate exception, not
+   the norm — see `plan.md`'s Phase 5 section).
 3. Update README.md with usage.
 
 ## Important Notes
@@ -232,13 +264,16 @@ Located in `composey-go/internal/compiler/constants.go`:
   incremental Go migration; that migration is complete, and all Python
   source/tests were removed. `plan.md` documents the full migration
   history if you need context on why something is the way it is.
-- **Determinism is critical** — output must be byte-identical for the
-  same inputs. Go's map iteration order is randomized; anywhere this
-  codebase needs a specific order (matching a cloud provider's
-  non-alphabetizing JSON serializer, or matching a specific insertion
-  sequence), it uses an explicit ordered structure (`PyOrdered` in
-  `pyjson.go`) or an explicit sort, never relies on map iteration order
-  being stable.
+- **Determinism is critical** — output must be repeatable for the same
+  inputs (though it no longer needs to be byte-identical to any specific
+  historical Python output — that constraint was retired once the Python
+  implementation was fully removed). Go's map iteration order is
+  randomized, but `encoding/json.Marshal` always sorts map keys
+  alphabetically before writing JSON, which is what every generator in
+  this codebase relies on for deterministic key ordering — no custom
+  ordered-JSON type is needed or used. Anywhere else this codebase
+  produces a slice from a map (e.g. security group names, connection
+  keys), it sorts explicitly rather than relying on map iteration order.
 - **No Silent Failures** — Unknown keys in `x-composey` are errors, not
   ignored (see `models/compose.go`'s `XComposey.UnmarshalJSON`).
 - **AWS-First but Cloud-Agnostic** — Semantic model designed for

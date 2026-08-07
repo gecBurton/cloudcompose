@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/gecburton/composey/internal/compiler"
+	"github.com/gecburton/composey/internal/compiler/aws"
+	"github.com/gecburton/composey/internal/compiler/azure"
+	"github.com/gecburton/composey/internal/compiler/gcp"
 	"github.com/gecburton/composey/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -182,20 +185,20 @@ func compileTerraform(composeFile string, env any, projectName string) (string, 
 
 	switch e := env.(type) {
 	case *models.AwsEnvironment:
-		resources, err := compiler.InferAWS(semanticApp, e)
+		resources, err := aws.InferAWS(semanticApp, e)
 		if err != nil {
 			return "", err
 		}
-		return compiler.GenerateAWS(resources, e)
+		return aws.GenerateAWS(resources, e)
 	case *models.AzureEnvironment:
-		resources, err := compiler.InferAzure(semanticApp, e)
+		resources, err := azure.InferAzure(semanticApp, e)
 		if err != nil {
 			return "", err
 		}
-		return compiler.GenerateAzure(resources, e)
+		return azure.GenerateAzure(resources, e)
 	case *models.GcpEnvironment:
-		resources := compiler.InferGcp(semanticApp, e)
-		return compiler.GenerateGcp(resources, e)
+		resources := gcp.InferGcp(semanticApp, e)
+		return gcp.GenerateGcp(resources, e)
 	default:
 		return "", fmt.Errorf("unsupported environment type %T", env)
 	}

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gecburton/composey/internal/compiler/shared"
 	"github.com/gecburton/composey/internal/models"
 )
 
@@ -72,7 +73,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 			// inferred value would have guessed the same capability from
 			// the image name is the closest available proxy: if it
 			// disagrees, something must have overridden it.
-			declaredCapability = string(service.Capability) != InferCapability(service.Image)
+			declaredCapability = string(service.Capability) != shared.InferCapability(service.Image)
 		}
 		decisions = append(decisions, capabilityDecision(name, service, declaredCapability))
 
@@ -349,7 +350,7 @@ func wiringDecisions(name string, semantic *models.Application, service *models.
 }
 
 func envReferencesServer(env map[string]string, serverName string) bool {
-	pattern := urlPattern(serverName)
+	pattern := shared.URLPattern(serverName)
 	for _, value := range env {
 		if value == serverName || pattern.MatchString(value) {
 			return true
@@ -359,7 +360,7 @@ func envReferencesServer(env map[string]string, serverName string) bool {
 }
 
 func matchedEnvKeys(env map[string]string, serverName string) []string {
-	pattern := urlPattern(serverName)
+	pattern := shared.URLPattern(serverName)
 	var matched []string
 	for key, value := range env {
 		if value == serverName || pattern.MatchString(value) {
@@ -370,10 +371,10 @@ func matchedEnvKeys(env map[string]string, serverName string) []string {
 }
 
 func scheduleShape(schedule models.Schedule) string {
-	if cron, ok := asCronSchedule(schedule); ok {
+	if cron, ok := shared.AsCronSchedule(schedule); ok {
 		return fmt.Sprintf("cron %s", pyRepr(cron.Expression))
 	}
-	if rate, ok := asRateSchedule(schedule); ok {
+	if rate, ok := shared.AsRateSchedule(schedule); ok {
 		return fmt.Sprintf("every %d %s", rate.Value, rate.Unit)
 	}
 	return fmt.Sprintf("%v", schedule)

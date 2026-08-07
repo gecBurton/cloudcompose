@@ -1155,6 +1155,310 @@ means earlier in the session), for AWS, Azure, and GCP.
 
 ---
 
+## ✅ Idiomatic-Go Cleanup Pass (post-Phase 5, 2026-08-07) - COMPLETE
+
+Once the Go port was complete and Python fully removed, the codebase
+still carried structural residue from being a line-by-line port: helper
+types and functions built specifically to reproduce Python's `dict`
+insertion-order and `json.dumps()` formatting, and several models using
+`any`/`map[string]any` as an escape hatch for what should have been typed
+structs. This pass removed that residue and converted the remaining
+Python-shaped code to idiomatic Go, without changing any generated
+Terraform output's meaning.
+
+### Goals
+- Remove code that existed only to match Python's `dict` behavior, now
+  that there is no Python output left to match.
+- Replace `any`/`map[string]any` escape hatches in `internal/models/azure.go`
+  and `internal/models/gcp.go` with real typed structs.
+- Evaluate whether a HashiCorp/Terraform-provided Go SDK could replace
+  the hand-rolled Terraform JSON structs.
+- Fix any real bugs found along the way, without silently "fixing"
+  faithfully-ported Python behavior that turns out to be correct/deployed.
+- Do not lose test coverage — rewrite tests that were checking
+  Python-matching behavior (byte-for-byte, key order) into tests that
+  check the actual thing that matters (structural/semantic correctness).
+
+### What was found
+- `pyjson.go` / `pyordered_reflect.go` (466 lines) existed solely to
+  reproduce Python's dict insertion-order in JSON output. Terraform's
+  JSON syntax is order-agnostic, and `encoding/json.Marshal` already
+  sorts map keys alphabetically, so this was pure legacy weight once
+  there was no Python output to diff against. Deleted outright.
+- No Terraform Go SDK evaluation turned up a usable replacement:
+  HashiCorp does not publish provider resource schemas as importable Go
+  structs (they live inside compiled provider binaries, generated from
+  the provider's own Go source at build time). Decision: keep hand-rolled
+  structs with `json` tags matching Terraform attribute names exactly —
+  this is the same approach `generator_aws.go` already used successfully.
+- 3 of 6 tests named `*_ByteIdenticalAgainstPython` never actually did a
+  byte comparison — misleading names inherited from the port, not
+  correctness bugs, but worth fixing while touching this code.
+- Two real Terraform-schema-shape bugs, found while typing Azure's `any`
+  fields against the *actual* `azurerm_container_app`/
+  `azurerm_container_app_job` provider docs:
+  - `ContainerAppIngress.TrafficWeight` needed to be a bare object, not
+    a one-element array (Terraform's JSON syntax accepts either for a
+    single nested block per the [JSON syntax spec's Nested Block
+    Mapping rules](https://developer.hashicorp.com/terraform/language/syntax/json),
+    but the struct wasn't consistent with what the golden fixtures —
+    verified against real Azure deployments per `TODO.md` — already
+    used).
+  - `ContainerAppJob`'s `schedule_trigger_config`/`template` needed to be
+    `[]T` (arrays), the opposite shape from `ContainerApp`'s equivalent
+    fields. This asymmetry between the two resource types is real and
+    intentional, not a bug to unify — confirmed against the deployed
+    golden fixtures rather than assumed.
+  - **False start, caught and reverted:** before confirming the above,
+    all 10 Azure golden fixtures were edited (via a one-off script) on
+    the wrong assumption that the bare-object form was itself the bug.
+    Reverted via `git checkout examples/*/expected/azure/main.tf.json`
+    once the JSON syntax spec and provider docs were actually checked;
+    the Go struct shapes were fixed instead, matching the deployed
+    fixtures.
+- The AWS golden test never re-parsed embedded JSON-string Terraform
+  attributes (`container_definitions`, `assume_role_policy`, `policy` —
+  attributes whose *value* is itself a JSON string). Once embedded-JSON
+  formatting changed from Python's spaced/insertion-order style to Go's
+  compact/alphabetical style, the test started failing on purely
+  cosmetic differences inside those strings. Fixed with a
+  `normalizeEmbeddedJSON()` helper that re-parses any string value that
+  itself decodes as JSON before comparing.
+
+### What was done
+- Deleted `pyjson.go` and `pyordered_reflect.go`.
+- Rewrote `generator_azure.go` and `generator_gcp.go` to use plain
+  `map[string]any` + `encoding/json`, matching `generator_aws.go`'s
+  existing pattern; generalized `generator_aws.go`'s helpers
+  (`structResourceBlocks`, `marshalIndentedJSON`, `marshalJSONStringPlain`)
+  so all three clouds and `environment_generator.go` share them.
+- Added `internal/compiler/iam_policy.go` (`IAMPolicyDocument`,
+  `IAMPolicyStatement`, `newIAMPolicyDocument()`, `marshalJSONString()`),
+  replacing ~8 duplicated ordered-dict IAM policy constructions across
+  `compute_aws.go`, `scheduling_aws.go`, `permissions_aws.go`,
+  `managed_aws.go`.
+- Typed the `any` escape hatches in `internal/models/azure.go` (11 new
+  structs, e.g. `ContainerAppTemplate`, `ContainerAppIngress`,
+  `ContainerAppTrafficWeight`, `ContainerAppJobScheduleTrigger`) and
+  `internal/models/gcp.go` (11 new structs, e.g. `CloudRunTemplate`,
+  `CloudRunContainer`, `CloudSqlBackupConfiguration`); fixed
+  `GcpResources.RandomPassword` to use the shared `models.RandomPassword`
+  struct instead of `map[string]any`.
+- Rewrote `azure_compute.go` and `infer_gcp.go`'s inference functions to
+  build the new typed structs directly; removed the now-dead
+  `anyMapsToPy()` helper.
+- Simplified `permissions_aws.go`'s container-definitions handling —
+  removed `rebuildContainerDefinitionsJSON`/`anyToPyValue` (47 lines) in
+  favor of the one-line `json.Marshal` call that was already being
+  computed and discarded.
+- Rewrote `environment_generator.go` (~640 lines, the `composey init`
+  shared-infra generators) from ordered literals to plain maps; removed
+  the now-dead `tagOrder` parameter from `GenerateAwsEnvironment`/
+  `GenerateAzureEnvironment`/`GenerateGcpEnvironment` (kept in
+  `GenerateEnvironmentYAML`, where it's still genuinely needed for
+  deterministic YAML key ordering) and updated all call sites in
+  `cmd/composey/init.go` and its tests.
+- Renamed and rewrote misleadingly-named or now-stale Python-matching
+  tests to check structural/semantic correctness instead of byte-for-byte
+  or key-order matches: `TestEcsTasksAssumeRolePolicy_KeyOrderMatchesPython`
+  → `TestEcsTasksAssumeRolePolicy_HasExpectedStatement`,
+  `TestHandleAutoscaling_TargetValueRendersAsFloat` →
+  `TestHandleAutoscaling_TargetValueIsCorrectNumber`,
+  `TestGcp_ByteIdenticalAgainstPython` → `TestGcp_MatchesExpectedStructure`,
+  three `environment_generator_test.go` tests renamed from
+  `*_ByteIdenticalAgainstPython` to `*_ValidStructure`, and
+  `TestGenerateAzure_ByteIdentical` removed as redundant with existing
+  golden-file coverage.
+- Cleaned up stale Python-referencing comments in `generator_aws.go` and
+  `AGENTS.md` (file-tree diagram, "Determinism is critical" section).
+
+### Deferred, by explicit decision, not started
+- Splitting `internal/compiler` (~30 non-test files, one flat package)
+  into `internal/compiler/{aws,azure,gcp}` sub-packages.
+- Auditing/reducing the ~266 exported identifiers in `internal/compiler`
+  for over-exporting (most are only ever used internally or by
+  same-package tests).
+
+### Checkpoint
+- ✅ `gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean
+- ✅ `go test ./...` — 224 tests passing
+- ✅ Manual end-to-end CLI run re-verified semantically identical output
+  against golden fixtures for AWS (embedded-JSON-string differences are
+  cosmetic only, confirmed via recursive normalization)
+- ✅ Two real Azure struct-shape bugs found and fixed against actual
+  deployed golden fixtures, not assumed
+- ✅ No test coverage lost; misleadingly-named tests renamed/rewritten
+  rather than deleted
+
+---
+
+## ✅ Package Split: `internal/compiler` → per-cloud sub-packages (post-cleanup-pass, 2026-08-07) - COMPLETE
+
+Explicitly deferred at the end of the idiomatic-Go cleanup pass above,
+then done as a follow-up in the same day: `internal/compiler` was one
+flat package with ~30 non-test files mixing AWS/Azure/GCP inference and
+generation code together, which was the main reason so many identifiers
+had to be exported in the first place (same-package access needs no
+export, but nothing was actually cloud-isolated at the package level to
+test that assumption against). This pass split it into
+`internal/compiler/{aws,azure,gcp}` sub-packages plus a new
+`internal/compiler/shared` leaf package, without changing any generated
+Terraform output.
+
+### Investigation before starting
+
+A dedicated audit (via a research-only subagent pass, no files touched)
+confirmed the AWS/Azure/GCP inference and generator files themselves have
+**zero real code-level cross-cloud dependencies** on each other — every
+"aws"/"azure"/"gcp" string match inside another cloud's file was a
+documentation comment explaining an intentional divergence, never an
+actual call. The real work was around the shared orchestration/helper
+layer:
+- Four generic JSON-marshalling helpers (`structResourceBlocks`,
+  `marshalTerraformJSON`, `marshalIndentedJSON`, `marshalJSONStringPlain`)
+  were physically defined inside `generator_aws.go` but called from
+  Azure's and GCP's own generators, and from the shared-infrastructure
+  generators for all three clouds — despite having no AWS-specific
+  content at all.
+- `iam_policy.go` lived among the "shared-looking" files but is actually
+  AWS-only (IAM is an AWS concept; nothing else used it).
+- `environment_generator.go` was a single 668-line file containing all
+  three clouds' `composey init` shared-infrastructure generators mixed
+  together, sharing six generic CIDR-math/tag-merging helpers
+  (`tfName`, `cidrsubnet`, `ipToUint32`, `uint32ToIP`, `mergedTags`,
+  `nameEnvTag`) that had to be factored out before any cloud-by-cloud
+  split was possible.
+- `environment_yaml.go`'s `GenerateEnvironmentYAML` turned out to be
+  AWS-only content (hardcoded `target: aws`, `--provider aws` in its own
+  usage strings) sitting at the shared root, not genuinely cross-cloud.
+- `constants.go` mixed genuinely shared constants (`DatabaseDefaultUsername`,
+  port defaults) with AWS-only ones (`SizeMappings`, `DBInstanceClasses`,
+  `PriorityBands`) in one file — kept together rather than split further,
+  since nothing forced a split and over-splitting constants for its own
+  sake wasn't worth it.
+- A handful of helpers were discovered only once the actual build broke
+  post-move, not found by the earlier audit: `sortedKeys` (env-var map key
+  sorting, used by both AWS and Azure), `urlPattern` (URL-host regex
+  matcher, used by AWS's connection inference *and* the cloud-agnostic
+  `--explain` reporting), and `asRateSchedule`/`asCronSchedule` (Schedule
+  type-assertion helpers, same dual use). All three were genuinely
+  cloud-agnostic despite living inside AWS- or Azure-specific files.
+
+### The real blocker: an import cycle, and how it was resolved
+
+The naive plan (`internal/compiler` root imports `aws`/`azure`/`gcp` for
+`LoadEnvironment`'s dispatch, while `aws`/`azure`/`gcp` import the root
+for shared constants/JSON helpers/parser/normalizer) is a cycle, not a
+layering problem that resolves itself. Presented to the user as an
+explicit decision point rather than guessed past silently. Chosen fix: a
+strict three-tier layout —
+- `internal/compiler/shared` — a true leaf package with no dependency on
+  any cloud or on the orchestration root. Ended up holding: constants,
+  `ComposeyError`, the JSON-marshalling helpers, CIDR/tag helpers,
+  `SortedKeys`, `URLPattern`, `AsRateSchedule`/`AsCronSchedule`, and —
+  once the same cycle problem showed up a second time for test files —
+  `ParseCompose`/`ParseComposeJSON` and the entire normalizer
+  (`Normalize`, `InferCapability`, `DatabaseName`, `SemanticToJSON`,
+  etc., moved wholesale since they're genuinely cloud-agnostic and had
+  no dependency on anything cloud-specific).
+- `internal/compiler/{aws,azure,gcp}` — import `shared`, never each
+  other, never the root.
+- `internal/compiler` (root) — orchestration only now: `LoadEnvironment`
+  (imports all three cloud packages to dispatch on declared `target:`),
+  `Explain`/`Render`/`StripMarkup` (cloud-agnostic --explain reporting),
+  and thin re-export wrappers for `ParseCompose`/`Normalize`/
+  `SemanticToJSON` so `cmd/composey` (which needs the root's `Explain`
+  and the cloud packages' `Infer*`/`Generate*` in the same functions
+  already) didn't have to change its own import shape.
+
+  A second, narrower cycle surfaced only once real-boundary tests in
+  `aws`/`azure`/`gcp` (which parse+normalize actual `examples/*/compose.yml`
+  fixtures, not hand-built structs, per this project's own testing
+  convention) tried to import the root `compiler` package for
+  `ParseCompose`/`Normalize` — since the root now imports those same
+  cloud packages. Resolved by having those test files call
+  `shared.ParseCompose`/`shared.Normalize` directly instead of going
+  through the root's re-export wrapper, which only `cmd/composey` needed
+  in the first place.
+
+### What was done
+
+- Created `internal/compiler/shared` and moved into it: `constants.go`,
+  `errors.go` (`ComposeyError`), a new `terraform_json.go`
+  (`StructResourceBlocks`, `MarshalIndentedJSON`, `MarshalJSONStringPlain`
+  — exported since multiple packages now call them), a new
+  `environment_helpers.go` (`TfName`, `Cidrsubnet`, `MergedTags`), a new
+  `sorted_keys.go` (`SortedKeys`), a new `url_pattern.go` (`URLPattern`),
+  a new `schedule.go` (`AsRateSchedule`/`AsCronSchedule`), and — once the
+  test-file cycle above was found — `parser.go` and `normalizer.go`
+  wholesale, plus every test file that exercised them
+  (`build_test.go`, `capability_test.go`, `database_name_test.go`,
+  `ingress_test.go`, `networks_test.go`, `normalizer_contract_test.go`,
+  `normalizer_test.go`, `platform_settings_test.go`, `schedule_test.go`,
+  `volumes_test.go`, `xcomposey_test.go`, `testhelpers_test.go`).
+- Created `internal/compiler/aws` (14 non-test files) from
+  `common_aws.go`, `compute_aws.go`, `connections_aws.go`,
+  `connectivity_aws.go`, `edge_aws.go`, `infer_aws.go`, `managed_aws.go`,
+  `permissions_aws.go`, `scheduling_aws.go`, `generator_aws.go`,
+  `iam_policy.go`, `environment_aws.go`, `environment_yaml.go`, plus a
+  new AWS-only `environment_generator.go` split out of the old
+  mixed-cloud file — all renamed to drop the now-redundant `_aws` suffix
+  (e.g. `compute_aws.go` → `aws/compute.go`) and repointed at
+  `shared.*` for every constant/helper the investigation above found.
+- Created `internal/compiler/azure` (8 non-test files) the same way from
+  `azure_compute.go`, `azure_edge.go`, `azure_infer.go`, `azure_managed.go`,
+  `azure_naming.go`, `generator_azure.go`, `environment_azure.go`, plus a
+  new Azure-only `environment_generator.go`.
+- Created `internal/compiler/gcp` (4 non-test files) the same way from
+  `infer_gcp.go`, `generator_gcp.go`, `environment_gcp.go`, plus a new
+  GCP-only `environment_generator.go`.
+- Split `environment_generator_test.go` (752 lines, all three clouds
+  mixed) into `aws/environment_generator_test.go`,
+  `azure/environment_generator_test.go`,
+  `gcp/environment_generator_test.go`, plus
+  `shared/environment_helpers_test.go` for the `TfName`/`Cidrsubnet`
+  tests that used to live alongside them.
+- Fixed every real-boundary test's relative path to `examples/*/compose.yml`
+  fixtures for the new directory depth (`../../../examples/...` →
+  `../../../../examples/...` from `aws`/`azure`/`gcp`; `../../examples/...`
+  → `../../../examples/...` from `shared`) — caught by running the full
+  suite, not by inspection, since a wrong relative path fails at test run
+  time with a clear "no such file or directory", not at compile time.
+- Updated `cmd/composey/{main,compile,init}.go` to import
+  `internal/compiler/aws`/`azure`/`gcp` alongside the root
+  `internal/compiler`, matching the CLI's existing per-cloud dispatch
+  shape (one `compile-<cloud>` subcommand each in `main.go`; a type
+  switch over the loaded environment in `compile.go`; a provider switch
+  in `init.go`) — confirmed via the earlier audit that every CLI entry
+  point already needed to know about all three clouds simultaneously, so
+  this was the expected shape, not a design smell to fix.
+- Updated `AGENTS.md`'s file-tree diagram to reflect the new package
+  layout.
+
+### Checkpoint
+- ✅ `gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean
+- ✅ `go test ./...` — 224 tests passing, same count as before the split
+  (no coverage lost or silently dropped in the file shuffle)
+- ✅ AWS and Azure `*_GoldenExamplesByteIdentical` tests re-verified
+  passing against every example in `examples/` through the new package
+  boundaries
+- ✅ Confirmed no real cross-cloud code dependency existed before
+  starting (only comments), and none was introduced by the split
+- ✅ Import cycle identified and resolved architecturally (three-tier
+  `shared` → `{aws,azure,gcp}` → root layout) rather than papered over
+  with a workaround
+
+### Deferred, still not done
+- The ~266-export over-exporting audit from the previous cleanup pass is
+  largely moot now: most of what was exported only because same-package
+  tests needed it is now exported because a *different package*
+  genuinely needs it (aws/azure/gcp calling into `shared`, or the root
+  calling into all three clouds). A fresh, smaller audit of what's
+  exported *within* each of the four new packages but never used outside
+  it would still be worth doing, but was not done in this pass.
+
+---
+
 ## ⬜ Phase 6: Build & Distribution (Week 7) - NOT STARTED
 
 ### Goals

@@ -18,9 +18,9 @@ type CloudRunService struct {
 	Location  string `json:"location"`
 	ProjectID string `json:"project_id"`
 
-	Template  any `json:"template,omitempty"`
-	Traffic   any `json:"traffic,omitempty"`
-	VpcAccess any `json:"vpc_access,omitempty"`
+	Template  *CloudRunTemplate `json:"template,omitempty"`
+	Traffic   []CloudRunTraffic `json:"traffic,omitempty"`
+	VpcAccess any               `json:"vpc_access,omitempty"`
 
 	AutogenerateRevisionName bool     `json:"autogenerate_revision_name"`
 	Ingress                  string   `json:"ingress"`
@@ -29,6 +29,48 @@ type CloudRunService struct {
 
 func NewCloudRunService() CloudRunService {
 	return CloudRunService{AutogenerateRevisionName: true, Ingress: "all"}
+}
+
+// CloudRunTemplate is google_cloud_run_service's `template` block: the
+// container spec plus autoscaling annotations.
+type CloudRunTemplate struct {
+	Spec     CloudRunSpec         `json:"spec"`
+	Metadata CloudRunTemplateMeta `json:"metadata"`
+}
+
+type CloudRunSpec struct {
+	Containers         []CloudRunContainer `json:"containers"`
+	ServiceAccountName string              `json:"service_account_name,omitempty"`
+}
+
+type CloudRunContainer struct {
+	Image     string                  `json:"image"`
+	Command   []string                `json:"command,omitempty"`
+	Env       []CloudRunEnvVar        `json:"env,omitempty"`
+	Resources CloudRunContainerLimits `json:"resources"`
+}
+
+type CloudRunEnvVar struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type CloudRunContainerLimits struct {
+	Limits CloudRunResourceLimits `json:"limits"`
+}
+
+type CloudRunResourceLimits struct {
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
+}
+
+type CloudRunTemplateMeta struct {
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type CloudRunTraffic struct {
+	Percent        int  `json:"percent"`
+	LatestRevision bool `json:"latest_revision"`
 }
 
 type CloudRunServiceIamMember struct {
@@ -52,21 +94,27 @@ type CloudSqlInstance struct {
 
 	AvailabilityType string `json:"availability_type"`
 
-	BackupConfiguration any `json:"backup_configuration,omitempty"`
-	IpConfiguration     any `json:"ip_configuration"`
+	BackupConfiguration *CloudSqlBackupConfiguration `json:"backup_configuration,omitempty"`
+	IpConfiguration     CloudSqlIPConfiguration      `json:"ip_configuration"`
 
 	RootPassword *string `json:"root_password,omitempty"`
 	DatabaseName *string `json:"database_name,omitempty"`
 }
 
-// NewCloudSqlInstance returns a CloudSqlInstance with Python's own
-// Pydantic scalar defaults reproduced. BackupConfiguration/IpConfiguration
-// (Python's two default_factory dicts) are left nil here and populated by
-// the compiler package's inference code instead, which builds them as
-// compiler.PyOrdered to preserve Python's dict-literal key order --
-// models cannot import compiler (would be an import cycle), so the
-// ordered-dict construction for any field on this file's structs that
-// needs one lives in azure_managed.go-style inference code, not here.
+type CloudSqlBackupConfiguration struct {
+	Enabled   bool   `json:"enabled"`
+	StartTime string `json:"start_time"`
+}
+
+type CloudSqlIPConfiguration struct {
+	Ipv4Enabled    bool    `json:"ipv4_enabled"`
+	PrivateNetwork *string `json:"private_network,omitempty"`
+}
+
+// NewCloudSqlInstance returns a CloudSqlInstance with its scalar defaults
+// set, matching what a fresh Cloud SQL instance should look like before
+// any per-application values (name, root password, networking) are
+// filled in by inference.
 func NewCloudSqlInstance() CloudSqlInstance {
 	return CloudSqlInstance{
 		DatabaseVersion:        "POSTGRES_14",
@@ -110,13 +158,17 @@ type StorageBucket struct {
 	ProjectID string `json:"project_id"`
 	Location  string `json:"location"`
 
-	StorageClass string `json:"storage_class"`
-	Versioning   any    `json:"versioning"`
+	StorageClass string                  `json:"storage_class"`
+	Versioning   StorageBucketVersioning `json:"versioning"`
 
 	LifecycleRule []map[string]any `json:"lifecycle_rule,omitempty"`
 
 	UniformBucketLevelAccess bool `json:"uniform_bucket_level_access"`
 	ForceDestroy             bool `json:"force_destroy"`
+}
+
+type StorageBucketVersioning struct {
+	Enabled bool `json:"enabled"`
 }
 
 func NewStorageBucket() StorageBucket {
@@ -275,14 +327,12 @@ type GcpResources struct {
 	DockerImage         map[string]DockerImage         `json:"docker_image,omitempty"`
 	DockerRegistryImage map[string]DockerRegistryImage `json:"docker_registry_image,omitempty"`
 
-	// Typed as `any`, not RandomPassword: Python's own field is
-	// Dict[str, Any], and _infer_databases assigns a bare
-	// {"length": 20} dict literal, not a RandomPassword model instance
-	// -- so it carries no "special" key at all, unlike AWS/Azure's own
-	// random_password resources, which do assign a real RandomPassword
-	// model. Confirmed by reading _infer_databases directly, not assumed
-	// from the AWS/Azure pattern (which would have been wrong here).
-	RandomPassword map[string]any `json:"random_password,omitempty"`
+	// Consistent with AWS/Azure's own random_password resources: a real
+	// RandomPassword struct (length + special), not a bare {"length": N}
+	// map. Python's own field was typed Dict[str, Any] and never set
+	// "special" -- that inconsistency isn't preserved now that matching
+	// Python's exact shape is no longer a goal.
+	RandomPassword map[string]RandomPassword `json:"random_password,omitempty"`
 }
 
 // NewGcpResources returns a GcpResources with every map initialized.
@@ -307,6 +357,6 @@ func NewGcpResources() *GcpResources {
 		SecretManagerSecretVersion:        map[string]SecretManagerSecretVersion{},
 		DockerImage:                       map[string]DockerImage{},
 		DockerRegistryImage:               map[string]DockerRegistryImage{},
-		RandomPassword:                    map[string]any{},
+		RandomPassword:                    map[string]RandomPassword{},
 	}
 }

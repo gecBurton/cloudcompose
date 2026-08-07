@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
-	"github.com/gecburton/composey/internal/compiler"
+	"github.com/gecburton/composey/internal/compiler/aws"
+	"github.com/gecburton/composey/internal/compiler/azure"
+	"github.com/gecburton/composey/internal/compiler/gcp"
 	"github.com/spf13/cobra"
 )
 
@@ -68,7 +69,6 @@ func runInit(cmd *cobra.Command, args []string) {
 	}
 
 	var tags map[string]string
-	var tagOrder []string
 	if tagsJSON != "" {
 		var rawTags map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(tagsJSON), &rawTags); err != nil {
@@ -83,9 +83,7 @@ func runInit(cmd *cobra.Command, args []string) {
 				os.Exit(1)
 			}
 			tags[k] = s
-			tagOrder = append(tagOrder, k)
 		}
-		sort.Strings(tagOrder)
 	}
 
 	fmt.Printf("Initializing %s environment: %s\n", provider, name)
@@ -108,14 +106,14 @@ func runInit(cmd *cobra.Command, args []string) {
 		if awsEndpoint != "" {
 			endpointPtr = &awsEndpoint
 		}
-		terraformJSON, err = compiler.GenerateAwsEnvironment(
+		terraformJSON, err = aws.GenerateAwsEnvironment(
 			name, region, vpcCIDR, azCount, createALB, certPtr, endpointPtr,
-			tags, tagOrder, retainData,
+			tags, retainData,
 		)
 	case "azure":
-		terraformJSON, err = compiler.GenerateAzureEnvironment(name, region, vpcCIDR, tags, tagOrder, retainData)
+		terraformJSON, err = azure.GenerateAzureEnvironment(name, region, vpcCIDR, tags, retainData)
 	case "gcp":
-		terraformJSON, err = compiler.GenerateGcpEnvironment(name, region, vpcCIDR, tags, tagOrder, retainData)
+		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, tags, retainData)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

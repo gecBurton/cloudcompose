@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gecburton/composey/internal/compiler/aws"
+	"github.com/gecburton/composey/internal/compiler/azure"
+	"github.com/gecburton/composey/internal/compiler/gcp"
 	yaml "go.yaml.in/yaml/v4"
 )
 
@@ -40,11 +43,11 @@ func LoadEnvironment(path string) (any, error) {
 
 	switch target {
 	case "aws":
-		return LoadAwsEnvironment(path)
+		return aws.LoadAwsEnvironment(path)
 	case "azure":
-		return LoadAzureEnvironment(path)
+		return azure.LoadAzureEnvironment(path)
 	case "gcp":
-		return LoadGcpEnvironment(path)
+		return gcp.LoadGcpEnvironment(path)
 	default:
 		return nil, fmt.Errorf(
 			"%s declares unsupported target %q. Supported targets: aws, azure, gcp.",

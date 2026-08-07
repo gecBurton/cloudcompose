@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/gecburton/composey/internal/compiler"
+	"github.com/gecburton/composey/internal/compiler/aws"
+	"github.com/gecburton/composey/internal/compiler/azure"
+	"github.com/gecburton/composey/internal/compiler/gcp"
 	"github.com/spf13/cobra"
 )
 
@@ -129,7 +132,7 @@ var compileAWSCmd = &cobra.Command{
 			projectName = filepath.Base(filepath.Dir(absPath))
 		}
 
-		env, err := compiler.LoadAwsEnvironment(envPath)
+		env, err := aws.LoadAwsEnvironment(envPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
@@ -147,13 +150,13 @@ var compileAWSCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		resources, err := compiler.InferAWS(semanticApp, env)
+		resources, err := aws.InferAWS(semanticApp, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Inference error: %v\n", err)
 			os.Exit(1)
 		}
 
-		output, err := compiler.GenerateAWS(resources, env)
+		output, err := aws.GenerateAWS(resources, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Generate error: %v\n", err)
 			os.Exit(1)
@@ -194,7 +197,7 @@ var compileAzureCmd = &cobra.Command{
 			projectName = filepath.Base(filepath.Dir(absPath))
 		}
 
-		env, err := compiler.LoadAzureEnvironment(envPath)
+		env, err := azure.LoadAzureEnvironment(envPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
@@ -212,13 +215,13 @@ var compileAzureCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		resources, err := compiler.InferAzure(semanticApp, env)
+		resources, err := azure.InferAzure(semanticApp, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Inference error: %v\n", err)
 			os.Exit(1)
 		}
 
-		output, err := compiler.GenerateAzure(resources, env)
+		output, err := azure.GenerateAzure(resources, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Generate error: %v\n", err)
 			os.Exit(1)
@@ -260,7 +263,7 @@ var compileGcpCmd = &cobra.Command{
 			projectName = filepath.Base(filepath.Dir(absPath))
 		}
 
-		env, err := compiler.LoadGcpEnvironment(envPath)
+		env, err := gcp.LoadGcpEnvironment(envPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
@@ -278,9 +281,9 @@ var compileGcpCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		resources := compiler.InferGcp(semanticApp, env)
+		resources := gcp.InferGcp(semanticApp, env)
 
-		output, err := compiler.GenerateGcp(resources, env)
+		output, err := gcp.GenerateGcp(resources, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Generate error: %v\n", err)
 			os.Exit(1)

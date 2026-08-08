@@ -69,14 +69,69 @@ func privateNetworkingAzure(
 }
 
 // isMySQLImage classifies a database service's image the same way
-// _infer_databases does: "mysql" in the image name (and not "postgres",
-// which would otherwise misclassify a hypothetical postgres-based image
-// that happens to mention mysql in passing) means MySQL; everything else
-// -- including postgres, postgresql, pgvector, timescale, etc. -- defaults
+// _infer_databases does: "mysql" or "mariadb" in the image name (and not
+// "postgres", which would otherwise misclassify a hypothetical
+// postgres-based image that happens to mention mysql in passing) means
+// the MySQL-compatible Flexible Server family; everything else --
+// including postgres, postgresql, pgvector, timescale, etc. -- defaults
 // to PostgreSQL.
+//
+// MariaDB detection added 2026-08-08 (see
+// docs/azure-aws-parity-todo.md's Priority 2 item 4): previously only
+// checked for "mysql", so a mariadb image was silently misclassified as
+// PostgreSQL -- AWS's inferDatabase (aws/managed.go) already detected
+// both. Azure has no dedicated MariaDB Flexible Server product, so a
+// MariaDB image is still provisioned onto the MySQL Flexible Server
+// (the closest wire-compatible managed offering Azure has), the same way
+// AWS's own "mariadb" branch still creates an RDS instance with
+// engine="mariadb" rather than a distinct product.
 func isMySQLImage(image string) bool {
 	lower := strings.ToLower(image)
-	return strings.Contains(lower, "mysql") && !strings.Contains(lower, "postgres")
+	if strings.Contains(lower, "postgres") {
+		return false
+	}
+	return strings.Contains(lower, "mysql") || strings.Contains(lower, "mariadb")
+}
+
+// azureDBSkuFor maps a service size to a PostgreSQL/MySQL Flexible
+// Server SKU name, mirroring shared.DBInstanceClasses' AWS equivalent.
+// B_* (Burstable) is Azure Flexible Server's cheapest tier, roughly
+// comparable to AWS's db.t3.*; GP_* (General Purpose) is the first tier
+// with a dedicated (non-burstable) vCPU allocation, used for medium/large
+// since a shared database server is exactly the resource most likely to
+// be CPU-starved under real load if left on a burstable SKU.
+func azureDBSkuFor(size models.ServiceSize) string {
+	switch size {
+	case models.ServiceSizeMedium:
+		return "GP_Standard_D2s_v3"
+	case models.ServiceSizeLarge:
+		return "GP_Standard_D4s_v3"
+	default:
+		return "B_Standard_B1ms"
+	}
+}
+
+// largestServiceSize returns the largest ServiceSize declared among
+// services, defaulting to small if none is set. Used when multiple
+// services share one Flexible Server (Azure's shared-server-per-engine
+// topology, a deliberate design difference from AWS's one-instance-per-
+// service -- see docs/azure-aws-parity-todo.md's "explicitly not a gap"
+// section): the shared server is sized for its largest consumer, since
+// under-provisioning a resource multiple services depend on is a worse
+// failure mode than over-provisioning it for the smallest one.
+func largestServiceSize(services []*models.Service) models.ServiceSize {
+	rank := map[models.ServiceSize]int{
+		models.ServiceSizeSmall:  0,
+		models.ServiceSizeMedium: 1,
+		models.ServiceSizeLarge:  2,
+	}
+	largest := models.ServiceSizeSmall
+	for _, s := range services {
+		if rank[s.Size] > rank[largest] {
+			largest = s.Size
+		}
+	}
+	return largest
 }
 
 // inferDatabasesAzure infers PostgreSQL and MySQL Flexible Server
@@ -117,6 +172,7 @@ func inferDatabasesAzure(
 		server.Location = env.Region
 		server.AdministratorLogin = shared.DatabaseDefaultUsername
 		server.AdministratorPassword = passwordRef
+		server.SkuName = azureDBSkuFor(largestServiceSize(pgServices))
 		server.Tags = tags
 
 		networking := privateNetworkingAzure(resources, env, app, "postgresql", env.PostgresqlSubnetID, tags)
@@ -164,12 +220,23 @@ func inferDatabasesAzure(
 		server.Location = env.Region
 		server.AdministratorLogin = shared.DatabaseDefaultUsername
 		server.AdministratorPassword = passwordRef
+		server.SkuName = azureDBSkuFor(largestServiceSize(mysqlServices))
 		server.Tags = tags
 
 		networking := privateNetworkingAzure(resources, env, app, "mysql", env.MysqlSubnetID, tags)
 		server.DelegatedSubnetID = networking.DelegatedSubnetID
 		server.PrivateDnsZoneID = networking.PrivateDnsZoneID
-		server.PublicNetworkAccessEnabled = networking.PublicNetworkAccessEnabled
+		// Unlike PostgreSQLFlexibleServer's bool field, MySQL's
+		// public_network_access is a string, and only settable at all
+		// when NOT VNet-integrated (the provider auto-manages it to
+		// "Disabled" whenever delegated_subnet_id+private_dns_zone_id
+		// are set -- see MySQLFlexibleServer.PublicNetworkAccess's own
+		// doc comment). Only set it when public access is genuinely
+		// being requested (no delegated subnet); leave nil otherwise.
+		if networking.PublicNetworkAccessEnabled {
+			enabled := "Enabled"
+			server.PublicNetworkAccess = &enabled
+		}
 		server.DependsOn = networking.DependsOn
 
 		resources.MySQLFlexibleServer["main"] = server
@@ -183,7 +250,8 @@ func inferDatabasesAzure(
 			dbKey := service.Name + "_db"
 			db := models.NewMySQLFlexibleDatabase()
 			db.Name = dbName
-			db.ServerID = "${azurerm_mysql_flexible_server.main.id}"
+			db.ResourceGroupName = env.Name
+			db.ServerName = "${azurerm_mysql_flexible_server.main.name}"
 			resources.MySQLFlexibleDatabase[dbKey] = db
 
 			port := shared.DefaultPortMySQL

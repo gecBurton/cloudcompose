@@ -117,6 +117,14 @@ func registryAuthAzure(service *models.Service) (registry []models.ContainerAppR
 // ContainerAppEnvVar.SecretName, pointing at the Key Vault secret
 // grantManagedServicePermissions stored, rather than
 // ContainerAppEnvVar.Value.
+//
+// getName/tags/identityID (added 2026-08-08, see
+// docs/azure-aws-parity-todo.md Priority 2 items 1-2) are only used to
+// wire compose secrets:/platform config: -- see
+// grantServiceSecretPermissions/grantPlatformConfigPermissions.
+// identityID must be the *managed-service* identity (not just any
+// identity the service happens to use), since secrets/config always go
+// through Key Vault the same way managed-service credentials do.
 func containerSpecAzure(
 	service *models.Service,
 	app *models.Application,
@@ -124,6 +132,9 @@ func containerSpecAzure(
 	resources *models.AzureResources,
 	connections map[string]models.Connection,
 	connectionOrder []string,
+	getName func(string) string,
+	tags map[string]string,
+	managedServiceIdentityID string,
 ) (models.ContainerAppContainer, []models.ContainerAppSecret) {
 	container := models.ContainerAppContainer{
 		Name:   service.Name,
@@ -188,6 +199,16 @@ func containerSpecAzure(
 			Value: connectionURLAzure(capability, &conn),
 		})
 	}
+
+	// Compose secrets:/platform config: -- see grantServiceSecretPermissions/
+	// grantPlatformConfigPermissions's own doc comments.
+	secretEnvVars, secretSecrets := grantServiceSecretPermissions(resources, service, app, getName, tags, managedServiceIdentityID)
+	envVars = append(envVars, secretEnvVars...)
+	secrets = append(secrets, secretSecrets...)
+
+	configEnvVars, configSecrets := grantPlatformConfigPermissions(resources, service, getName, tags, managedServiceIdentityID)
+	envVars = append(envVars, configEnvVars...)
+	secrets = append(secrets, configSecrets...)
 
 	container.Env = envVars
 	return container, secrets
@@ -332,6 +353,27 @@ func managedIdentityAzure(identityID string) *models.ManagedIdentity {
 	return &models.ManagedIdentity{Type: "SystemAssigned"}
 }
 
+// defaultAutoScalingConfigAzure mirrors aws/compute.go's own
+// defaultAutoScalingConfig(): CPU 70%/Memory 80%, matching
+// shared.AutoScalingCPUTarget/AutoScalingMemoryTarget. Used whenever a
+// service declares max_scale>1 but no explicit auto_scaling block --
+// see inferContainerApps's own comment on this for why it's needed at
+// all (without it, such a service got zero scale rules on Azure, unlike
+// AWS which has applied this default since the original port).
+// ScaleInCooldown/ScaleOutCooldown aren't included: those are
+// AppAutoscalingPolicy-specific fields with no Container Apps
+// equivalent (KEDA's own cooldownPeriod/pollingInterval live on the
+// template, not per-rule, and aren't wired here -- see
+// docs/azure-aws-parity-todo.md for other Azure/AWS granularity gaps).
+func defaultAutoScalingConfigAzure() *models.AutoScalingConfig {
+	return &models.AutoScalingConfig{
+		Metrics: []models.AutoScalingMetric{
+			{Type: models.AutoScalingMetricCPU, TargetValue: shared.AutoScalingCPUTarget},
+			{Type: models.AutoScalingMetricMemory, TargetValue: shared.AutoScalingMemoryTarget},
+		},
+	}
+}
+
 // identityForService picks which identity a specific service's Container
 // App/Job should use: the app-wide managed-service identity only if this
 // particular service has a Relationship to a database/cache/storage
@@ -352,6 +394,9 @@ func identityForService(
 ) string {
 	if managedServiceIdentityID == "" {
 		return identityID
+	}
+	if len(service.Secrets) > 0 || len(service.Config) > 0 {
+		return managedServiceIdentityID
 	}
 	for _, r := range app.Relationships {
 		if r.Client != service.Name {
@@ -386,7 +431,7 @@ func inferScheduledJobs(
 		}
 
 		registryConfig, secretConfig := registryAuthAzure(service)
-		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder)
+		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder, getName, tags, managedServiceIdentityID)
 		secretConfig = append(secretConfig, connSecrets...)
 
 		job := models.NewContainerAppJob()
@@ -440,7 +485,7 @@ func inferContainerApps(
 			minReplicas = 1
 		}
 
-		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder)
+		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder, getName, tags, managedServiceIdentityID)
 
 		var ingressConfig *models.ContainerAppIngress
 		if service.Ingress != nil {
@@ -459,21 +504,50 @@ func inferContainerApps(
 		}
 
 		// Build scale rules. azurerm models HTTP scaling as its own
-		// http_scale_rule block with a concurrent_requests string, not as
-		// a generic custom rule.
+		// http_scale_rule block with a concurrent_requests string, and
+		// CPU/Memory as generic custom_scale_rule (KEDA) blocks -- not a
+		// single uniform shape the way AWS's AppAutoscalingPolicy is.
 		//
 		// Python also checks `metric.type == "http"`, which the semantic
 		// model's AutoScalingMetric.type field never actually allows
 		// (Literal["cpu", "memory", "requests_per_target"]) -- dead code
 		// in Python, not ported here, since there is no way to construct
 		// a metric with that type in the first place.
+		//
+		// CPU/Memory custom_scale_rule support and the
+		// MaxScale>1-with-no-explicit-policy default added 2026-08-08
+		// (see docs/azure-aws-parity-todo.md Priority 2 items 5-6):
+		// previously only requests_per_target was handled at all, and a
+		// service with max_scale>1 but no ingress and no explicit
+		// auto_scaling block got zero scale rules -- min/max replicas
+		// were honored, but nothing ever drove scaling past 1. Mirrors
+		// aws/compute.go's defaultAutoScalingConfig(): applies whenever
+		// service.AutoScaling is nil, regardless of whether ingress is
+		// present (unlike the http-default rule below, which only
+		// applies when there's ingress but no explicit policy).
+		autoScaling := service.AutoScaling
+		if autoScaling == nil && maxReplicas > 1 {
+			autoScaling = defaultAutoScalingConfigAzure()
+		}
+
 		var httpScaleRules []models.ContainerAppHTTPScaleRule
-		if service.AutoScaling != nil {
-			for _, metric := range service.AutoScaling.Metrics {
-				if metric.Type == models.AutoScalingMetricRequestsPerTarget {
+		var customScaleRules []models.ContainerAppCustomScaleRule
+		if autoScaling != nil {
+			for _, metric := range autoScaling.Metrics {
+				switch metric.Type {
+				case models.AutoScalingMetricRequestsPerTarget:
 					httpScaleRules = append(httpScaleRules, models.ContainerAppHTTPScaleRule{
 						Name:               "http-rule",
 						ConcurrentRequests: strconv.Itoa(int(metric.TargetValue)),
+					})
+				case models.AutoScalingMetricCPU, models.AutoScalingMetricMemory:
+					customScaleRules = append(customScaleRules, models.ContainerAppCustomScaleRule{
+						Name:           string(metric.Type) + "-rule",
+						CustomRuleType: string(metric.Type),
+						Metadata: map[string]string{
+							"type":  "Utilization",
+							"value": strconv.Itoa(int(metric.TargetValue)),
+						},
 					})
 				}
 			}
@@ -490,10 +564,11 @@ func inferContainerApps(
 		// Build template. Replica counts live directly on the template;
 		// there is no "scale" block in the provider schema.
 		template := models.ContainerAppTemplate{
-			Container:     []models.ContainerAppContainer{containerSpec},
-			MinReplicas:   minReplicas,
-			MaxReplicas:   maxReplicas,
-			HTTPScaleRule: httpScaleRules,
+			Container:       []models.ContainerAppContainer{containerSpec},
+			MinReplicas:     minReplicas,
+			MaxReplicas:     maxReplicas,
+			HTTPScaleRule:   httpScaleRules,
+			CustomScaleRule: customScaleRules,
 		}
 
 		registryConfig, secretConfig := registryAuthAzure(service)

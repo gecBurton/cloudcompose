@@ -27,14 +27,11 @@
       "web": {
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "identity": {
-          "identity_ids": [
-            "${azurerm_user_assigned_identity.main.id}"
-          ],
-          "type": "UserAssigned"
+          "type": "SystemAssigned"
         },
         "ingress": {
           "external_enabled": true,
-          "target_port": 8000,
+          "target_port": 80,
           "traffic_weight": [
             {
               "latest_revision": true,
@@ -43,32 +40,16 @@
           ],
           "transport": "auto"
         },
-        "name": "prod-flask-redis-web",
+        "name": "prod-scaling-web",
         "resource_group_name": "prod",
         "revision_mode": "Single",
-        "secret": [
-          {
-            "identity": "${azurerm_user_assigned_identity.main.id}",
-            "key_vault_secret_id": "${azurerm_key_vault_secret.redis_secret.versionless_id}",
-            "name": "redis-url"
-          }
-        ],
         "template": {
           "container": [
             {
-              "cpu": 0.25,
-              "env": [
-                {
-                  "name": "REDIS_HOST",
-                  "value": "redis"
-                },
-                {
-                  "name": "REDIS_URL",
-                  "secret_name": "redis-url"
-                }
-              ],
-              "image": "flask-redis-web:latest",
-              "memory": "0.5Gi",
+              "cpu": 1,
+              "env": [],
+              "image": "nginx",
+              "memory": "2Gi",
               "name": "web"
             }
           ],
@@ -86,7 +67,7 @@
     "azurerm_key_vault": {
       "main": {
         "location": "eastus",
-        "name": "prod-flask-redis-kv",
+        "name": "prod-scaling-kv",
         "purge_protection_enabled": false,
         "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
@@ -95,46 +76,36 @@
         "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
       }
     },
-    "azurerm_key_vault_secret": {
-      "redis_secret": {
-        "key_vault_id": "${azurerm_key_vault.main.id}",
+    "azurerm_postgresql_flexible_server": {
+      "main": {
+        "administrator_login": "composey",
+        "administrator_password": "${random_password.postgres_admin.result}",
         "lifecycle": {
           "ignore_changes": [
-            "value"
+            "zone"
           ]
         },
-        "name": "prod-flask-redis-redis-password",
-        "value": "${azurerm_managed_redis.redis_redis.default_database[0].primary_access_key}"
-      }
-    },
-    "azurerm_managed_redis": {
-      "redis_redis": {
-        "default_database": [
-          {
-            "access_keys_authentication_enabled": true,
-            "client_protocol": "Encrypted",
-            "eviction_policy": "AllKeysLRU"
-          }
-        ],
-        "high_availability_enabled": false,
         "location": "eastus",
-        "name": "prod-flask-redis-redis",
+        "name": "prod-scaling-pg",
+        "public_network_access_enabled": true,
         "resource_group_name": "prod",
-        "sku_name": "Balanced_B0"
+        "sku_name": "GP_Standard_D2s_v3",
+        "storage_mb": 32768,
+        "version": "14"
       }
     },
-    "azurerm_role_assignment": {
-      "kv_role": {
-        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
-        "role_definition_name": "Key Vault Secrets User",
-        "scope": "${azurerm_key_vault.main.id}"
+    "azurerm_postgresql_flexible_server_database": {
+      "db_db": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8",
+        "name": "scaling_db",
+        "server_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
-    "azurerm_user_assigned_identity": {
-      "main": {
-        "location": "eastus",
-        "name": "prod-flask-redis-identity",
-        "resource_group_name": "prod"
+    "random_password": {
+      "postgres_admin": {
+        "length": 20,
+        "special": false
       }
     }
   },

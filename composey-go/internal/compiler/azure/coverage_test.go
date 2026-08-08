@@ -53,8 +53,8 @@ func TestInferDatabasesAzure_MySQLImageCreatesFlexibleServer(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected a MySQL Flexible Server, got keys %v", keysOf(resources.MySQLFlexibleServer))
 	}
-	if server.Version != "8.0" {
-		t.Errorf("Version = %q, want 8.0", server.Version)
+	if server.Version != "8.0.21" {
+		t.Errorf("Version = %q, want 8.0.21", server.Version)
 	}
 	if server.SkuName != "B_Standard_B1ms" {
 		t.Errorf("SkuName = %q, want B_Standard_B1ms", server.SkuName)

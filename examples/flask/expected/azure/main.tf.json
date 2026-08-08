@@ -71,6 +71,11 @@
             "identity": "${azurerm_user_assigned_identity.main.id}",
             "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
             "name": "db-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.backend_db-password_secret.versionless_id}",
+            "name": "backend-db-password"
           }
         ],
         "template": {
@@ -106,6 +111,10 @@
                 {
                   "name": "DB_URL",
                   "secret_name": "db-url"
+                },
+                {
+                  "name": "DB_PASSWORD",
+                  "secret_name": "backend-db-password"
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/backend@${docker_registry_image.backend_push.sha256_digest}",
@@ -181,6 +190,16 @@
       }
     },
     "azurerm_key_vault_secret": {
+      "backend_db-password_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-flask-backend-db-password",
+        "value": "PLACEHOLDER_VALUE_CHANGE_IN_AZURE_PORTAL"
+      },
       "db_secret": {
         "key_vault_id": "${azurerm_key_vault.main.id}",
         "lifecycle": {
@@ -189,37 +208,37 @@
           ]
         },
         "name": "prod-flask-db-password",
-        "value": "${random_password.postgres_admin.result}"
+        "value": "${random_password.mysql_admin.result}"
       }
     },
-    "azurerm_postgresql_flexible_server": {
+    "azurerm_mysql_flexible_database": {
+      "db_db": {
+        "charset": "utf8mb4",
+        "collation": "utf8mb4_unicode_ci",
+        "name": "example",
+        "resource_group_name": "prod",
+        "server_name": "${azurerm_mysql_flexible_server.main.name}"
+      }
+    },
+    "azurerm_mysql_flexible_server": {
       "main": {
         "administrator_login": "composey",
-        "administrator_password": "${random_password.postgres_admin.result}",
-        "lifecycle": {
-          "ignore_changes": [
-            "zone"
-          ]
-        },
+        "administrator_password": "${random_password.mysql_admin.result}",
         "location": "eastus",
-        "name": "prod-flask-pg",
-        "public_network_access_enabled": true,
+        "name": "prod-flask-mysql",
+        "public_network_access": "Enabled",
         "resource_group_name": "prod",
         "sku_name": "B_Standard_B1ms",
-        "storage_mb": 32768,
-        "version": "14"
-      }
-    },
-    "azurerm_postgresql_flexible_server_database": {
-      "db_db": {
-        "charset": "UTF8",
-        "collation": "en_US.utf8",
-        "name": "example",
-        "server_id": "${azurerm_postgresql_flexible_server.main.id}"
+        "storage": [
+          {
+            "size_gb": 32
+          }
+        ],
+        "version": "8.0.21"
       }
     },
     "azurerm_role_assignment": {
-      "db_kv_role": {
+      "kv_role": {
         "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
         "role_definition_name": "Key Vault Secrets User",
         "scope": "${azurerm_key_vault.main.id}"
@@ -261,7 +280,7 @@
       }
     },
     "random_password": {
-      "postgres_admin": {
+      "mysql_admin": {
         "length": 20,
         "special": false
       }

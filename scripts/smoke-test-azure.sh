@@ -170,7 +170,7 @@ if [[ "${1:-}" == "--destroy-only" ]]; then
     rm -rf "$BUILD_DIR"
     echo "  NOTE: no $BUILD_DIR/main.tf.json — skipping the app stack."
     echo "        To destroy it too, first run:"
-    echo "          $COMPOSEY main -f \$COMPOSE -e $ENV_DIR/environment.yml -p $PROJECT -o $BUILD_DIR"
+    echo "          $COMPOSEY main -f \$COMPOSE -e $ENV_DIR -p $PROJECT -o $BUILD_DIR"
   fi
 
   exit 0
@@ -201,7 +201,7 @@ log "Environment created. Getting Container App info..."
 # --- 2. Compile the app ------------------------------------------------------
 log "Compiling $COMPOSE with composey for Azure…"
 cd "$ROOT"
-"$COMPOSEY" main -f "$COMPOSE" -e "$ENV_DIR/environment.yml" -p "$PROJECT" -o "$BUILD_DIR"
+"$COMPOSEY" main -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" -o "$BUILD_DIR"
 
 # --- 3. Deploy the app -------------------------------------------------------
 log "Deploying app '$PROJECT' to Azure…"

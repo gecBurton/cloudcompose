@@ -32,7 +32,7 @@ func runMain(cmd *cobra.Command, args []string) {
 	}
 
 	composeFile, _ := cmd.Flags().GetString("file")
-	envFile, _ := cmd.Flags().GetString("env")
+	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
 	outputDir, _ := cmd.Flags().GetString("out")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
@@ -68,14 +68,14 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	if envFile == "" {
+	if envDir == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required to compile")
 		os.Exit(1)
 	}
 
 	// 1. Load environment.
-	fmt.Printf("Loading environment: %s\n", envFile)
-	env, err := compiler.LoadEnvironment(envFile)
+	fmt.Printf("Loading environment: %s\n", envDir)
+	env, err := compiler.LoadEnvironment(envDir)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -287,7 +287,7 @@ func init() {
 	rootCmd.AddCommand(mainCmd)
 
 	mainCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
-	mainCmd.Flags().StringP("env", "e", "", "Path to the Environment configuration YAML")
+	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `composey init` (terraform apply must have run there already)")
 	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	mainCmd.Flags().StringP("out", "o", "terraform", "Directory to write the generated Terraform JSON")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")

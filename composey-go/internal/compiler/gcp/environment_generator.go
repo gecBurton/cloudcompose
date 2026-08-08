@@ -10,8 +10,18 @@ import (
 // environment, mirroring environment_generator.py. Creates a VPC
 // Network, subnet, VPC connector for Cloud Run, and a service networking
 // connection for Cloud SQL.
+//
+// projectID is required and is written into the generated
+// `output "environment"` block's project_id: gcp/infer.go depends on it
+// throughout, but earlier versions of this generator never populated it
+// at all, leaving composey init --provider gcp's output silently
+// incomplete until composey main failed against it later. See
+// docs/authored-environment-config.md's "The project_id gap".
+//
+// The environment's facts are exposed as a plain Terraform output only
+// -- see aws.GenerateAwsEnvironment's own doc comment for why.
 func GenerateGcpEnvironment(
-	name, region, vpcCIDR string,
+	name, region, vpcCIDR, projectID string,
 	tags map[string]string,
 	retainDataOnDestroy bool,
 ) (string, error) {
@@ -19,7 +29,6 @@ func GenerateGcpEnvironment(
 
 	requiredProviders := map[string]any{
 		"google": map[string]any{"source": "hashicorp/google", "version": "~> 5.0"},
-		"local":  map[string]any{"source": "hashicorp/local", "version": "~> 2.4"},
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 	provider := map[string]any{"google": map[string]any{"region": region}}
@@ -80,6 +89,7 @@ func GenerateGcpEnvironment(
 		"target":                 "gcp",
 		"name":                   name,
 		"region":                 region,
+		"project_id":             projectID,
 		"vpc_id":                 fmt.Sprintf("${google_compute_network.%s.id}", tfn),
 		"subnet_id":              fmt.Sprintf("${google_compute_subnetwork.%s.id}", tfn),
 		"vpc_connector_name":     fmt.Sprintf("${google_vpc_access_connector.%s.name}", tfn),
@@ -87,19 +97,6 @@ func GenerateGcpEnvironment(
 	}
 	if len(tags) > 0 {
 		environmentConfig["labels"] = tags
-	}
-
-	environmentConfigJSON, err := shared.MarshalJSONStringPlain(environmentConfig)
-	if err != nil {
-		return "", err
-	}
-
-	resource["local_file"] = map[string]any{
-		tfn + "_environment": map[string]any{
-			"filename":        "${path.module}/environment.yml",
-			"content":         environmentConfigJSON,
-			"file_permission": "0644",
-		},
 	}
 
 	outputs := map[string]any{

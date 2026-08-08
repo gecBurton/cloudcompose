@@ -112,8 +112,8 @@ var compileAWSCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		filePath := args[0]
 
-		envPath, err := cmd.Flags().GetString("env")
-		if err != nil || envPath == "" {
+		envDir, err := cmd.Flags().GetString("env")
+		if err != nil || envDir == "" {
 			fmt.Fprintln(os.Stderr, "Error: --env is required")
 			os.Exit(1)
 		}
@@ -132,7 +132,7 @@ var compileAWSCmd = &cobra.Command{
 			projectName = filepath.Base(filepath.Dir(absPath))
 		}
 
-		env, err := aws.LoadAwsEnvironment(envPath)
+		env, err := aws.LoadAwsEnvironment(envDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
@@ -177,8 +177,8 @@ var compileAzureCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		filePath := args[0]
 
-		envPath, err := cmd.Flags().GetString("env")
-		if err != nil || envPath == "" {
+		envDir, err := cmd.Flags().GetString("env")
+		if err != nil || envDir == "" {
 			fmt.Fprintln(os.Stderr, "Error: --env is required")
 			os.Exit(1)
 		}
@@ -197,7 +197,7 @@ var compileAzureCmd = &cobra.Command{
 			projectName = filepath.Base(filepath.Dir(absPath))
 		}
 
-		env, err := azure.LoadAzureEnvironment(envPath)
+		env, err := azure.LoadAzureEnvironment(envDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
@@ -243,8 +243,8 @@ var compileGcpCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		filePath := args[0]
 
-		envPath, err := cmd.Flags().GetString("env")
-		if err != nil || envPath == "" {
+		envDir, err := cmd.Flags().GetString("env")
+		if err != nil || envDir == "" {
 			fmt.Fprintln(os.Stderr, "Error: --env is required")
 			os.Exit(1)
 		}
@@ -263,7 +263,7 @@ var compileGcpCmd = &cobra.Command{
 			projectName = filepath.Base(filepath.Dir(absPath))
 		}
 
-		env, err := gcp.LoadGcpEnvironment(envPath)
+		env, err := gcp.LoadGcpEnvironment(envDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
@@ -303,11 +303,11 @@ func init() {
 
 	normalizeCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
 	compileAWSCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
-	compileAWSCmd.Flags().StringP("env", "e", "", "Path to the AWS environment configuration YAML (required)")
+	compileAWSCmd.Flags().StringP("env", "e", "", "Path to the AWS environment directory created by `composey init` (required)")
 	compileAzureCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
-	compileAzureCmd.Flags().StringP("env", "e", "", "Path to the Azure environment configuration YAML (required)")
+	compileAzureCmd.Flags().StringP("env", "e", "", "Path to the Azure environment directory created by `composey init` (required)")
 	compileGcpCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
-	compileGcpCmd.Flags().StringP("env", "e", "", "Path to the GCP environment configuration YAML (required)")
+	compileGcpCmd.Flags().StringP("env", "e", "", "Path to the GCP environment directory created by `composey init` (required)")
 }
 
 func main() {

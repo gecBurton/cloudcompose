@@ -12,7 +12,7 @@
 docker compose up
 
 # Production deployment (same file!)
-composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
+composey main -f docker-compose.yml -e prod-infrastructure
 ```
 
 ---
@@ -118,12 +118,21 @@ composey init --provider aws --name prod
 cd prod-infrastructure && terraform init && terraform apply
 ```
 
-This writes `environment.yml`, which every app deployment references.
+This writes `environment.yaml` — the authored decisions that produced
+the infrastructure (region, VPC CIDR, whether to create an ALB — review
+and commit this like you would `docker-compose.yml`) — alongside
+`main.tf.json`. Once `terraform apply` runs, `composey main` reads the
+resulting facts (VPC ID, ALB ARN) directly from Terraform's own state via
+`terraform output -json` — no separate generated file to keep in sync.
+Re-running `composey init -f prod-infrastructure/environment.yaml` picks
+up that file as input; any flag passed explicitly overrides its value
+for that run. See `docs/authored-environment-config.md` for the full
+design.
 
 ### Deploy to AWS
 
 ```bash
-composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
+composey main -f docker-compose.yml -e prod-infrastructure
 ```
 
 That's it. Your app is live behind the shared load balancer / Container App
@@ -133,10 +142,10 @@ ingress / Cloud Run URL.
 
 ```bash
 composey init --provider azure --name prod
-composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
+composey main -f docker-compose.yml -e prod-infrastructure
 
-composey init --provider gcp --name prod
-composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
+composey init --provider gcp --name prod --project-id my-gcp-project-id
+composey main -f docker-compose.yml -e prod-infrastructure
 ```
 
 ---
@@ -182,7 +191,7 @@ services:
 
 **Deploy to AWS:**
 ```bash
-composey main -f docker-compose.yml -e prod-infrastructure/environment.yml
+composey main -f docker-compose.yml -e prod-infrastructure
 ```
 
 **What gets created:**
@@ -319,7 +328,7 @@ go build -o composey ./cmd/composey
 ./composey init --provider aws --name demo
 (cd demo-infrastructure && terraform init && terraform apply)
 
-./composey main -f ../examples/hello/compose.yml -e demo-infrastructure/environment.yml
+./composey main -f ../examples/hello/compose.yml -e demo-infrastructure
 ```
 
 ---

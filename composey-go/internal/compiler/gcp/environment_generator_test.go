@@ -18,7 +18,7 @@ func keysOfAny(m map[string]any) []string {
 func TestGenerateGcpEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateGcpEnvironment(
-		"prod", "us-central1", "10.0.0.0/16",
+		"prod", "us-central1", "10.0.0.0/16", "my-gcp-project",
 		map[string]string{"team": "platform"}, true,
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestGenerateGcpEnvironment_ValidStructure(t *testing.T) {
 // test_outputs_include_required_fields, test_target_is_gcp.
 func TestGenerateGcpEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", nil, true)
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", nil, true)
 	if err != nil {
 		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
 	}
@@ -68,12 +68,15 @@ func TestGenerateGcpEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	}
 
 	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
-	for _, field := range []string{"target", "name", "region", "vpc_id", "subnet_id", "vpc_connector_name"} {
+	for _, field := range []string{"target", "name", "region", "project_id", "vpc_id", "subnet_id", "vpc_connector_name"} {
 		if _, ok := envConfig[field]; !ok {
 			t.Errorf("expected output.environment.value to include %q", field)
 		}
 	}
 	if envConfig["target"] != "gcp" {
 		t.Errorf("target = %v, want gcp", envConfig["target"])
+	}
+	if envConfig["project_id"] != "my-gcp-project" {
+		t.Errorf("project_id = %v, want my-gcp-project", envConfig["project_id"])
 	}
 }

@@ -2,85 +2,57 @@ package aws
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/gecburton/composey/internal/compiler/shared"
 	"github.com/gecburton/composey/internal/models"
-	yaml "go.yaml.in/yaml/v4"
 )
 
-// awsEnvironmentYAML mirrors the on-disk shape of an AWS environment file,
-// matching the field names AwsEnvironment declares in environment.py
-// (snake_case, since these are hand-written YAML files, not Go/JSON
-// values). Kept separate from models.AwsEnvironment rather than adding
-// yaml tags directly to it: the JSON tags there are load-bearing for this
-// package's own Terraform-JSON-shaped output, and reusing them for YAML
-// input risks the two drifting for the wrong reason if either format's
-// needs change independently later.
-type awsEnvironmentYAML struct {
-	Target              string            `yaml:"target"`
-	Name                string            `yaml:"name"`
-	Region              string            `yaml:"region"`
-	LogRetentionDays    *int              `yaml:"log_retention_days"`
-	RetainDataOnDestroy *bool             `yaml:"retain_data_on_destroy"`
-	Tags                map[string]string `yaml:"tags"`
-	VpcID               string            `yaml:"vpc_id"`
-	PublicSubnets       []string          `yaml:"public_subnets"`
-	PrivateSubnets      []string          `yaml:"private_subnets"`
-	EcsClusterArn       string            `yaml:"ecs_cluster_arn"`
-	AlbArn              *string           `yaml:"alb_arn"`
-	AlbListenerArn      *string           `yaml:"alb_listener_arn"`
-	AlbSecurityGroupID  *string           `yaml:"alb_security_group_id"`
-	AwsEndpoint         *string           `yaml:"aws_endpoint"`
-}
-
-// LoadAwsEnvironment loads and validates an AWS environment YAML file,
-// mirroring environment.py's load_environment for the "aws" target
-// specifically (Azure/GCP environment loading belongs to Phase 4, once
-// their inference is ported).
-func LoadAwsEnvironment(path string) (*models.AwsEnvironment, error) {
-	raw, err := os.ReadFile(path)
+// LoadAwsEnvironment resolves an AWS environment's facts by running
+// `terraform output -json` in dir and decoding its `environment` output
+// into models.AwsEnvironment. Requires dir to be a directory
+// `composey init` generated and `terraform apply` has already run in --
+// see internal/compiler/shared/terraform_outputs.go for why this reads
+// Terraform's own live state rather than a generated file.
+func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
+	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {
-		return nil, fmt.Errorf("read environment file %s: %w", path, err)
+		return nil, err
 	}
 
-	var parsed awsEnvironmentYAML
-	if err := yaml.Unmarshal(raw, &parsed); err != nil {
-		return nil, fmt.Errorf("parse environment file %s: %w", path, err)
+	target, _ := raw["target"].(string)
+	if target == "" {
+		target = "aws"
 	}
-
-	if parsed.Target == "" {
-		parsed.Target = "aws"
-	}
-	if parsed.Target != "aws" {
+	if target != "aws" {
 		return nil, fmt.Errorf(
-			"%s declares target %q; this build only supports \"aws\" (Azure/GCP inference is Phase 4, still Python-only)",
-			path, parsed.Target,
+			"%s declares target %q; this loader only supports \"aws\"",
+			dir, target,
 		)
 	}
 
 	env := models.NewAwsEnvironment()
-	env.Name = parsed.Name
-	if parsed.Region != "" {
-		env.Region = parsed.Region
+	env.Name, _ = raw["name"].(string)
+	if region, ok := raw["region"].(string); ok && region != "" {
+		env.Region = region
 	}
-	if parsed.LogRetentionDays != nil {
-		env.LogRetentionDays = *parsed.LogRetentionDays
+	if logRetentionDays, ok := raw["log_retention_days"].(float64); ok {
+		env.LogRetentionDays = int(logRetentionDays)
 	}
-	if parsed.RetainDataOnDestroy != nil {
-		env.RetainDataOnDestroy = *parsed.RetainDataOnDestroy
+	if retainData, ok := raw["retain_data_on_destroy"].(bool); ok {
+		env.RetainDataOnDestroy = retainData
 	}
-	env.Tags = parsed.Tags
-	env.VpcID = parsed.VpcID
-	env.PublicSubnets = parsed.PublicSubnets
-	env.PrivateSubnets = parsed.PrivateSubnets
-	env.EcsClusterArn = parsed.EcsClusterArn
-	env.AlbArn = parsed.AlbArn
-	env.AlbListenerArn = parsed.AlbListenerArn
-	env.AlbSecurityGroupID = parsed.AlbSecurityGroupID
-	env.AwsEndpoint = parsed.AwsEndpoint
+	env.Tags = shared.ToStringMap(raw["tags"])
+	env.VpcID, _ = raw["vpc_id"].(string)
+	env.PublicSubnets = shared.ToStringSlice(raw["public_subnets"])
+	env.PrivateSubnets = shared.ToStringSlice(raw["private_subnets"])
+	env.EcsClusterArn, _ = raw["ecs_cluster_arn"].(string)
+	env.AlbArn = shared.ToStringPtr(raw["alb_arn"])
+	env.AlbListenerArn = shared.ToStringPtr(raw["alb_listener_arn"])
+	env.AlbSecurityGroupID = shared.ToStringPtr(raw["alb_security_group_id"])
+	env.AwsEndpoint = shared.ToStringPtr(raw["aws_endpoint"])
 
 	if err := env.Validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", dir, err)
 	}
 
 	return &env, nil

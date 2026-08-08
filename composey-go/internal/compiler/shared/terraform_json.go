@@ -70,7 +70,7 @@ func MarshalIndentedJSON(v any) (string, error) {
 // alphabetically key-sorted JSON, for embedding as a string value inside
 // another JSON document (e.g. the shared-infrastructure generators'
 // local_file.content field, which itself holds the generated
-// environment.yml's JSON-as-YAML contents).
+// environment.facts.json contents).
 func MarshalJSONStringPlain(v any) (string, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {

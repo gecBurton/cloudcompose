@@ -9,6 +9,11 @@
 > the generated `environment.yml` shape, the rationale — matches current
 > behavior; see `cmd/composey/{init,compile}.go` and `README.md` for the
 > exact current flag names.
+>
+> **2026-08-08: see `docs/authored-environment-config.md`.** That doc
+> revises what `composey init` takes as *input* (an authored, versioned
+> `environment.yaml` instead of flags-only) without changing the overall
+> two-step shape described here.
 
 ## Core Commands
 

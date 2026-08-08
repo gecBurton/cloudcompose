@@ -10,6 +10,10 @@ import (
 // environment, mirroring environment_generator.py. Creates a Resource
 // Group, Log Analytics Workspace, VNet with three delegated subnets
 // (Container Apps, PostgreSQL, MySQL), and a Container Apps Environment.
+//
+// The environment's facts are exposed as a plain Terraform
+// `output "environment"` block only -- see aws.GenerateAwsEnvironment's
+// own doc comment for why.
 func GenerateAzureEnvironment(
 	name, location, vnetCIDR string,
 	tags map[string]string,
@@ -20,7 +24,6 @@ func GenerateAzureEnvironment(
 
 	requiredProviders := map[string]any{
 		"azurerm": map[string]any{"source": "hashicorp/azurerm", "version": "~> 4.0"},
-		"local":   map[string]any{"source": "hashicorp/local", "version": "~> 2.4"},
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 	provider := map[string]any{"azurerm": map[string]any{"features": map[string]any{}}}
@@ -146,19 +149,6 @@ func GenerateAzureEnvironment(
 	}
 	if len(tags) > 0 {
 		environmentConfig["tags"] = tags
-	}
-
-	environmentConfigJSON, err := shared.MarshalJSONStringPlain(environmentConfig)
-	if err != nil {
-		return "", err
-	}
-
-	resource["local_file"] = map[string]any{
-		tfn + "_environment": map[string]any{
-			"filename":        "${path.module}/environment.yml",
-			"content":         environmentConfigJSON,
-			"file_permission": "0644",
-		},
 	}
 
 	outputs := map[string]any{

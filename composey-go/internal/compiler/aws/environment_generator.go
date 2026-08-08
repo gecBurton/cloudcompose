@@ -14,6 +14,15 @@ import (
 // This is the "platform" infrastructure (VPC, ALB, ECS Cluster, etc.)
 // that multiple applications share, used by `composey init` to set up
 // environments that developers then deploy to.
+//
+// The environment's facts (VPC ID, ALB ARN, cluster ARN) are exposed as
+// a plain Terraform `output "environment"` block only -- `composey main`
+// reads them directly via `terraform output -json` (see
+// internal/compiler/shared/terraform_outputs.go), rather than through a
+// generated file a local_file resource writes as a side effect. See
+// docs/authored-environment-config.md for why: a generated file
+// duplicated exactly what `terraform output` already tracks, and reading
+// live state instead means there's nothing that can go stale.
 func GenerateAwsEnvironment(
 	name, region, vpcCIDR string,
 	azCount int,
@@ -54,8 +63,7 @@ func GenerateAwsEnvironment(
 	}
 
 	requiredProviders := map[string]any{
-		"aws":   map[string]any{"source": "hashicorp/aws", "version": "~> 5.0"},
-		"local": map[string]any{"source": "hashicorp/local", "version": "~> 2.4"},
+		"aws": map[string]any{"source": "hashicorp/aws", "version": "~> 5.0"},
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 
@@ -285,19 +293,6 @@ func GenerateAwsEnvironment(
 	}
 	if awsEndpoint != nil {
 		environmentConfig["aws_endpoint"] = *awsEndpoint
-	}
-
-	environmentConfigJSON, err := shared.MarshalJSONStringPlain(environmentConfig)
-	if err != nil {
-		return "", err
-	}
-
-	resource["local_file"] = map[string]any{
-		tfn + "_environment": map[string]any{
-			"filename":        "${path.module}/environment.yml",
-			"content":         environmentConfigJSON,
-			"file_permission": "0644",
-		},
 	}
 
 	outputs := map[string]any{

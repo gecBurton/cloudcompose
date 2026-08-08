@@ -27,7 +27,10 @@
       "web": {
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "identity": {
-          "type": "SystemAssigned"
+          "identity_ids": [
+            "${azurerm_user_assigned_identity.main.id}"
+          ],
+          "type": "UserAssigned"
         },
         "ingress": {
           "external_enabled": true,
@@ -43,6 +46,13 @@
         "name": "prod-flask-redis-web",
         "resource_group_name": "prod",
         "revision_mode": "Single",
+        "secret": [
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.redis_secret.versionless_id}",
+            "name": "redis-url"
+          }
+        ],
         "template": {
           "container": [
             {
@@ -54,7 +64,7 @@
                 },
                 {
                   "name": "REDIS_URL",
-                  "value": "postgresql://None:${azurerm_managed_redis.redis_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.redis_redis.hostname}:10000/None"
+                  "secret_name": "redis-url"
                 }
               ],
               "image": "flask-redis-web:latest",
@@ -78,10 +88,23 @@
         "location": "eastus",
         "name": "prod-flask-redis-kv",
         "purge_protection_enabled": false,
+        "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
         "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
+      }
+    },
+    "azurerm_key_vault_secret": {
+      "redis_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-flask-redis-redis-password",
+        "value": "${azurerm_managed_redis.redis_redis.default_database[0].primary_access_key}"
       }
     },
     "azurerm_managed_redis": {
@@ -98,6 +121,20 @@
         "name": "prod-flask-redis-redis",
         "resource_group_name": "prod",
         "sku_name": "Balanced_B0"
+      }
+    },
+    "azurerm_role_assignment": {
+      "redis_kv_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Key Vault Secrets User",
+        "scope": "${azurerm_key_vault.main.id}"
+      }
+    },
+    "azurerm_user_assigned_identity": {
+      "main": {
+        "location": "eastus",
+        "name": "prod-flask-redis-identity",
+        "resource_group_name": "prod"
       }
     }
   },

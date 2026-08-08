@@ -100,21 +100,31 @@ func registryAuthAzure(service *models.Service) (registry []models.ContainerAppR
 // one. cpu and memory sit directly on the container; azurerm has no nested
 // "resources" block.
 //
-// Ported bug-for-bug: Python's env-var substitution here is narrower than
-// AWS's connections.go (hardcoded postgresql:// URL format,
-// relationship-driven only -- it does not use resolve_value/ResolveValue's
-// general logic at all, and does not touch service.Env directly beyond
-// copying it verbatim). Redis/Storage connections wired via Relationships
-// would render as if they were Postgres URLs; this is a known, pre-existing
-// limitation of the Python implementation, not something to silently fix
-// during the port.
+// Unlike AWS's general connections.go/ResolveValue, this only wires a
+// connection when a Relationship declares it, and only ever adds one
+// `<SERVER>_URL` env var per relationship rather than substituting into
+// service.Env's own values -- both narrower than AWS by design, tracked
+// as a Priority 3 item in docs/azure-aws-parity-todo.md, not fixed here.
+// What *is* fixed here (2026-08-08, see docs/azure-aws-parity-todo.md
+// Priority 1 item 3): the URL scheme now matches the target's actual
+// capability (postgresql://, mysql://, rediss://, or a bare
+// https://<host>/<container> for object storage) instead of always
+// rendering a Postgres-shaped URL regardless of target -- previously a
+// Redis/Storage relationship rendered as
+// "postgresql://None:None@<redis-host>:None/None", a real bug, not just
+// a stylistic mismatch with AWS. Credentials are also no longer
+// interpolated as plaintext: a connection with a password uses
+// ContainerAppEnvVar.SecretName, pointing at the Key Vault secret
+// grantManagedServicePermissions stored, rather than
+// ContainerAppEnvVar.Value.
 func containerSpecAzure(
 	service *models.Service,
 	app *models.Application,
 	env *models.AzureEnvironment,
+	resources *models.AzureResources,
 	connections map[string]models.Connection,
 	connectionOrder []string,
-) models.ContainerAppContainer {
+) (models.ContainerAppContainer, []models.ContainerAppSecret) {
 	container := models.ContainerAppContainer{
 		Name:   service.Name,
 		Image:  getContainerImageAzure(service, app, env),
@@ -127,6 +137,8 @@ func containerSpecAzure(
 	for _, k := range shared.SortedKeys(service.Env) {
 		envVars = append(envVars, models.ContainerAppEnvVar{Name: k, Value: service.Env[k]})
 	}
+
+	var secrets []models.ContainerAppSecret
 
 	for _, dbName := range connectionOrder {
 		conn, ok := connections[dbName]
@@ -144,45 +156,105 @@ func containerSpecAzure(
 			continue
 		}
 
-		// Python's f-string renders "None" literally for any unset field
-		// (an f-string calls str() on its argument, and str(None) ==
-		// "None") -- not an empty string. Confirmed as the actual
-		// behavior, not assumed, by running the equivalent Python
-		// f-string against a connection with every optional field unset
-		// (2026-08-06): a bucket Connection (host+name only, no
-		// username/password/port/database) produces
-		// "postgresql://None:None@<host>:None/None", not
-		// "postgresql://:@<host>:/". Matched here even though it reads
-		// as a bug in the Python implementation (a Redis/Storage
-		// connection substituted into this Postgres-shaped template
-		// produces a nonsensical URL) -- ported bug-for-bug per this
-		// phase's own decision to replicate current Python behavior
-		// rather than silently fix it during the port.
-		username := "None"
-		if conn.Username != nil {
-			username = *conn.Username
+		server := findServiceByNameAzure(app, dbName)
+		var capability models.Capability
+		if server != nil {
+			capability = server.Capability
 		}
-		password := "None"
-		if conn.Password != nil {
-			password = *conn.Password
-		}
-		port := "None"
-		if conn.Port != nil {
-			port = strconv.Itoa(*conn.Port)
-		}
-		database := "None"
-		if conn.Database != nil {
-			database = *conn.Database
+
+		envVarName := strings.ToUpper(dbName) + "_URL"
+
+		if secretRef := keyVaultSecretRefFor(resources, dbName); secretRef != "" {
+			// Credential goes through Container Apps' own secretRef
+			// mechanism, resolved from Key Vault via the app's identity
+			// -- never interpolated into the env var's own value. See
+			// docs/azure-aws-parity-todo.md Priority 1 items 1-2. The
+			// secret block itself is app/job-level, not container-level
+			// (azurerm's schema puts `secret` on ContainerApp/Job, only
+			// `env.secret_name` lives on the container) -- returned here
+			// for the caller to merge into that level.
+			secretName := dbName + "-url"
+			secrets = append(secrets, models.ContainerAppSecret{
+				Name:             secretName,
+				KeyVaultSecretID: secretRef,
+				Identity:         managedServiceIdentityRef(resources),
+			})
+			envVars = append(envVars, models.ContainerAppEnvVar{Name: envVarName, SecretName: secretName})
+			continue
 		}
 
 		envVars = append(envVars, models.ContainerAppEnvVar{
-			Name:  strings.ToUpper(dbName) + "_URL",
-			Value: fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", username, password, conn.Host, port, database),
+			Name:  envVarName,
+			Value: connectionURLAzure(capability, &conn),
 		})
 	}
 
 	container.Env = envVars
-	return container
+	return container, secrets
+}
+
+// connectionURLAzure renders a connection as a URL, choosing the scheme
+// from the target service's capability rather than always assuming
+// Postgres -- see containerSpecAzure's own doc comment for why this
+// matters. Credential-bearing connections should go through
+// keyVaultSecretRefFor's secretRef path instead of this function; this
+// path is only reached for a connection with no stored secret (i.e. no
+// password at all, or no identity was provisioned to read one from Key
+// Vault because inferManagedServiceIdentity found nothing needing it --
+// which shouldn't happen if grantManagedServicePermissions ran, but this
+// function still renders something sane rather than panicking if it
+// didn't).
+func connectionURLAzure(capability models.Capability, conn *models.Connection) string {
+	switch capability {
+	case models.CapabilityCache:
+		scheme := "redis"
+		password := ""
+		if conn.Password != nil {
+			password = ":" + *conn.Password + "@"
+		}
+		port := ""
+		if conn.Port != nil {
+			port = fmt.Sprintf(":%d", *conn.Port)
+		}
+		return fmt.Sprintf("%s://%s%s%s", scheme, password, conn.Host, port)
+
+	case models.CapabilityObjectStorage:
+		return conn.Host
+
+	default: // database (postgres or mysql)
+		scheme := "postgresql"
+		if conn.Port != nil && *conn.Port == shared.DefaultPortMySQL {
+			scheme = "mysql"
+		}
+		username := ""
+		password := ""
+		if conn.Username != nil {
+			username = *conn.Username
+		}
+		if conn.Password != nil {
+			password = ":" + *conn.Password
+		}
+		port := ""
+		if conn.Port != nil {
+			port = fmt.Sprintf(":%d", *conn.Port)
+		}
+		database := ""
+		if conn.Database != nil {
+			database = "/" + *conn.Database
+		}
+		return fmt.Sprintf("%s://%s%s@%s%s%s", scheme, username, password, conn.Host, port, database)
+	}
+}
+
+// findServiceByNameAzure finds a service by name, mirroring
+// aws/permissions.go's findServiceByName.
+func findServiceByNameAzure(app *models.Application, name string) *models.Service {
+	for i := range app.Services {
+		if app.Services[i].Name == name {
+			return &app.Services[i]
+		}
+	}
+	return nil
 }
 
 func sortStringsAzure(s []string) {
@@ -260,13 +332,45 @@ func managedIdentityAzure(identityID string) *models.ManagedIdentity {
 	return &models.ManagedIdentity{Type: "SystemAssigned"}
 }
 
+// identityForService picks which identity a specific service's Container
+// App/Job should use: the app-wide managed-service identity only if this
+// particular service has a Relationship to a database/cache/storage
+// connection (see permissions.go's inferManagedServiceIdentity), falling
+// back to identityID (env.UserAssignedIdentityID, or "" for
+// system-assigned) for every other service. Without this per-service
+// check, every service in the app would switch to UserAssigned the
+// moment *any* service needed the managed-service identity -- confirmed
+// as a real, not theoretical, divergence while regenerating Azure golden
+// fixtures for this fix (2026-08-08): the flask example's "frontend"
+// service, which has no relationship to "db" at all, switched identity
+// types for no reason before this function existed.
+func identityForService(
+	app *models.Application,
+	service *models.Service,
+	identityID, managedServiceIdentityID string,
+	connections map[string]models.Connection,
+) string {
+	if managedServiceIdentityID == "" {
+		return identityID
+	}
+	for _, r := range app.Relationships {
+		if r.Client != service.Name {
+			continue
+		}
+		if _, ok := connections[r.Server]; ok {
+			return managedServiceIdentityID
+		}
+	}
+	return identityID
+}
+
 func inferScheduledJobs(
 	resources *models.AzureResources,
 	app *models.Application,
 	env *models.AzureEnvironment,
 	getName func(string) string,
 	tags map[string]string,
-	identityID string,
+	identityID, managedServiceIdentityID string,
 	connections map[string]models.Connection,
 	connectionOrder []string,
 ) error {
@@ -282,6 +386,8 @@ func inferScheduledJobs(
 		}
 
 		registryConfig, secretConfig := registryAuthAzure(service)
+		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder)
+		secretConfig = append(secretConfig, connSecrets...)
 
 		job := models.NewContainerAppJob()
 		job.Name = getName(service.Name)
@@ -290,9 +396,9 @@ func inferScheduledJobs(
 		job.ContainerAppEnvironmentID = "${data.azurerm_container_app_environment.main.id}"
 		job.ScheduleTriggerConfig = []models.ContainerAppJobScheduleTrigger{{CronExpression: cronExpr}}
 		job.Template = []models.ContainerAppJobTemplate{
-			{Container: []models.ContainerAppContainer{containerSpecAzure(service, app, env, connections, connectionOrder)}},
+			{Container: []models.ContainerAppContainer{containerSpec}},
 		}
-		job.Identity = managedIdentityAzure(identityID)
+		job.Identity = managedIdentityAzure(identityForService(app, service, identityID, managedServiceIdentityID, connections))
 		job.Secret = secretConfig
 		job.Registry = registryConfig
 		job.Tags = tags
@@ -311,7 +417,7 @@ func inferContainerApps(
 	env *models.AzureEnvironment,
 	getName func(string) string,
 	tags map[string]string,
-	identityID string,
+	identityID, managedServiceIdentityID string,
 	connections map[string]models.Connection,
 	connectionOrder []string,
 ) {
@@ -334,7 +440,7 @@ func inferContainerApps(
 			minReplicas = 1
 		}
 
-		containerSpec := containerSpecAzure(service, app, env, connections, connectionOrder)
+		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder)
 
 		var ingressConfig *models.ContainerAppIngress
 		if service.Ingress != nil {
@@ -391,6 +497,7 @@ func inferContainerApps(
 		}
 
 		registryConfig, secretConfig := registryAuthAzure(service)
+		secretConfig = append(secretConfig, connSecrets...)
 
 		containerApp := models.NewContainerApp()
 		containerApp.Name = getName(service.Name)
@@ -398,7 +505,7 @@ func inferContainerApps(
 		containerApp.ContainerAppEnvironmentID = "${data.azurerm_container_app_environment.main.id}"
 		containerApp.Template = template
 		containerApp.Ingress = ingressConfig
-		containerApp.Identity = managedIdentityAzure(identityID)
+		containerApp.Identity = managedIdentityAzure(identityForService(app, service, identityID, managedServiceIdentityID, connections))
 		containerApp.Secret = secretConfig
 		containerApp.Registry = registryConfig
 		containerApp.Tags = tags

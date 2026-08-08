@@ -27,7 +27,10 @@
       "web": {
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "identity": {
-          "type": "SystemAssigned"
+          "identity_ids": [
+            "${azurerm_user_assigned_identity.main.id}"
+          ],
+          "type": "UserAssigned"
         },
         "ingress": {
           "external_enabled": true,
@@ -58,7 +61,7 @@
                 },
                 {
                   "name": "BLOBS_URL",
-                  "value": "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
+                  "value": "${azurerm_storage_account.blobs_storage.primary_blob_endpoint}"
                 }
               ],
               "image": "flask-app",
@@ -82,10 +85,18 @@
         "location": "eastus",
         "name": "prod-flask-s3-kv",
         "purge_protection_enabled": false,
+        "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
         "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
+      }
+    },
+    "azurerm_role_assignment": {
+      "blobs_storage_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Storage Blob Data Contributor",
+        "scope": "${azurerm_storage_account.blobs_storage.id}"
       }
     },
     "azurerm_storage_account": {
@@ -105,6 +116,13 @@
         "container_access_type": "private",
         "name": "blobs",
         "storage_account_name": "${azurerm_storage_account.blobs_storage.name}"
+      }
+    },
+    "azurerm_user_assigned_identity": {
+      "main": {
+        "location": "eastus",
+        "name": "prod-flask-s3-identity",
+        "resource_group_name": "prod"
       }
     }
   },

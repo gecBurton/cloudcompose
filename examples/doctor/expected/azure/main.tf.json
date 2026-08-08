@@ -36,7 +36,10 @@
       "doctor": {
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "identity": {
-          "type": "SystemAssigned"
+          "identity_ids": [
+            "${azurerm_user_assigned_identity.main.id}"
+          ],
+          "type": "UserAssigned"
         },
         "ingress": {
           "external_enabled": true,
@@ -63,6 +66,16 @@
           {
             "name": "acr-password",
             "value": "${azurerm_container_registry.main.admin_password}"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
+            "name": "db-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.cache_secret.versionless_id}",
+            "name": "cache-url"
           }
         ],
         "template": {
@@ -88,15 +101,15 @@
                 },
                 {
                   "name": "DB_URL",
-                  "value": "postgresql://composey:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/doctor_db"
+                  "secret_name": "db-url"
                 },
                 {
                   "name": "CACHE_URL",
-                  "value": "postgresql://None:${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.cache_redis.hostname}:10000/None"
+                  "secret_name": "cache-url"
                 },
                 {
                   "name": "BLOBS_URL",
-                  "value": "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
+                  "value": "${azurerm_storage_account.blobs_storage.primary_blob_endpoint}"
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",
@@ -129,10 +142,33 @@
         "location": "eastus",
         "name": "prod-doctor-kv",
         "purge_protection_enabled": false,
+        "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
         "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
+      }
+    },
+    "azurerm_key_vault_secret": {
+      "cache_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-doctor-cache-password",
+        "value": "${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}"
+      },
+      "db_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-doctor-db-password",
+        "value": "${random_password.postgres_admin.result}"
       }
     },
     "azurerm_managed_redis": {
@@ -177,6 +213,23 @@
         "server_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
+    "azurerm_role_assignment": {
+      "blobs_storage_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Storage Blob Data Contributor",
+        "scope": "${azurerm_storage_account.blobs_storage.id}"
+      },
+      "cache_kv_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Key Vault Secrets User",
+        "scope": "${azurerm_key_vault.main.id}"
+      },
+      "db_kv_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Key Vault Secrets User",
+        "scope": "${azurerm_key_vault.main.id}"
+      }
+    },
     "azurerm_storage_account": {
       "blobs_storage": {
         "account_kind": "StorageV2",
@@ -194,6 +247,13 @@
         "container_access_type": "private",
         "name": "blobs",
         "storage_account_name": "${azurerm_storage_account.blobs_storage.name}"
+      }
+    },
+    "azurerm_user_assigned_identity": {
+      "main": {
+        "location": "eastus",
+        "name": "prod-doctor-identity",
+        "resource_group_name": "prod"
       }
     },
     "docker_image": {

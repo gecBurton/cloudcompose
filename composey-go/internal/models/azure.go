@@ -44,9 +44,15 @@ type ContainerAppContainer struct {
 	Env    []ContainerAppEnvVar `json:"env"`
 }
 
+// ContainerAppEnvVar is one entry in a container's `env` block: either a
+// literal Value, or a SecretName referencing a `secret` block entry
+// (Terraform's schema treats these as mutually exclusive -- Value is
+// ignored when SecretName is set). Managed-service credentials use
+// SecretName (see azure/permissions.go); everything else uses Value.
 type ContainerAppEnvVar struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name       string `json:"name"`
+	Value      string `json:"value,omitempty"`
+	SecretName string `json:"secret_name,omitempty"`
 }
 
 type ContainerAppHTTPScaleRule struct {
@@ -83,12 +89,19 @@ type ManagedIdentity struct {
 	IdentityIDs []string `json:"identity_ids,omitempty"`
 }
 
-// ContainerAppSecret is one entry in the `secret` block: a named value
-// (here, always the ACR admin password) other blocks reference by name
-// rather than embedding directly.
+// ContainerAppSecret is one entry in the `secret` block: either a
+// literal Value (used for the ACR admin password, which has no
+// Key-Vault-ordering problem -- see registryAuthAzure's own doc comment
+// for why it deliberately isn't RBAC-based), or a KeyVaultSecretID +
+// Identity pair that has Azure fetch the value from Key Vault using the
+// named identity at resolve time (used for managed-service credentials --
+// see azure/permissions.go). These are mutually exclusive per Terraform's
+// own schema.
 type ContainerAppSecret struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name             string `json:"name"`
+	Value            string `json:"value,omitempty"`
+	KeyVaultSecretID string `json:"key_vault_secret_id,omitempty"`
+	Identity         string `json:"identity,omitempty"`
 }
 
 // ContainerAppRegistry is one entry in the `registry` block: how to
@@ -260,18 +273,23 @@ type PrivateDnsZoneVirtualNetworkLink struct {
 }
 
 type KeyVault struct {
-	Name                    string            `json:"name"`
-	ResourceGroupName       string            `json:"resource_group_name"`
-	Location                string            `json:"location"`
-	TenantID                string            `json:"tenant_id"`
-	SkuName                 string            `json:"sku_name"`
-	SoftDeleteRetentionDays int               `json:"soft_delete_retention_days"`
-	PurgeProtectionEnabled  bool              `json:"purge_protection_enabled"`
-	Tags                    map[string]string `json:"tags,omitempty"`
+	Name                     string            `json:"name"`
+	ResourceGroupName        string            `json:"resource_group_name"`
+	Location                 string            `json:"location"`
+	TenantID                 string            `json:"tenant_id"`
+	SkuName                  string            `json:"sku_name"`
+	SoftDeleteRetentionDays  int               `json:"soft_delete_retention_days"`
+	PurgeProtectionEnabled   bool              `json:"purge_protection_enabled"`
+	RbacAuthorizationEnabled bool              `json:"rbac_authorization_enabled"`
+	Tags                     map[string]string `json:"tags,omitempty"`
 }
 
 func NewKeyVault() KeyVault {
-	return KeyVault{SkuName: "standard", SoftDeleteRetentionDays: 7}
+	// RBAC mode, not the classic access-policy model: every consumer of
+	// a secret this Key Vault holds (see azure/permissions.go) is granted
+	// access via azurerm_role_assignment, the same primitive used for
+	// storage access -- one access-control mechanism, not two.
+	return KeyVault{SkuName: "standard", SoftDeleteRetentionDays: 7, RbacAuthorizationEnabled: true}
 }
 
 // KeyVaultSecret mirrors KeyVaultSecret. Lifecycle defaults to ignoring
@@ -288,10 +306,18 @@ func NewKeyVaultSecret() KeyVaultSecret {
 	return KeyVaultSecret{Lifecycle: map[string][]string{"ignore_changes": {"value"}}}
 }
 
-// UserAssignedIdentity mirrors UserAssignedIdentity. Defined for
-// completeness, matching the Python model, but never populated by
-// inference today -- _infer_managed_identity only reads
-// env.user_assigned_identity_id, it doesn't create one.
+// UserAssignedIdentity is created once per app that has any service
+// consuming a managed-service credential (database/cache password,
+// storage access), so it can be granted RoleAssignments *before* any
+// Container App exists to reference it -- see azure/permissions.go's
+// inferManagedServiceIdentity for why this must be user-assigned rather
+// than the system-assigned identity Container Apps would otherwise use
+// by default: a system-assigned identity's principal_id doesn't exist
+// until the resource that owns it is created, so it can't be granted a
+// role before that resource's own creation, but that resource's creation
+// is exactly when the role is needed (to resolve a Key Vault secret
+// reference). A pre-created, standalone user-assigned identity has no
+// such ordering cycle.
 type UserAssignedIdentity struct {
 	Name              string            `json:"name"`
 	ResourceGroupName string            `json:"resource_group_name"`
@@ -299,11 +325,12 @@ type UserAssignedIdentity struct {
 	Tags              map[string]string `json:"tags,omitempty"`
 }
 
-// RoleAssignment mirrors RoleAssignment. Defined for completeness, matching
-// the Python model, but never populated by inference today -- ACR admin
-// credentials are used instead of RBAC (see _registry_auth in
-// compiler/inference/azure for why identity-based auth can't be used: a
-// chicken-and-egg ordering problem).
+// RoleAssignment grants a scoped Azure RBAC role to a principal (here,
+// always a UserAssignedIdentity's principal_id), mirroring
+// aws/permissions.go's IamRolePolicy attachments. Used for Key Vault
+// Secrets User (reading managed-service credentials) and Storage Blob
+// Data Contributor (object-storage access) -- see
+// azure/permissions.go.
 type RoleAssignment struct {
 	Scope              string `json:"scope"`
 	RoleDefinitionName string `json:"role_definition_name"`

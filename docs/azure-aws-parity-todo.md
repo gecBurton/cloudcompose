@@ -30,11 +30,19 @@ an already-tracked item as new.
 
 ## Priority 1 — Security gaps (no least-privilege, credentials in plaintext)
 
+> **Status (2026-08-08): all three items below are done.** See
+> `internal/compiler/azure/permissions.go` (new file),
+> `containerSpecAzure`'s rewrite in `compute.go`, and the model additions
+> in `internal/models/azure.go` (`ContainerAppEnvVar.SecretName`,
+> `ContainerAppSecret`'s Key-Vault fields, `KeyVault.RbacAuthorizationEnabled`).
+> All 10 Azure golden fixtures regenerated and re-verified with
+> `terraform validate` against the real `azurerm` provider schema.
+
 These are the most serious: AWS enforces least-privilege IAM scoping and
 routes secrets through Secrets Manager; Azure does neither for
 managed-service access.
 
-- [ ] **Implement RBAC role assignments for managed-service access.**
+- [x] **Implement RBAC role assignments for managed-service access.**
   `models.RoleAssignment` (`internal/models/azure.go:307`) exists,
   is initialized in `NewAzureResources()` (azure.go:512), and is **never
   written to by any inference code** (`grep -rn "RoleAssignment\[" internal/compiler/`
@@ -51,7 +59,20 @@ managed-service access.
   a role assignment *can* reference the identity's `principal_id` after
   the Container App exists, in a second resource, the same way AWS
   attaches `IamRolePolicy` post-creation.
-- [ ] **Route database/cache credentials through Key Vault instead of
+
+  **Done via a user-assigned identity, not the ACR pattern's own
+  workaround.** A genuine ordering cycle *does* exist here that the ACR
+  case doesn't have: Container Apps resolves a Key Vault secret reference
+  *as part of* the app's own creation, so the identity needs its role
+  granted *before* that create — impossible for a system-assigned
+  identity, whose `principal_id` doesn't exist until the resource it
+  belongs to is created. Fixed by creating one `UserAssignedIdentity` per
+  app (only when needed — see `inferManagedServiceIdentity`), granting it
+  `Key Vault Secrets User`/`Storage Blob Data Contributor` first, then
+  attaching it to only the specific services whose Relationships need it
+  (`identityForService`) — every other service keeps its previous
+  identity (system-assigned, or `env.UserAssignedIdentityID` if set).
+- [x] **Route database/cache credentials through Key Vault instead of
   plaintext env vars.** Key Vault is provisioned every run
   (`inferKeyVault`, `azure/infer.go:114-124`) but
   `resources.KeyVaultSecret` is never populated
@@ -65,7 +86,17 @@ managed-service access.
   `KeyVaultSecret` per DB/cache credential, and container env vars that
   reference it (Container Apps' own `secretRef` mechanism), not the
   literal value.
-- [ ] **Fix the `Relationship`→URL injection bug for non-Postgres
+
+  **Done.** `Key Vault` switched to RBAC authorization mode
+  (`rbac_authorization_enabled = true`) rather than the classic
+  access-policy model, so one RBAC primitive (`RoleAssignment`) covers
+  both Key Vault and Storage. `storeManagedServiceSecret` creates a
+  `KeyVaultSecret` per credential-bearing connection; `containerSpecAzure`
+  now references it via `ContainerAppEnvVar.SecretName` +
+  `ContainerAppSecret{KeyVaultSecretID, Identity}`, using the secret's
+  `versionless_id` (not `id`) so a rotated password doesn't need a
+  redeploy to take effect.
+- [x] **Fix the `Relationship`→URL injection bug for non-Postgres
   targets.** `containerSpecAzure` (compute.go:111-186) hardcodes a
   `postgresql://user:pass@host:port/db` template for *every* relationship
   regardless of the target's actual capability — confirmed still present,
@@ -79,6 +110,17 @@ managed-service access.
   URL scheme (or, better, adopt AWS's general `ResolveValue`/
   `shared.URLPattern`-based substitution instead of a hardcoded template
   — see the Priority 3 item on this below).
+
+  **Done, via the narrower fix (branch on capability), not the broader
+  Priority 3 rewrite** — `connectionURLAzure` now renders `redis://` for
+  cache and a bare host for object storage; database connections that
+  reach this function (i.e. have no stored Key Vault secret to use
+  instead) still render `postgresql://`/`mysql://` correctly rather than
+  always Postgres. In practice, every credential-bearing connection now
+  goes through the Key Vault `secretRef` path above instead, so this
+  function is mostly a fallback — but it's still correct if reached (e.g.
+  a connection with no password at all). The broader Priority 3 item
+  (adopting AWS's general `ResolveValue` substitution) remains open.
 
 ## Priority 2 — Missing features (compose directives with no Azure effect)
 

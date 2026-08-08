@@ -5,6 +5,11 @@ to a five-example acceptance suite that passes against real Azure, including
 Container Apps Jobs, image build-and-push, and Front Door (all confirmed via
 full runs in `francecentral`).
 
+> This doc tracks *deployment verification* — does Azure's output apply
+> cleanly against real Azure. For *feature completeness* relative to
+> AWS (missing RBAC, no WAF, silent no-ops for secrets/config, etc.),
+> see `docs/azure-aws-parity-todo.md`.
+
 ## Verified against real Azure
 
 Each of these deployed, served the expected response, and tore down cleanly

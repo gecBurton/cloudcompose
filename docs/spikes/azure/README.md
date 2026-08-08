@@ -6,6 +6,13 @@ against real Azure deployments (see `docs/azure-todo.md`); annotations below not
 which of this spike's findings were addressed and which are still open in
 the shipped Go code (checked 2026-08-07).
 
+> **2026-08-08: `docs/azure-aws-parity-todo.md`** is a full, systematic
+> AWS-vs-Azure feature-completeness comparison (least-privilege access
+> control, WAF, secrets, autoscaling metrics, and more) that supersedes
+> this spike as the current source of truth for what's still open —
+> several findings below (`Relationship` enforcement, size ceiling) are
+> carried forward into it with the same status.
+
 ## Method
 
 Three examples were chosen to stress different parts of the model, and the

@@ -11,6 +11,12 @@ spike's findings were addressed in the shipped Go code (checked 2026-08-07).
 Target platform is **Cloud Run**. GKE Autopilot is too heavy and Cloud Run is
 the direct analogue of Fargate and Container Apps.
 
+> **2026-08-08:** `docs/azure-aws-parity-todo.md` is a full AWS-vs-Azure
+> feature-completeness comparison (this spike's companion doc). It
+> carries forward this doc's `Relationship`-enforcement and size-ceiling
+> findings with the same open status, in case GCP-specific follow-up
+> work on those items ever gets scheduled alongside the Azure work.
+
 **Limitations.** Schema-approximate, not run through `terraform validate`
 against the `google` provider, no GCP project involved.
 

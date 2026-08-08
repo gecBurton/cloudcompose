@@ -1610,9 +1610,66 @@ design in `docs/authored-environment-config.md`.
   passes the environment directory, not a file inside it — the
   init→apply→main ordering these scripts already used needed no other
   change)
-- ⬜ Real AWS/Azure acceptance workflow runs against this change,
-  triggered manually after this session — see `docs/azure-todo.md`/CI run
-  history for outcome once complete.
+- ✅ AWS Acceptance passed against real AWS (22m35s) — validates the
+  live-outputs redesign end-to-end. Azure Acceptance failed the same
+  day, but for reasons unrelated to this change: the run used `eastus`
+  (Azure Managed Redis `InsufficientCapacity` + PostgreSQL Flexible
+  Server `LocationIsOfferRestricted`, both pre-existing, already
+  documented in `smoke-test-azure.sh`'s own comments as reasons its
+  default region is `francecentral`, not `eastus`). Leaked resource
+  group (`ci48`, one Redis Enterprise instance) cleaned up manually via
+  `az redisenterprise delete` + `az group delete` once found that
+  `scripts/smoke-test-azure.sh --destroy-only` doesn't work from a
+  different machine than the one that ran the failed job (it expects a
+  local build directory that only exists on the original CI runner) —
+  a real gap in that recovery path, not yet fixed.
+
+---
+
+## ✅ AWS/Azure Feature Parity Analysis (`docs/azure-aws-parity-todo.md`, 2026-08-08) - COMPLETE
+
+Prompted by a user request to close the gap between the AWS and Azure
+backends. Full systematic comparison, file:line-cited, covering compute,
+networking, managed services, edge/CDN/WAF, scheduling, IAM/RBAC,
+relationship enforcement, connection injection, image build/push,
+environment setup, and test coverage. Full detail lives in the doc
+itself, not duplicated here; short version:
+
+- **14 concrete gaps found**, prioritized into 4 tiers (security gaps
+  first, then missing features, then architectural gaps, then smaller
+  robustness items), plus a testing-debt section tracing 3 of 13
+  examples' missing Azure golden files directly to specific gaps
+  (`compute-tuning`→sizing, `platform-config`→no config: support,
+  `scaling`→sizing+autoscaling).
+- **Most serious finding, independently verified by reading the code
+  directly (not just trusting the initial analysis)**: `RoleAssignment`
+  (`models/azure.go`) and `KeyVaultSecret` both have zero writers
+  anywhere in `internal/compiler/` — Azure grants no RBAC permissions
+  and stores no secrets in the Key Vault it provisions every run. Every
+  database/cache credential flows into container env vars as plaintext.
+- **A confirmed, currently-shipping bug**, also independently verified:
+  `containerSpecAzure` (`azure/compute.go`) hardcodes a
+  `postgresql://...` URL template for every `Relationship`, regardless
+  of the target's actual capability — a cache/storage relationship
+  renders as `postgresql://None:None@<host>:None/None`. Deliberately
+  ported bug-for-bug from Python per this codebase's own documented
+  policy, but still a real defect for any Azure app that hits it.
+- Cross-referenced against `docs/spikes/azure/README.md` and
+  `docs/spikes/gcp/README.md` (both already tracked open findings —
+  `Relationship` enforcement, size-ceiling rejection — carried forward
+  rather than duplicated) and `docs/azure-todo.md` (deployment
+  verification status, a different axis from feature completeness).
+- Explicitly separates real gaps from confirmed-intentional architectural
+  differences (Azure's shared-server-per-engine DB topology, one-ACR vs
+  many-ECR, no shared ALB equivalent at `init` time) so the backlog
+  doesn't include things that were already decided on purpose.
+
+### Checkpoint
+- ✅ Cross-referenced against and linked from `docs/azure-todo.md`,
+  `docs/spikes/{azure,gcp}/README.md`, and `README.md`'s documentation
+  list
+- ⬜ No implementation started yet — this is the analysis/backlog only,
+  prioritization and sequencing to be decided with the user next
 
 ---
 

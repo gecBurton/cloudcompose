@@ -337,6 +337,7 @@ go build -o composey ./cmd/composey
 
 - [Design history and migration log](plan.md)
 - [Azure deployment status](docs/azure-todo.md)
+- [Azure/AWS feature parity gap analysis](docs/azure-aws-parity-todo.md)
 - [Design docs and spikes](docs/)
 - [Examples](examples/)
 

@@ -1540,6 +1540,82 @@ respectively) — both were already correct.
 
 ---
 
+## ✅ Authored Environment Config + Live Terraform Outputs (2026-08-08) - COMPLETE
+
+Prompted by a user design discussion: `docker-compose.yml` is authored,
+versioned source, but the environment side of composey (VPC CIDR, ALB,
+GCP project ID) previously existed only as ephemeral CLI flags, with the
+only persisted artifact being a Terraform-generated fact file made
+almost entirely of values that don't exist until `apply` runs. Full
+design in `docs/authored-environment-config.md`.
+
+### What shipped
+
+- **`environment.yaml`** — new, authored input to `composey init`
+  (`internal/models/init_config.go`, `internal/compiler/initconfig`):
+  common envelope (`provider`/`name`/`region`/`tags`/
+  `retain_data_on_destroy`/`domain`) + a strict/discriminated
+  provider-specific block (`aws`/`azure`/`gcp`). `composey init` reads it
+  if present, with any explicitly-passed CLI flag overriding the file for
+  that invocation, and writes the resolved config back to disk. Falls
+  back to flags-only if no file exists — not a breaking change.
+- **No generated fact file.** Built once (as `environment.yml`, then
+  renamed to `environment.facts.json`, written via a Terraform
+  `local_file` resource) and removed the same day once revisited: `composey
+  main -e <environment-directory>` now reads the environment's facts by
+  running `terraform output -json` directly (`internal/compiler/shared/
+  terraform_outputs.go`), the same pattern `cmd/schema-check` already used
+  for `terraform providers schema -json`. This removed an entire class of
+  "is the generated file stale" problem (a hash-based drift check was
+  built for the file-based version, then deleted along with the file —
+  nothing to go stale when every read is live) and was confirmed *not*
+  equivalent to switching to `terraform_remote_state`, which would have
+  resolved values to unresolved HCL expression strings Go's own inference
+  branches on (`AlbArn != nil` etc.) rather than plain JSON.
+- **Two real bugs found and fixed along the way:**
+  - GCP's generated environment had no `project_id` field populated
+    anywhere, despite `gcp/infer.go` depending on it throughout — silent
+    until `composey main` failed against an incomplete environment.
+    `project_id` is now a required field in `environment.yaml`'s `gcp:`
+    block, validated at `init` time.
+  - `--azure-endpoint`/`--gcp-endpoint` were dead CLI flags — declared,
+    never forwarded to any generator. Dropped.
+- **A related category error, found reviewing `x-composey.cdn: true`**:
+  `cdn: true` is correctly a per-service decision in `docker-compose.yml`,
+  but on GCP it can't be completed without a domain the caller owns (no
+  free `*.cloudfront.net`-equivalent hostname for a Google-managed
+  certificate). Added `domain` to `environment.yaml`'s common envelope and
+  `GcpEnvironment` — closes the *schema* gap only; `gcp/infer.go`'s CDN/
+  load-balancer inference remains the documented no-op it already was
+  (see `docs/spikes/gcp/README.md`'s 2026-08-08 update). Not validated at
+  `init` time the way `project_id` is, since whether any service uses
+  `cdn: true` isn't knowable until `composey main` parses the compose
+  file — that enforcement belongs in `gcp/infer.go` once the inference
+  itself is built, not in `initconfig.Validate`.
+
+### Checkpoint
+- ✅ `gofmt -l .` clean, `go vet ./...` clean, `go build ./...` clean,
+  `go test ./...` passing across all packages (including a rewritten
+  `LoadEnvironment` test that spins up real, offline, zero-provider
+  Terraform state to exercise `terraform output -json` genuinely, not a
+  mock)
+- ✅ `go run ./cmd/schema-check` still reports 0 mismatches
+- ✅ Manually verified end-to-end: `composey init` (flags-only and
+  file+override), `terraform init`/`validate` on the generated AWS
+  manifest (confirming no stray `local_file`/`hashicorp/local`
+  dependency), a real `terraform apply` against an offline output-only
+  fixture, and `composey main -e <dir>` successfully compiling two
+  separate apps against the same live environment directory
+- ✅ `scripts/smoke-test.sh`/`smoke-test-azure.sh` updated (`-e` now
+  passes the environment directory, not a file inside it — the
+  init→apply→main ordering these scripts already used needed no other
+  change)
+- ⬜ Real AWS/Azure acceptance workflow runs against this change,
+  triggered manually after this session — see `docs/azure-todo.md`/CI run
+  history for outcome once complete.
+
+---
+
 ## ⬜ Phase 6: Build & Distribution (Week 7) - NOT STARTED
 
 ### Goals

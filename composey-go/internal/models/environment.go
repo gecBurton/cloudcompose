@@ -127,6 +127,18 @@ type GcpEnvironment struct {
 	LoadBalancerIP             *string `json:"load_balancer_ip,omitempty"`
 	ServiceAccountEmail        *string `json:"service_account_email,omitempty"`
 	GcpEndpoint                *string `json:"gcp_endpoint,omitempty"`
+
+	// Domain is the custom domain a CDN-enabled service should be served
+	// under. Unlike AWS/Azure (which get a free CloudFront/Front Door
+	// hostname), a Google-managed SSL certificate cannot be issued
+	// without a domain the caller owns -- see
+	// docs/spikes/gcp/README.md's "cdn: true is not self-sufficient on
+	// GCP". Not yet consumed by inference (gcp/infer.go's load-balancer
+	// step is still a documented no-op); this field exists so the
+	// authored environment.yaml schema has somewhere to put the decision
+	// once that inference is implemented, rather than that being blocked
+	// on a schema change too.
+	Domain *string `json:"domain,omitempty"`
 }
 
 // NewGcpEnvironment returns a GcpEnvironment with the same field defaults

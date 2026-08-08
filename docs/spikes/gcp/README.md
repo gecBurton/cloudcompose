@@ -132,6 +132,18 @@ ecs_composex comparison reached from a different direction.
 > (`models/environment.go`), not narrowed to `AwsEnvironment` — Azure's
 > platform generator hardcodes its own 30-day retention independent of it,
 > and GCP's inference never reads it at all.
+>
+> **Update (2026-08-08): the domain gap is half-closed.**
+> `models.GcpEnvironment.Domain` and `models.InitConfig.Domain` now exist
+> — `composey init --provider gcp --domain example.com` (or `domain:` in
+> `environment.yaml`) flows the value all the way into the environment's
+> `output "environment"` block (see `docs/authored-environment-config.md`).
+> `gcp/infer.go`'s CDN/load-balancer path is still the same documented
+> no-op, though: the schema no longer blocks this from being built, but
+> nothing yet reads `env.Domain` to actually create the serverless
+> NEG/backend-service/URL-map/certificate/proxy/forwarding-rule chain this
+> doc's own "CDN footprint varies wildly" note describes. `LogRetentionDays`
+> is unchanged from the prior status.
 
 ## Three-cloud comparison
 
@@ -164,6 +176,12 @@ Resources emitted for `examples/hello`:
 > This list remains a legitimate backlog if GCP support gets hardened
 > further (per `plan.md`'s note that GCP verification is intentionally
 > lighter than AWS/Azure's).
+>
+> **Update (2026-08-08): item 5 is half-done.** `domain` now exists on
+> both `environment.yaml` (`InitConfig.Domain`) and the generated
+> environment output (`GcpEnvironment.Domain`) — but nothing reads it yet;
+> the CDN inference itself (items 5's actual payoff: issuing a
+> certificate) is still not built. Items 1-4 remain untouched.
 
 **Revisions to earlier conclusions:**
 

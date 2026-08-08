@@ -25,6 +25,18 @@ type InitConfig struct {
 	Tags                map[string]string `yaml:"tags,omitempty"`
 	RetainDataOnDestroy *bool             `yaml:"retain_data_on_destroy,omitempty"`
 
+	// Domain is the custom domain a CDN-enabled service
+	// (`x-composey.cdn: true` in docker-compose.yml) is served under.
+	// Common-envelope, not per-cloud: a domain is owned once, by the
+	// environment/account, not per compose file -- the same reasoning
+	// that put `region`/`tags` here rather than duplicating them per
+	// provider block. Required for GCP if any service declares
+	// `cdn: true` (a Google-managed certificate cannot be issued without
+	// one -- see docs/spikes/gcp/README.md's "cdn: true is not
+	// self-sufficient on GCP"); optional for AWS/Azure, which each get a
+	// free CloudFront/Front Door hostname without one.
+	Domain *string `yaml:"domain,omitempty"`
+
 	AWS   *AwsInitConfig   `yaml:"aws,omitempty"`
 	Azure *AzureInitConfig `yaml:"azure,omitempty"`
 	Gcp   *GcpInitConfig   `yaml:"gcp,omitempty"`

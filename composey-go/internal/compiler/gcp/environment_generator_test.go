@@ -18,7 +18,7 @@ func keysOfAny(m map[string]any) []string {
 func TestGenerateGcpEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateGcpEnvironment(
-		"prod", "us-central1", "10.0.0.0/16", "my-gcp-project",
+		"prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "",
 		map[string]string{"team": "platform"}, true,
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestGenerateGcpEnvironment_ValidStructure(t *testing.T) {
 // test_outputs_include_required_fields, test_target_is_gcp.
 func TestGenerateGcpEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", nil, true)
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true)
 	if err != nil {
 		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
 	}
@@ -78,5 +78,42 @@ func TestGenerateGcpEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	}
 	if envConfig["project_id"] != "my-gcp-project" {
 		t.Errorf("project_id = %v, want my-gcp-project", envConfig["project_id"])
+	}
+}
+
+// TestGenerateGcpEnvironment_DomainFlowsThroughWhenSet mirrors the
+// project_id test above: domain is a required decision for GCP CDN
+// (see docs/spikes/gcp/README.md and models.GcpEnvironment.Domain's own
+// doc comment), so it should appear in the output when passed and be
+// omitted when not.
+func TestGenerateGcpEnvironment_DomainFlowsThroughWhenSet(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "example.com", nil, true)
+	if err != nil {
+		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
+	if envConfig["domain"] != "example.com" {
+		t.Errorf("domain = %v, want example.com", envConfig["domain"])
+	}
+}
+
+func TestGenerateGcpEnvironment_DomainOmittedWhenNotSet(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true)
+	if err != nil {
+		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
+	if _, ok := envConfig["domain"]; ok {
+		t.Errorf("did not expect domain when not passed, got %v", envConfig["domain"])
 	}
 }

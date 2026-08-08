@@ -29,7 +29,8 @@ var supportedProviders = map[string]bool{"aws": true, "azure": true, "gcp": true
 // if someone forgot to update a parallel human-facing error message.
 var knownTopLevelKeys = map[string]bool{
 	"provider": true, "name": true, "region": true, "tags": true,
-	"retain_data_on_destroy": true, "aws": true, "azure": true, "gcp": true,
+	"retain_data_on_destroy": true, "domain": true,
+	"aws": true, "azure": true, "gcp": true,
 }
 
 // Load reads and validates an environment.yaml file at path. Returns

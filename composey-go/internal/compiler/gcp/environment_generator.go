@@ -18,10 +18,15 @@ import (
 // incomplete until composey main failed against it later. See
 // docs/authored-environment-config.md's "The project_id gap".
 //
+// domain, if non-empty, is written into the output's domain field --
+// see models.GcpEnvironment.Domain's own doc comment for why this
+// exists (GCP CDN inference doesn't consume it yet, but the schema gap
+// that would otherwise block it is closed).
+//
 // The environment's facts are exposed as a plain Terraform output only
 // -- see aws.GenerateAwsEnvironment's own doc comment for why.
 func GenerateGcpEnvironment(
-	name, region, vpcCIDR, projectID string,
+	name, region, vpcCIDR, projectID, domain string,
 	tags map[string]string,
 	retainDataOnDestroy bool,
 ) (string, error) {
@@ -97,6 +102,9 @@ func GenerateGcpEnvironment(
 	}
 	if len(tags) > 0 {
 		environmentConfig["labels"] = tags
+	}
+	if domain != "" {
+		environmentConfig["domain"] = domain
 	}
 
 	outputs := map[string]any{

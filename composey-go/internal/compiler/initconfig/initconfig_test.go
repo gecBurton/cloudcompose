@@ -144,6 +144,25 @@ gcp:
 	}
 }
 
+func TestLoad_TopLevelDomain(t *testing.T) {
+	t.Parallel()
+	path := writeTemp(t, `
+provider: gcp
+name: prod
+domain: example.com
+gcp:
+  vpc_cidr: 10.0.0.0/16
+  project_id: my-project
+`)
+	config, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if config.Domain == nil || *config.Domain != "example.com" {
+		t.Fatalf("expected domain = example.com, got %+v", config.Domain)
+	}
+}
+
 func TestLoad_AzureConfig(t *testing.T) {
 	t.Parallel()
 	path := writeTemp(t, `

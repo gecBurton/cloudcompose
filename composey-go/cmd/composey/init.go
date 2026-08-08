@@ -58,6 +58,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	certificateARN, _ := cmd.Flags().GetString("certificate-arn")
 	awsEndpoint, _ := cmd.Flags().GetString("aws-endpoint")
 	projectID, _ := cmd.Flags().GetString("project-id")
+	domain, _ := cmd.Flags().GetString("domain")
 	retainData, _ := cmd.Flags().GetBool("retain-data")
 	tagsJSON, _ := cmd.Flags().GetString("tags")
 
@@ -83,6 +84,9 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 		if !cmd.Flags().Changed("retain-data") && fileConfig.RetainDataOnDestroy != nil {
 			retainData = *fileConfig.RetainDataOnDestroy
+		}
+		if !cmd.Flags().Changed("domain") && fileConfig.Domain != nil {
+			domain = *fileConfig.Domain
 		}
 		if len(tagsJSON) == 0 && len(fileConfig.Tags) > 0 {
 			// Tags have no single-flag "changed" check the way scalars
@@ -179,7 +183,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	// Assemble the resolved config (file + overrides) so it can be
 	// written back to disk, whether or not one existed there already.
 	resolvedConfig := buildResolvedConfig(
-		providerLower, name, region, tags, retainData,
+		providerLower, name, region, tags, retainData, domain,
 		vpcCIDR, azCount, createALB, certificateARN, awsEndpoint, projectID,
 	)
 
@@ -193,6 +197,9 @@ func runInit(cmd *cobra.Command, args []string) {
 	}
 	if providerLower == "gcp" {
 		fmt.Printf("Project ID: %s\n", projectID)
+		if domain != "" {
+			fmt.Printf("Domain: %s\n", domain)
+		}
 	}
 
 	var terraformJSON string
@@ -212,7 +219,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	case "azure":
 		terraformJSON, err = azure.GenerateAzureEnvironment(name, region, vpcCIDR, tags, retainData)
 	case "gcp":
-		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, tags, retainData)
+		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, tags, retainData)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -268,6 +275,7 @@ func buildResolvedConfig(
 	provider, name, region string,
 	tags map[string]string,
 	retainData bool,
+	domain string,
 	vpcCIDR string,
 	azCount int,
 	createALB bool,
@@ -279,6 +287,9 @@ func buildResolvedConfig(
 		Region:              region,
 		Tags:                tags,
 		RetainDataOnDestroy: &retainData,
+	}
+	if domain != "" {
+		config.Domain = &domain
 	}
 
 	switch provider {
@@ -337,6 +348,7 @@ func init() {
 	initCmd.Flags().String("certificate-arn", "", "ACM certificate ARN for HTTPS (AWS only)")
 	initCmd.Flags().String("aws-endpoint", "", "Custom endpoint for AWS services (e.g., LocalStack)")
 	initCmd.Flags().String("project-id", "", "GCP project ID (GCP only, required)")
+	initCmd.Flags().String("domain", "", "Custom domain for CDN-enabled services (required for GCP if any service declares cdn: true; optional on AWS/Azure)")
 	initCmd.Flags().Bool("retain-data", true, "Whether destroying the stack preserves data (snapshots, etc.)")
 	initCmd.Flags().String("tags", "", `Tags as JSON object (e.g., '{"Team": "platform"}')`)
 }

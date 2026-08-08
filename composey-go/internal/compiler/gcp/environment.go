@@ -49,6 +49,7 @@ func LoadGcpEnvironment(dir string) (*models.GcpEnvironment, error) {
 	env.LoadBalancerIP = shared.ToStringPtr(raw["load_balancer_ip"])
 	env.ServiceAccountEmail = shared.ToStringPtr(raw["service_account_email"])
 	env.GcpEndpoint = shared.ToStringPtr(raw["gcp_endpoint"])
+	env.Domain = shared.ToStringPtr(raw["domain"])
 
 	return &env, nil
 }

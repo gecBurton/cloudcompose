@@ -148,6 +148,7 @@ confirmed-dead ones (`--azure-endpoint`, `--gcp-endpoint`):
 | `region` | `--region`/`-r` | optional; per-provider default preserved (`eu-west-2`/`eastus`/`us-central1`) |
 | `tags` | `--tags` | JSON object on the CLI; plain YAML map in the file |
 | `retain_data_on_destroy` | `--retain-data` | default `true` |
+| `domain` | `--domain` | optional on AWS/Azure (each gets a free CloudFront/Front Door hostname); required for GCP if any service declares `cdn: true` — see "The domain gap" below. Not yet enforced at `init` time, since whether any service uses `cdn: true` isn't known until `composey main` parses the compose file. |
 
 | `aws:` block | Flag |
 |---|---|
@@ -182,6 +183,35 @@ anything (you know your GCP project before you have any infrastructure),
 so it belongs in `environment.yaml`, checked by schema validation at
 `init` time — not something discovered missing only when `composey main`
 fails against an incomplete environment much later.
+
+### The `domain` gap
+
+A related category error, found while reviewing this design against
+`docker-compose.yml`'s `x-composey.cdn: true` (2026-08-08): `cdn: true`
+is a legitimate per-service, per-app decision (does *this* service want
+a CDN — the same category as `ingress`/`min_scale`), but on GCP it
+cannot be *completed* without a domain the caller owns, since a
+Google-managed TLS certificate can't be issued without one (AWS/Azure
+each get a free `*.cloudfront.net`/`*.azurefd.net` hostname instead; see
+`docs/spikes/gcp/README.md`'s "cdn: true is not self-sufficient on GCP").
+A domain is owned once, by the environment/account, not per compose
+file — the same reasoning that put `region`/`tags` in the common
+envelope rather than duplicating them per provider block.
+
+Added `domain` to `environment.yaml`'s common envelope and to
+`GcpEnvironment`, flowing through to the generated `output "environment"`
+block. This closes the *schema* gap only: `gcp/infer.go`'s CDN/load-
+balancer inference is still the documented no-op it always was (see
+`docs/spikes/gcp/README.md`'s "Update (2026-08-08)" annotation) — the
+`Domain` field exists so that inference isn't also blocked on a schema
+change once it's built, not because it's consumed anywhere yet.
+
+Deliberately not validated at `init` time the way `gcp.project_id` is:
+whether any service actually declares `cdn: true` isn't knowable until
+`composey main` parses the compose file, which happens long after
+`init` runs. Enforcing "domain is required if any service uses CDN"
+belongs in `gcp/infer.go` once that inference exists, not in
+`initconfig.Validate`.
 
 ### `composey init` behavior
 
@@ -304,7 +334,12 @@ all? It doesn't:
   declares a plain `output "environment"` block only; no `local_file`
   resource, no `hashicorp/local` provider dependency. GCP's generator
   takes a `projectID string` parameter, populated into the output's
-  `project_id` — the concrete fix for "The project_id gap" above.
+  `project_id` — the concrete fix for "The project_id gap" above — and a
+  `domain string` parameter, populated into the output's `domain` when
+  non-empty — the schema-level fix for "The domain gap" above.
+- `internal/models/environment.go` — `GcpEnvironment.Domain *string`,
+  read back by `gcp/environment.go`'s loader; not added to
+  `Aws/AzureEnvironment`, which don't need it.
 - `internal/compiler/shared/terraform_outputs.go` — `TerraformOutputs(dir,
   outputName)` shells out to `terraform output -json` in `dir` and
   returns the named output's value as a `map[string]any`.

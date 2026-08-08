@@ -36,7 +36,10 @@
       "backend": {
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "identity": {
-          "type": "SystemAssigned"
+          "identity_ids": [
+            "${azurerm_user_assigned_identity.main.id}"
+          ],
+          "type": "UserAssigned"
         },
         "ingress": {
           "external_enabled": true,
@@ -63,6 +66,11 @@
           {
             "name": "acr-password",
             "value": "${azurerm_container_registry.main.admin_password}"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
+            "name": "db-url"
           }
         ],
         "template": {
@@ -97,7 +105,7 @@
                 },
                 {
                   "name": "DB_URL",
-                  "value": "postgresql://composey:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/example"
+                  "secret_name": "db-url"
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/backend@${docker_registry_image.backend_push.sha256_digest}",
@@ -165,10 +173,23 @@
         "location": "eastus",
         "name": "prod-flask-kv",
         "purge_protection_enabled": false,
+        "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
         "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
+      }
+    },
+    "azurerm_key_vault_secret": {
+      "db_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-flask-db-password",
+        "value": "${random_password.postgres_admin.result}"
       }
     },
     "azurerm_postgresql_flexible_server": {
@@ -195,6 +216,20 @@
         "collation": "en_US.utf8",
         "name": "example",
         "server_id": "${azurerm_postgresql_flexible_server.main.id}"
+      }
+    },
+    "azurerm_role_assignment": {
+      "db_kv_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Key Vault Secrets User",
+        "scope": "${azurerm_key_vault.main.id}"
+      }
+    },
+    "azurerm_user_assigned_identity": {
+      "main": {
+        "location": "eastus",
+        "name": "prod-flask-identity",
+        "resource_group_name": "prod"
       }
     },
     "docker_image": {

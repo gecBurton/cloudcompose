@@ -45,6 +45,20 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 		connections[k] = v
 	}
 
+	// Step 7.5: if any service has a Relationship to a managed service,
+	// create a user-assigned identity for the app (before any Container
+	// App/Job exists, so it can be granted RBAC first -- see
+	// permissions.go's own doc comments for the ordering reason) and
+	// grant it access to that service's stored credential/storage
+	// account. Only services that actually have such a Relationship use
+	// this identity (see managedIdentityForService in compute.go); every
+	// other service keeps using env.UserAssignedIdentityID or falls back
+	// to system-assigned, exactly as before this feature existed.
+	managedServiceIdentityID := inferManagedServiceIdentity(resources, app, env, getName, tags, connections)
+	if managedServiceIdentityID != "" {
+		grantManagedServicePermissions(resources, app, env, getName, tags, managedServiceIdentityID, connections)
+	}
+
 	// connectionOrder mirrors Python's own connections dict insertion
 	// order: databases first, then caches, then storage -- each group in
 	// the order its services appear in app.Services -- since
@@ -59,10 +73,10 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	connectionOrder := connectionOrderForAzure(app, connections)
 
 	// Step 8: Infer container apps.
-	inferContainerApps(resources, app, env, getName, tags, identityID, connections, connectionOrder)
+	inferContainerApps(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder)
 
 	// Step 9: Scheduled services run as Jobs, not as always-on Container Apps.
-	if err := inferScheduledJobs(resources, app, env, getName, tags, identityID, connections, connectionOrder); err != nil {
+	if err := inferScheduledJobs(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder); err != nil {
 		return nil, err
 	}
 

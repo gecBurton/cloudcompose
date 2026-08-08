@@ -100,6 +100,7 @@
         "location": "eastus",
         "name": "prod-build-webapp-kv",
         "purge_protection_enabled": false,
+        "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,

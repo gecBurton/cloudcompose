@@ -185,14 +185,12 @@ func TestInferContainerRegistry_BuildDictKeyOrderMatchesPython(t *testing.T) {
 	}
 }
 
-// TestContainerSpecAzure_MissingConnectionFieldsRenderAsNone mirrors
-// Python's f-string behavior for a Connection whose optional fields are
-// unset: str(None) == "None", not an empty string. Caught as a real
-// divergence against the flask-s3/minio-s3/doctor golden files
-// (2026-08-06), where a bucket or cache Connection substituted into this
-// Postgres-shaped URL template produced "postgresql://:@..." in Go but
-// "postgresql://None:None@..." in Python.
-func TestContainerSpecAzure_MissingConnectionFieldsRenderAsNone(t *testing.T) {
+// TestContainerSpecAzure_ObjectStorageRendersAsBareHost mirrors the fix
+// described in docs/azure-aws-parity-todo.md Priority 1 item 3: a
+// storage relationship used to render as a nonsensical Postgres-shaped
+// URL ("postgresql://None:None@<host>:None/None"); it now renders as the
+// bare host, matching the target's actual capability.
+func TestContainerSpecAzure_ObjectStorageRendersAsBareHost(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{
 		Name: "app",
@@ -203,6 +201,7 @@ func TestContainerSpecAzure_MissingConnectionFieldsRenderAsNone(t *testing.T) {
 		Relationships: []models.Relationship{{Client: "web", Server: "blobs"}},
 	}
 	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
 	name := "${azurerm_storage_account.blobs_storage.name}"
 	connections := map[string]models.Connection{
 		"blobs": {
@@ -212,13 +211,106 @@ func TestContainerSpecAzure_MissingConnectionFieldsRenderAsNone(t *testing.T) {
 		},
 	}
 
-	container := containerSpecAzure(&app.Services[0], app, &env, connections, []string{"blobs"})
+	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"blobs"})
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}
-	want := "postgresql://None:None@${azurerm_storage_account.blobs_storage.primary_blob_endpoint}:None/None"
+	want := "${azurerm_storage_account.blobs_storage.primary_blob_endpoint}"
 	if container.Env[0].Value != want {
 		t.Errorf("got %q, want %q", container.Env[0].Value, want)
+	}
+	if len(secrets) != 0 {
+		t.Errorf("expected no secrets for a storage connection (no password), got %v", secrets)
+	}
+}
+
+// TestContainerSpecAzure_CacheRendersAsRedisURL mirrors the same fix for
+// a cache relationship: previously rendered as a Postgres-shaped URL,
+// now renders as redis:// with the cache's own host/port/password.
+func TestContainerSpecAzure_CacheRendersAsRedisURL(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer},
+			{Name: "cache", Capability: models.CapabilityCache},
+		},
+		Relationships: []models.Relationship{{Client: "web", Server: "cache"}},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	port := 10000
+	password := "${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}"
+	connections := map[string]models.Connection{
+		"cache": {
+			Host:     "${azurerm_managed_redis.cache_redis.hostname}",
+			Port:     &port,
+			Password: &password,
+		},
+	}
+
+	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"cache"})
+	if len(container.Env) != 1 {
+		t.Fatalf("expected 1 env var, got %d", len(container.Env))
+	}
+	// No KeyVaultSecret was stored for "cache" (that's
+	// grantManagedServicePermissions's job, not containerSpecAzure's),
+	// so this exercises the plain-render fallback path, not the
+	// secretRef path -- see TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef
+	// for that one.
+	want := "redis://:" + password + "@${azurerm_managed_redis.cache_redis.hostname}:10000"
+	if container.Env[0].Value != want {
+		t.Errorf("got %q, want %q", container.Env[0].Value, want)
+	}
+	if len(secrets) != 0 {
+		t.Errorf("expected no secrets when none was stored in Key Vault, got %v", secrets)
+	}
+}
+
+// TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef confirms that once
+// a KeyVaultSecret has been stored for a connection (as
+// grantManagedServicePermissions does in the real pipeline), the
+// container references it via SecretName rather than interpolating the
+// password directly -- see docs/azure-aws-parity-todo.md Priority 1
+// items 1-2.
+func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer},
+			{Name: "db", Capability: models.CapabilityDatabase},
+		},
+		Relationships: []models.Relationship{{Client: "web", Server: "db"}},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	resources.KeyVaultSecret["db_secret"] = models.NewKeyVaultSecret()
+	resources.UserAssignedIdentity["main"] = models.UserAssignedIdentity{Name: "prod-app-identity"}
+
+	password := "supersecret"
+	connections := map[string]models.Connection{
+		"db": {Host: "db.example.com", Password: &password},
+	}
+
+	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"db"})
+	if len(container.Env) != 1 {
+		t.Fatalf("expected 1 env var, got %d", len(container.Env))
+	}
+	if container.Env[0].Value != "" {
+		t.Errorf("expected no plaintext Value when a Key Vault secret exists, got %q", container.Env[0].Value)
+	}
+	if container.Env[0].SecretName == "" {
+		t.Errorf("expected SecretName to be set")
+	}
+	if len(secrets) != 1 {
+		t.Fatalf("expected 1 secret, got %d", len(secrets))
+	}
+	if secrets[0].KeyVaultSecretID != "${azurerm_key_vault_secret.db_secret.versionless_id}" {
+		t.Errorf("KeyVaultSecretID = %q, want the db_secret's versionless_id", secrets[0].KeyVaultSecretID)
+	}
+	if secrets[0].Identity != "${azurerm_user_assigned_identity.main.id}" {
+		t.Errorf("Identity = %q, want the user-assigned identity's resource ID", secrets[0].Identity)
 	}
 }
 

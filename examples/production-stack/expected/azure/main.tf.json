@@ -77,7 +77,10 @@
       "web": {
         "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
         "identity": {
-          "type": "SystemAssigned"
+          "identity_ids": [
+            "${azurerm_user_assigned_identity.main.id}"
+          ],
+          "type": "UserAssigned"
         },
         "ingress": {
           "external_enabled": true,
@@ -93,6 +96,18 @@
         "name": "prod-production-stack-web",
         "resource_group_name": "prod",
         "revision_mode": "Single",
+        "secret": [
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
+            "name": "db-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.cache_secret.versionless_id}",
+            "name": "cache-url"
+          }
+        ],
         "template": {
           "container": [
             {
@@ -108,11 +123,11 @@
                 },
                 {
                   "name": "DB_URL",
-                  "value": "postgresql://composey:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/production_stack_db"
+                  "secret_name": "db-url"
                 },
                 {
                   "name": "CACHE_URL",
-                  "value": "postgresql://None:${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.cache_redis.hostname}:10000/None"
+                  "secret_name": "cache-url"
                 }
               ],
               "image": "nginx:latest",
@@ -171,10 +186,33 @@
         "location": "eastus",
         "name": "prod-production-stack-kv",
         "purge_protection_enabled": false,
+        "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
         "sku_name": "standard",
         "soft_delete_retention_days": 7,
         "tenant_id": "${data.azurerm_client_config.current.tenant_id}"
+      }
+    },
+    "azurerm_key_vault_secret": {
+      "cache_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-production-stack-cache-password",
+        "value": "${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}"
+      },
+      "db_secret": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-production-stack-db-password",
+        "value": "${random_password.postgres_admin.result}"
       }
     },
     "azurerm_managed_redis": {
@@ -217,6 +255,25 @@
         "collation": "en_US.utf8",
         "name": "production_stack_db",
         "server_id": "${azurerm_postgresql_flexible_server.main.id}"
+      }
+    },
+    "azurerm_role_assignment": {
+      "cache_kv_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Key Vault Secrets User",
+        "scope": "${azurerm_key_vault.main.id}"
+      },
+      "db_kv_role": {
+        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
+        "role_definition_name": "Key Vault Secrets User",
+        "scope": "${azurerm_key_vault.main.id}"
+      }
+    },
+    "azurerm_user_assigned_identity": {
+      "main": {
+        "location": "eastus",
+        "name": "prod-production-stack-identity",
+        "resource_group_name": "prod"
       }
     },
     "random_password": {

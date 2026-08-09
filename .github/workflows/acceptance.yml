@@ -85,8 +85,6 @@ jobs:
           # timed-out run can still be destroyed afterwards.
           STATE_BUCKET: ${{ vars.AWS_ACCEPTANCE_STATE_BUCKET }}
           STATE_REGION: eu-west-2
-          # Use composey init env instead of handwritten bootstrap
-          USE_COMPOSEY_INIT: "1"
         run: |
           case "${{ inputs.example }}" in
             hello)

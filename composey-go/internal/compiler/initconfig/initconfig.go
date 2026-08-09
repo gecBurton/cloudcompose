@@ -34,10 +34,12 @@ var knownTopLevelKeys = map[string]bool{
 }
 
 // Load reads and validates an environment.yaml file at path. Returns
-// (nil, nil) if the file does not exist -- not an error, since
-// `composey init` falls back to flags-only when no authored file is
-// present (see docs/authored-environment-config.md's "composey init
-// behavior", step 3).
+// (nil, nil) if the file does not exist -- not an error at this layer,
+// since what to do about a missing file is a CLI-level concern
+// (cmd/composey/init.go prints a specific "create one, here's how"
+// message rather than a generic error). There is no flags-only fallback
+// anymore: environment.yaml is composey init's only input (see
+// docs/authored-environment-config.md).
 func Load(path string) (*models.InitConfig, error) {
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

@@ -32,10 +32,12 @@ go run ./cmd/composey main -f ../examples/hello/compose.yml -e /tmp/demo-infrast
 `examples/hello/environment.yaml` (and its `environment.azure.yaml`/
 `environment.gcp.yaml` siblings) are real, `terraform validate`-checked
 authored environment files — the *decisions* `composey init` needs
-(region, VPC CIDR, whether to create a load balancer). They are **not**
+(region, VPC CIDR, whether to create a load balancer), and `composey
+init`'s **only** input; there are no decision flags. They are **not**
 the same thing as the `environment.yaml` that ends up sitting next to
-`main.tf.json` after `init` actually runs (that one is a resolved,
-machine-written copy of whichever input file and flags you gave it, not
+`main.tf.json` after `init` actually runs (that one is just a copy of
+whichever input file you gave it, written there so the file that
+produced a given environment is always visible next to it — not
 something to hand-edit) — and neither is the same thing as an
 environment's *facts* (its actual VPC ID, ALB ARN, etc. once Terraform
 creates them), which are never written to a file at all: `composey main
@@ -66,14 +68,19 @@ any other example directory and the sibling `environment.<cloud>.yaml`
 
 ## Real deployment testing
 
-`scripts/smoke-test.sh`/`scripts/smoke-test-azure.sh` deploy `hello`
-against real AWS/Azure as part of this repo's CI acceptance workflows
-(see `ci/README.md` for the one-time CI identity/state-backend setup
-they depend on). Both scripts use `examples/hello/environment.yaml`/
-`environment.azure.yaml` as `composey init`'s input when present next to
-the compose file being tested — the same authored-config path described
-above, not a separate mechanism — falling back to flags-only `composey
-init` for any example with no `environment.yaml` of its own.
+`scripts/smoke-test.sh`/`scripts/smoke-test-azure.sh` deploy six
+different examples (`hello`, `minio-s3`, `build-webapp`, `doctor`,
+`web-api`, `production-stack`) against real AWS/Azure as part of this
+repo's CI acceptance workflows (see `ci/README.md` for the one-time CI
+identity/state-backend setup they depend on). All six share **one**
+environment per run, generated from `scripts/ci-environment.aws.yaml`/
+`ci-environment.azure.yaml` — not `examples/hello/environment.yaml` —
+since a CI run's environment isn't really "for" any one example; it's
+one platform environment several separate apps deploy into, the same
+multi-app-per-environment pattern the two-step flow above supports.
+Each run substitutes a unique `name:` into a generated copy of that
+shared file before calling `composey init -f <generated file>` — see
+the comments in either smoke-test script for exactly how.
 
 ## Running the golden tests yourself
 

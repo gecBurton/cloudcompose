@@ -1,0 +1,19 @@
+# Shared environment.yaml for the Azure acceptance workflow
+# (.github/workflows/azure-acceptance.yml). See
+# scripts/ci-environment.aws.yaml's own comments for why this is one
+# shared file rather than one per example, and why name: is a
+# placeholder scripts/smoke-test-azure.sh substitutes per run.
+#
+# region is francecentral, not the more obvious eastus: eastus has
+# documented PostgreSQL Flexible Server and Managed Redis capacity/quota
+# restrictions that have already caused a real CI failure once (see
+# .github/workflows/azure-acceptance.yml's own region-input comment).
+provider: azure
+name: PLACEHOLDER
+region: francecentral
+retain_data_on_destroy: false
+tags:
+  ManagedBy: composey-acceptance-ci
+
+azure:
+  vnet_cidr: 10.0.0.0/16

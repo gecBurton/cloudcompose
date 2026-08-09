@@ -154,21 +154,24 @@ log "Creating environment '$NAME' with composey init…"
 rm -rf "$ENV_DIR"
 cd "$ROOT"
 
-# Use the authored environment.yaml sitting next to the compose file if one
-# exists (see docs/authored-environment-config.md) -- --name/--region are
-# still passed explicitly and win over the file's own values (per
-# composey init's file+override precedence), since this script's NAME/
-# STATE_REGION are run-specific, not something the committed example file
-# should hardcode. Falls back to flags-only exactly as before for any
-# example with no environment.yaml of its own, so this isn't a breaking
-# change for the rest of the example suite.
-ENV_CONFIG="$(dirname "$COMPOSE")/environment.yaml"
-if [[ -f "$ENV_CONFIG" ]]; then
-  log "Using authored environment config: $ENV_CONFIG"
-  "$COMPOSEY" init -f "$ENV_CONFIG" --name "$NAME" --region "$STATE_REGION" --output "$ENV_DIR"
-else
-  "$COMPOSEY" init --name "$NAME" --region "$STATE_REGION" --output "$ENV_DIR"
-fi
+# composey init takes no decision flags -- environment.yaml is its only
+# input (see docs/authored-environment-config.md). name: is the one
+# field this script can't just commit statically, since a shared AWS
+# account needs a unique resource prefix per run; every other decision
+# (region, VPC CIDR, AZ count, ALB) comes from the committed
+# scripts/ci-environment.aws.yaml, shared across every example this
+# script deploys (they're separate apps sharing one platform
+# environment -- the whole point of the init/main split).
+GENERATED_ENV_CONFIG="$ROOT/build/$NAME-environment.yaml"
+mkdir -p "$(dirname "$GENERATED_ENV_CONFIG")"
+python3 -c "
+with open('$ROOT/scripts/ci-environment.aws.yaml') as f:
+    content = f.read()
+content = content.replace('name: PLACEHOLDER', 'name: $NAME')
+with open('$GENERATED_ENV_CONFIG', 'w') as f:
+    f.write(content)
+"
+"$COMPOSEY" init -f "$GENERATED_ENV_CONFIG" --output "$ENV_DIR"
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"

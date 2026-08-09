@@ -323,7 +323,8 @@ been latent and untested since MySQL support was first ported.
   values confirmed against Microsoft's own private-endpoint DNS
   reference, not guessed. `env.RedisSubnetID` (new field) gates this the
   same way `PostgresqlSubnetID`/`MysqlSubnetID` already gate database
-  private networking; `composey init --provider azure` now creates a
+  private networking; `composey init` (`provider: azure` in
+  `environment.yaml`) now creates a
   4th (non-delegated) subnet for it automatically, matching the existing
   Postgres/MySQL/Container-Apps subnet pattern. Verified end-to-end with
   `terraform validate` against both the environment-bootstrap output and
@@ -456,8 +457,8 @@ been latent and untested since MySQL support was first ported.
 - Azure's one-shared-ACR-per-environment vs AWS's one-ECR-repo-per-service
   — both valid, noted as a real difference in `docs/spikes/azure/README.md`,
   not a gap.
-- No shared ALB/ingress equivalent created by `composey init --provider
-  azure` — architecturally justified by Container Apps' per-service-FQDN
+- No shared ALB/ingress equivalent created by `composey init` for Azure
+  — architecturally justified by Container Apps' per-service-FQDN
   model (no shared listener to configure), not a missing AWS parity
   feature.
 - Rate-schedule rejection when a value doesn't divide evenly into cron

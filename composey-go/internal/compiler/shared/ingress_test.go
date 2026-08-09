@@ -30,9 +30,9 @@ func TestIngressPortDefaultsToTheServicePort(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"web": {
-				Image:     "nginx",
-				Ports:     []models.PortConfig{{Target: 9090, Published: "9090"}},
-				XComposey: map[string]interface{}{"ingress": map[string]interface{}{}},
+				Image:  "nginx",
+				Ports:  []models.PortConfig{{Target: 9090, Published: "9090"}},
+				XCloud: map[string]interface{}{"ingress": map[string]interface{}{}},
 			},
 		},
 	}
@@ -62,7 +62,7 @@ func TestIngressPortCanBeDeclared(t *testing.T) {
 			"web": {
 				Image: "nginx",
 				Ports: []models.PortConfig{{Target: 8080, Published: "8080"}},
-				XComposey: map[string]interface{}{
+				XCloud: map[string]interface{}{
 					"ingress": map[string]interface{}{"port": 9000},
 				},
 			},
@@ -86,9 +86,9 @@ func TestBareIngressKeyDeclaresADefaultRoute(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"web": {
-				Image:     "nginx",
-				Ports:     []models.PortConfig{{Target: 80, Published: "80"}},
-				XComposey: map[string]interface{}{"ingress": nil},
+				Image:  "nginx",
+				Ports:  []models.PortConfig{{Target: 80, Published: "80"}},
+				XCloud: map[string]interface{}{"ingress": nil},
 			},
 		},
 	}
@@ -103,13 +103,13 @@ func TestBareIngressKeyDeclaresADefaultRoute(t *testing.T) {
 
 func TestThePublicShorthandIsGone(t *testing.T) {
 	t.Parallel()
-	// The old x-composey.public: true shorthand was replaced by explicit
+	// The old x-cloud.public: true shorthand was replaced by explicit
 	// ingress declaration; it must be rejected, not silently ignored.
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"web": {
-				Image:     "nginx",
-				XComposey: map[string]interface{}{"public": true},
+				Image:  "nginx",
+				XCloud: map[string]interface{}{"public": true},
 			},
 		},
 	}

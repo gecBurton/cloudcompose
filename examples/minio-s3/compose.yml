@@ -1,6 +1,6 @@
-# Managed object storage: the `blobs` service uses a minio image, so composey
+# Managed object storage: the `blobs` service uses a minio image, so cloudcompose
 # substitutes an AWS S3 bucket for it (no container runs). Because `web`
-# depends_on blobs and has env vars naming the blobs service, composey injects
+# depends_on blobs and has env vars naming the blobs service, cloudcompose injects
 # the real bucket id / domain and grants the web task s3:* on the bucket.
 #
 # `web` is a plain public image so the stack actually deploys and serves — it
@@ -17,7 +17,7 @@ services:
       - blobs
     networks:
       - public
-    x-composey:
+    x-cloud:
       ingress: {}
   blobs:
     image: minio/minio

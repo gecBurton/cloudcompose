@@ -269,10 +269,10 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 			s.Command = command
 		}
 
-		// Extract x-composey extension
+		// Extract x-cloud extension
 		if service.Extensions != nil {
-			if xComposey, ok := service.Extensions["x-composey"]; ok {
-				s.XComposey = xComposey
+			if xCloud, ok := service.Extensions["x-cloud"]; ok {
+				s.XCloud = xCloud
 			}
 		}
 

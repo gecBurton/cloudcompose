@@ -3,10 +3,10 @@ services:
     image: nginx
     ports:
       - "80:80"
-    x-composey:
+    x-cloud:
       ingress: {}
       size: large
   db:
     image: postgres
-    x-composey:
+    x-cloud:
       size: medium

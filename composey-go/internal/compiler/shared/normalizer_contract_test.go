@@ -11,7 +11,7 @@ import (
 // fallback guarantees. Split out of a single, larger normalizer_contract_
 // test.go (originally ported wholesale from the deleted
 // tests/unit/test_normalizer.py et al. in 0244d4a) into files grouped by
-// concern — see volumes_test.go, xcomposey_test.go, ingress_test.go,
+// concern — see volumes_test.go, xcloud_test.go, ingress_test.go,
 // platform_settings_test.go, database_name_test.go, schedule_test.go,
 // networks_test.go, and build_test.go for the rest.
 
@@ -135,8 +135,8 @@ func TestNormalizeScalingPassthrough(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"web": {
-				Image:     "nginx",
-				XComposey: map[string]interface{}{"min_scale": 2, "max_scale": 10},
+				Image:  "nginx",
+				XCloud: map[string]interface{}{"min_scale": 2, "max_scale": 10},
 			},
 		},
 	}
@@ -160,13 +160,13 @@ func TestNormalizeExplicitMinScaleZeroIsPreserved(t *testing.T) {
 	// model allows it explicitly (min_scale >= 0, only max_scale requires
 	// >= 1). A redundant defaulting pass in Normalize used to treat any
 	// zero MinScale as "unset" and silently reset it to 1, discarding an
-	// explicit min_scale: 0 for any service that had an x-composey block
-	// at all (confirmed against a real x-composey block 2026-08-06).
+	// explicit min_scale: 0 for any service that had an x-cloud block
+	// at all (confirmed against a real x-cloud block 2026-08-06).
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"web": {
-				Image:     "nginx",
-				XComposey: map[string]interface{}{"min_scale": 0, "max_scale": 3},
+				Image:  "nginx",
+				XCloud: map[string]interface{}{"min_scale": 0, "max_scale": 3},
 			},
 			"api": {Image: "nginx"},
 		},
@@ -188,13 +188,13 @@ func TestNormalizeExplicitMinScaleZeroIsPreserved(t *testing.T) {
 	if byName["web"].MaxScale != 3 {
 		t.Errorf("web MaxScale = %d, want 3", byName["web"].MaxScale)
 	}
-	// A service with no x-composey block at all must still default
+	// A service with no x-cloud block at all must still default
 	// correctly — this is the case the fix's default has to keep serving.
 	if byName["api"].MinScale != 1 {
-		t.Errorf("api MinScale = %d, want 1 (default, no x-composey block)", byName["api"].MinScale)
+		t.Errorf("api MinScale = %d, want 1 (default, no x-cloud block)", byName["api"].MinScale)
 	}
 	if byName["api"].MaxScale != 1 {
-		t.Errorf("api MaxScale = %d, want 1 (default, no x-composey block)", byName["api"].MaxScale)
+		t.Errorf("api MaxScale = %d, want 1 (default, no x-cloud block)", byName["api"].MaxScale)
 	}
 }
 

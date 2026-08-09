@@ -26,7 +26,7 @@ type InitConfig struct {
 	RetainDataOnDestroy *bool             `yaml:"retain_data_on_destroy,omitempty"`
 
 	// Domain is the custom domain a CDN-enabled service
-	// (`x-composey.cdn: true` in docker-compose.yml) is served under.
+	// (`x-cloud.cdn: true` in docker-compose.yml) is served under.
 	// Common-envelope, not per-cloud: a domain is owned once, by the
 	// environment/account, not per compose file -- the same reasoning
 	// that put `region`/`tags` here rather than duplicating them per

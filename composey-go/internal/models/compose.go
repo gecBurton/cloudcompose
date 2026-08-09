@@ -36,7 +36,7 @@ type ComposeService struct {
 	Volumes     []VolumeDefinition     `json:"volumes,omitempty"`
 	Secrets     []interface{}          `json:"secrets,omitempty"`
 	Command     interface{}            `json:"command,omitempty"`
-	XComposey   interface{}            `json:"x-composey,omitempty"`
+	XCloud      interface{}            `json:"x-cloud,omitempty"`
 	PlatformEnv []string               `json:"platform_env,omitempty"`
 }
 
@@ -99,7 +99,7 @@ type VolumeDefinition struct {
 	Source string `json:"source,omitempty"`
 }
 
-// XComposey is the `x-composey` block on a service.
+// XCloud is the `x-cloud` block on a service.
 //
 // Ported from models/compose.py's XComposey, which validates with Pydantic's
 // extra="forbid" plus per-field bounds (Field(ge=..., gt=...)). Go's
@@ -109,7 +109,7 @@ type VolumeDefinition struct {
 // being silently accepted rather than rejected: `capabilty: database` was
 // once silently dropped, and the service deployed as whatever the compiler
 // guessed from the image name instead.
-type XComposey struct {
+type XCloud struct {
 	Capability             *Capability               `json:"capability,omitempty"`
 	Ingress                *IngressConfig            `json:"ingress,omitempty"`
 	HealthCheck            *HealthCheckConfig        `json:"health_check,omitempty"`
@@ -133,7 +133,7 @@ var validSizes = map[string]bool{"small": true, "medium": true, "large": true}
 
 // intOrString accepts a JSON number or a numeric JSON string ("5"), matching
 // Pydantic's lenient coercion — docker-compose users occasionally quote
-// numeric x-composey values, and Python accepted that silently. Go's
+// numeric x-cloud values, and Python accepted that silently. Go's
 // encoding/json does not coerce string-to-int by default, and returning that
 // error unchanged (rather than deliberately re-implementing the coercion
 // Pydantic already did) turns any quoted number into a hard, surprising
@@ -155,7 +155,7 @@ func intOrString(raw json.RawMessage, field string) (int, error) {
 // UnmarshalJSON enforces what Pydantic's extra="forbid" and Field bounds did
 // on the Python model: unknown keys and out-of-range values are rejected
 // outright rather than silently ignored or clamped.
-func (x *XComposey) UnmarshalJSON(data []byte) error {
+func (x *XCloud) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -178,7 +178,7 @@ func (x *XComposey) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("unknown field(s): %v", unknown)
 	}
 
-	result := XComposey{Size: "small", MinScale: 1, MaxScale: 1}
+	result := XCloud{Size: "small", MinScale: 1, MaxScale: 1}
 
 	if v, ok := raw["capability"]; ok {
 		var s string
@@ -301,7 +301,7 @@ func (x *XComposey) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (x *XComposey) GetGracePeriod() *int {
+func (x *XCloud) GetGracePeriod() *int {
 	if x.StartupGracePeriod != nil {
 		return x.StartupGracePeriod
 	}

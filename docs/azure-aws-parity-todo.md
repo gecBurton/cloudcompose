@@ -150,7 +150,7 @@ on Azure — no error, just missing behavior.
   Azure-correct constant from AWS's `shared.SecretsPlaceholderValue`,
   whose own wording says "CHANGE IN AWS CONSOLE"), wired via
   `ContainerAppEnvVar.SecretName`.
-- [x] **Implement `x-composey` platform `config:` support for Azure.**
+- [x] **Implement `x-cloud` platform `config:` support for Azure.**
   `handlePlatformConfig` (`aws/compute.go:342-400`) likewise has no Azure
   equivalent. Same Key Vault-backed mechanism as secrets, once that
   exists. This is the direct reason `examples/platform-config` has no
@@ -348,7 +348,7 @@ been latent and untested since MySQL support was first ported.
 - [x] **Add a size-ceiling rejection for Azure Container Apps.**
   Consumption-tier caps at 2 vCPU/4GiB; `size: large` maps to only
   1.0vCPU/2Gi today, so the current mapping never actually hits the
-  ceiling — but an explicit `cpu`/`memory` override in `x-composey` could
+  ceiling — but an explicit `cpu`/`memory` override in `x-cloud` could
   exceed it with no rejection path. Still-open finding from
   `docs/spikes/azure/README.md` (finding #3) and
   `docs/spikes/gcp/README.md`'s equivalent finding for GCP — worth fixing

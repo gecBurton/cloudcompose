@@ -7,15 +7,15 @@ import (
 	"github.com/gecburton/composey/internal/models"
 )
 
-// --- test_capability_detection.py: x-composey validation --------------------
+// --- test_capability_detection.py: x-cloud validation --------------------
 
 func TestCapabilityCanBeDeclaredExplicitly(t *testing.T) {
 	t.Parallel()
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"thing": {
-				Image:     "acme/private-thing:1",
-				XComposey: map[string]interface{}{"capability": "database"},
+				Image:  "acme/private-thing:1",
+				XCloud: map[string]interface{}{"capability": "database"},
 			},
 		},
 	}
@@ -34,8 +34,8 @@ func TestCapabilityOverrideBeatsInference(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"db": {
-				Image:     "postgres:16",
-				XComposey: map[string]interface{}{"capability": "container"},
+				Image:  "postgres:16",
+				XCloud: map[string]interface{}{"capability": "container"},
 			},
 		},
 	}
@@ -54,8 +54,8 @@ func TestUnknownCapabilityIsRejectedByName(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"thing": {
-				Image:     "acme/private-thing:1",
-				XComposey: map[string]interface{}{"capability": "databse"},
+				Image:  "acme/private-thing:1",
+				XCloud: map[string]interface{}{"capability": "databse"},
 			},
 		},
 	}
@@ -64,8 +64,8 @@ func TestUnknownCapabilityIsRejectedByName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error, got nil")
 	}
-	if !strings.Contains(err.Error(), "service 'thing' has an invalid x-composey") {
-		t.Errorf("error = %q, want it to mention service 'thing' has an invalid x-composey", err.Error())
+	if !strings.Contains(err.Error(), "service 'thing' has an invalid x-cloud") {
+		t.Errorf("error = %q, want it to mention service 'thing' has an invalid x-cloud", err.Error())
 	}
 }
 
@@ -76,8 +76,8 @@ func TestMisspelledKeyIsRejectedRatherThanIgnored(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"thing": {
-				Image:     "acme/private-thing:1",
-				XComposey: map[string]interface{}{"capabilty": "database"},
+				Image:  "acme/private-thing:1",
+				XCloud: map[string]interface{}{"capabilty": "database"},
 			},
 		},
 	}
@@ -96,8 +96,8 @@ func TestMisspelledPublicIsRejected(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"thing": {
-				Image:     "acme/private-thing:1",
-				XComposey: map[string]interface{}{"publik": true},
+				Image:  "acme/private-thing:1",
+				XCloud: map[string]interface{}{"publik": true},
 			},
 		},
 	}
@@ -129,15 +129,15 @@ func TestOutOfRangeValuesAreRejected(t *testing.T) {
 			t.Parallel()
 			app := &models.ComposeApplication{
 				Services: map[string]models.ComposeService{
-					"thing": {Image: "acme/private-thing:1", XComposey: tc.setting},
+					"thing": {Image: "acme/private-thing:1", XCloud: tc.setting},
 				},
 			}
 			_, err := Normalize(app, "test-project")
 			if err == nil {
 				t.Fatal("expected an error, got nil")
 			}
-			if !strings.Contains(err.Error(), "invalid x-composey") {
-				t.Errorf("error = %q, want it to mention 'invalid x-composey'", err.Error())
+			if !strings.Contains(err.Error(), "invalid x-cloud") {
+				t.Errorf("error = %q, want it to mention 'invalid x-cloud'", err.Error())
 			}
 		})
 	}
@@ -147,14 +147,14 @@ func publicTestApp(frontendXC, backendXC map[string]interface{}) *models.Compose
 	return &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"frontend": {
-				Image:     "frontend",
-				Ports:     []models.PortConfig{{Target: 8081, Published: "8081"}},
-				XComposey: frontendXC,
+				Image:  "frontend",
+				Ports:  []models.PortConfig{{Target: 8081, Published: "8081"}},
+				XCloud: frontendXC,
 			},
 			"backend": {
-				Image:     "backend",
-				Ports:     []models.PortConfig{{Target: 8080, Published: "8080"}},
-				XComposey: backendXC,
+				Image:  "backend",
+				Ports:  []models.PortConfig{{Target: 8080, Published: "8080"}},
+				XCloud: backendXC,
 			},
 		},
 	}

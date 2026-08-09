@@ -134,8 +134,8 @@ gcp:
 `provider:` may be present. An `azure:` block in a file declaring
 `provider: aws` is a validation error, not silently ignored — consistent
 with this codebase's existing convention that unknown/mismatched
-`x-composey` keys are hard errors (`AGENTS.md`, `models/compose.go`'s
-`XComposey.UnmarshalJSON`). This is specifically what would have caught
+`x-cloud` keys are hard errors (`AGENTS.md`, `models/compose.go`'s
+`XCloud.UnmarshalJSON`). This is specifically what would have caught
 the `--azure-endpoint` dead-flag problem, had this schema existed: an
 endpoint override for a provider that isn't the declared target is a
 mistake worth failing loudly on, not a flag that quietly does nothing.
@@ -194,7 +194,7 @@ fails against an incomplete environment much later.
 ### The `domain` gap
 
 A related category error, found while reviewing this design against
-`docker-compose.yml`'s `x-composey.cdn: true` (2026-08-08): `cdn: true`
+`docker-compose.yml`'s `x-cloud.cdn: true` (2026-08-08): `cdn: true`
 is a legitimate per-service, per-app decision (does *this* service want
 a CDN — the same category as `ingress`/`min_scale`), but on GCP it
 cannot be *completed* without a domain the caller owns, since a
@@ -363,7 +363,7 @@ exactly like every other invocation.
 
 - The overall two-step `init` → `apply` → `main` flow.
 - `main` continues to resolve per-app deployment config from
-  `docker-compose.yml` + `x-composey` — untouched by any of this.
+  `docker-compose.yml` + `x-cloud` — untouched by any of this.
 - Multiple apps (compose files) can point at the same environment
   directory, compiling independently — this was the original motivation
   for the two-stage split and isn't affected by either revision.

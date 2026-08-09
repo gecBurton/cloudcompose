@@ -1,8 +1,8 @@
 # Two containers that talk to each other — the shape no other example had, and
-# the reason composey shipped for eight days with no service discovery at all.
+# the reason cloudcompose shipped for eight days with no service discovery at all.
 #
 # Compose puts both on a shared network where `api` resolves by name. ECS gives
-# a task no name whatsoever, so composey registers each reachable service in a
+# a task no name whatsoever, so cloudcompose registers each reachable service in a
 # private DNS zone and rewrites references to it.
 services:
   web:
@@ -16,7 +16,7 @@ services:
       - api
     networks:
       - app
-    x-composey:
+    x-cloud:
       ingress: {}
 
   api:

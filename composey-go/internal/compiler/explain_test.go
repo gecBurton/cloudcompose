@@ -19,7 +19,7 @@ func TestExplain_RealExamples(t *testing.T) {
 	}{
 		{
 			name: "hello",
-			want: "\n[bold]web[/]\n  [green]inferred[/]  runs as a container\n            [dim]image 'nginxdemos/hello:plain-text' is not a recognised managed service[/]\n  [green]inferred[/]  listens on 80\n            [dim]first published port[/]\n  [cyan]declared[/]  served at / on port 80\n            [dim]declared by x-composey: ingress[/]\n  [cyan]declared[/]  healthy when / returns 2xx/3xx\n            [dim]declared[/]\n\n4 decision(s)",
+			want: "\n[bold]web[/]\n  [green]inferred[/]  runs as a container\n            [dim]image 'nginxdemos/hello:plain-text' is not a recognised managed service[/]\n  [green]inferred[/]  listens on 80\n            [dim]first published port[/]\n  [cyan]declared[/]  served at / on port 80\n            [dim]declared by x-cloud: ingress[/]\n  [cyan]declared[/]  healthy when / returns 2xx/3xx\n            [dim]declared[/]\n\n4 decision(s)",
 		},
 	}
 
@@ -332,15 +332,15 @@ func TestExplain_SubstitutionReportsTheImageItMatched(t *testing.T) {
 
 // TestExplain_DeclaredCapabilityIsReportedAsDeclared mirrors
 // test_declared_capability_is_reported_as_declared: an explicitly
-// declared x-composey: capability reports Source == SourceDeclared.
+// declared x-cloud: capability reports Source == SourceDeclared.
 func TestExplain_DeclaredCapabilityIsReportedAsDeclared(t *testing.T) {
 	t.Parallel()
 	dbName := "thing"
 	composeApp := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"thing": {
-				Image:     "acme/thing",
-				XComposey: map[string]any{"capability": "database"},
+				Image:  "acme/thing",
+				XCloud: map[string]any{"capability": "database"},
 			},
 		},
 	}
@@ -414,10 +414,10 @@ func TestExplain_RenderCountsWarnings_WithWarningsPresent(t *testing.T) {
 	}
 }
 
-// TestExplain_MissingIngressNamesTheCandidatesAndMentionsXComposey mirrors
+// TestExplain_MissingIngressNamesTheCandidatesAndMentionsXCloud mirrors
 // test_missing_ingress_names_the_candidates: the warning names the
-// candidate service and mentions "x-composey: ingress".
-func TestExplain_MissingIngressNamesTheCandidatesAndMentionsXComposey(t *testing.T) {
+// candidate service and mentions "x-cloud: ingress".
+func TestExplain_MissingIngressNamesTheCandidatesAndMentionsXCloud(t *testing.T) {
 	t.Parallel()
 	port := 8080
 	app := &models.Application{
@@ -440,7 +440,7 @@ func TestExplain_MissingIngressNamesTheCandidatesAndMentionsXComposey(t *testing
 	if !strings.Contains(warning.Because, "web") {
 		t.Errorf("Because = %q, want it to mention web", warning.Because)
 	}
-	if !strings.Contains(warning.Because, "x-composey: ingress") {
-		t.Errorf("Because = %q, want it to mention x-composey: ingress", warning.Because)
+	if !strings.Contains(warning.Because, "x-cloud: ingress") {
+		t.Errorf("Because = %q, want it to mention x-cloud: ingress", warning.Because)
 	}
 }

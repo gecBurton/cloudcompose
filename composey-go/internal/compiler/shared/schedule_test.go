@@ -86,8 +86,8 @@ func TestNormalizerReadsScheduleFromComposeFile(t *testing.T) {
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"cleanup": {
-				Image:     "myapp/cleanup",
-				XComposey: map[string]interface{}{"schedule": "every 6 hours"},
+				Image:  "myapp/cleanup",
+				XCloud: map[string]interface{}{"schedule": "every 6 hours"},
 			},
 		},
 	}

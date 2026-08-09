@@ -23,7 +23,7 @@ var supportedProviders = map[string]bool{"aws": true, "azure": true, "gcp": true
 
 // knownTopLevelKeys mirrors models.InitConfig's own yaml tags. Kept as an
 // explicit list (rather than reflecting over the struct) for the same
-// reason models/compose.go's XComposey.UnmarshalJSON hand-lists its own
+// reason models/compose.go's XCloud.UnmarshalJSON hand-lists its own
 // known keys: an explicit list is what actually gets reviewed when a
 // field is added, whereas reflection would silently stay "correct" even
 // if someone forgot to update a parallel human-facing error message.

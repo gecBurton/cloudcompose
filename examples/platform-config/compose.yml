@@ -19,5 +19,5 @@ services:
       # Named here, valued elsewhere: becomes a Secrets Manager reference.
       API_TOKEN: ${API_TOKEN}
       SENTRY_DSN: ${SENTRY_DSN}
-    x-composey:
+    x-cloud:
       ingress: {}

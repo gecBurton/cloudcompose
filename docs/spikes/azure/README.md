@@ -157,5 +157,5 @@ AWS backend on its own merits:
 6. Should `public_service` become a set?
 
 **Explicitly not needed:** no new capabilities, and no change to the
-compose-facing `x-composey` surface. The parts of the design that users touch
+compose-facing `x-cloud` surface. The parts of the design that users touch
 came through unchanged.

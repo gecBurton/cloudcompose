@@ -1,6 +1,6 @@
 # Examples
 
-Each subdirectory here is a `docker-compose.yml` (plus `x-composey`
+Each subdirectory here is a `docker-compose.yml` (plus `x-cloud`
 annotations where needed) that cloudcompose compiles into Terraform. Most
 have golden fixtures under `expected/{aws,azure}/main.tf.json` — the
 committed, `terraform validate`-checked output cloudcompose should produce
@@ -61,9 +61,9 @@ any other example directory and the sibling `environment.<cloud>.yaml`
 | `doctor` | Building an image from a `Dockerfile` rather than using a pre-built one |
 | `build-webapp` | Image build + push, combined with a database |
 | `production-stack` | The most feature-dense example: CDN, WAF, autoscaling, scheduled task, multiple relationships |
-| `scaling` | `x-composey.size`/`min_scale`/`max_scale` sizing hints |
+| `scaling` | `x-cloud.size`/`min_scale`/`max_scale` sizing hints |
 | `compute-tuning` | Explicit `cpu:`/`memory:` overrides instead of a named `size:` |
-| `platform-config` | Platform-supplied configuration (`x-composey`-inferred, valued outside the compose file) |
+| `platform-config` | Platform-supplied configuration (`x-cloud`-inferred, valued outside the compose file) |
 | `web-api` | A second, independent public service in the same app |
 
 ## Real deployment testing

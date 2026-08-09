@@ -232,7 +232,7 @@ memory, or request count:
 services:
   api:
     image: myapp
-    x-composey:
+    x-cloud:
       min_scale: 2   # Always at least 2 instances
       max_scale: 10
       auto_scaling:
@@ -256,7 +256,7 @@ api
   inferred  runs as a container
             image 'myapp' is not a recognised managed service
   declared  served at / on port 80
-            declared by x-composey: ingress
+            declared by x-cloud: ingress
   inferred  may connect to db
             depends_on
 
@@ -283,12 +283,12 @@ Add hints only when you need them:
 services:
   api:
     image: myapp
-    x-composey:
+    x-cloud:
       size: large  # More resources
       min_scale: 2  # Always keep 2 instances warm
 ```
 
-Unknown keys under `x-composey` are a hard error rather than silently
+Unknown keys under `x-cloud` are a hard error rather than silently
 ignored, so a typo in one of these hints fails at compile time, not at
 runtime.
 

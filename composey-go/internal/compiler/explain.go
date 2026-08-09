@@ -66,7 +66,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 			}
 		}
 		if composeService != nil {
-			declaredCapability = xComposeyHasKey(composeService.XComposey, "capability")
+			declaredCapability = xCloudHasKey(composeService.XCloud, "capability")
 		} else {
 			// Without the raw compose model there is no direct record of
 			// whether capability was written explicitly. Whether the
@@ -127,7 +127,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 		if service.Size != models.ServiceSizeSmall || service.CPU != nil || service.Memory != nil {
 			decisions = append(decisions, Decision{
 				Subject: name, Decision: fmt.Sprintf("size %s", service.Size),
-				Because: "declared by x-composey", Source: SourceDeclared,
+				Because: "declared by x-cloud", Source: SourceDeclared,
 			})
 		}
 
@@ -212,7 +212,7 @@ func pyRepr(s string) string {
 // "capability" in docker_app.services[name].x_composey_raw check against
 // the raw dict rather than the parsed model (which always has some
 // value for capability, declared or defaulted).
-func xComposeyHasKey(raw any, key string) bool {
+func xCloudHasKey(raw any, key string) bool {
 	m, ok := raw.(map[string]any)
 	if !ok {
 		return false
@@ -236,7 +236,7 @@ func capabilityDecision(name string, service *models.Service, declared bool) Dec
 	}
 
 	if declared {
-		return Decision{Subject: name, Decision: outcome, Because: "declared by x-composey: capability", Source: SourceDeclared}
+		return Decision{Subject: name, Decision: outcome, Because: "declared by x-cloud: capability", Source: SourceDeclared}
 	}
 
 	var because string
@@ -392,7 +392,7 @@ func ingressDecisions(composeApp *models.ComposeApplication, semantic *models.Ap
 			}
 			decisions = append(decisions, Decision{
 				Subject: service.Name, Decision: fmt.Sprintf("served at %s on port %d", service.Ingress.Path, port),
-				Because: "declared by x-composey: ingress", Source: SourceDeclared,
+				Because: "declared by x-cloud: ingress", Source: SourceDeclared,
 			})
 
 			healthPath := service.Ingress.HealthCheck.Path
@@ -443,7 +443,7 @@ func ingressDecisions(composeApp *models.ComposeApplication, semantic *models.Ap
 	var because string
 	if len(published) > 0 {
 		because = fmt.Sprintf(
-			"%s publish ports; declare x-composey: ingress on whichever should be reachable from outside",
+			"%s publish ports; declare x-cloud: ingress on whichever should be reachable from outside",
 			strings.Join(published, ", "),
 		)
 	} else {

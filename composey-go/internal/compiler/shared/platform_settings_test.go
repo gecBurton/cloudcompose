@@ -12,7 +12,7 @@ func TestStartupGracePeriodIsRead(t *testing.T) {
 	t.Parallel()
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
-			"web": {Image: "nginx", XComposey: map[string]interface{}{"startup_grace_period": 120}},
+			"web": {Image: "nginx", XCloud: map[string]interface{}{"startup_grace_period": 120}},
 		},
 	}
 	result, err := Normalize(app, "p")
@@ -28,7 +28,7 @@ func TestDeprecatedHealthCheckGracePeriodStillWorks(t *testing.T) {
 	t.Parallel()
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
-			"web": {Image: "nginx", XComposey: map[string]interface{}{"health_check_grace_period": 90}},
+			"web": {Image: "nginx", XCloud: map[string]interface{}{"health_check_grace_period": 90}},
 		},
 	}
 	result, err := Normalize(app, "p")
@@ -46,7 +46,7 @@ func TestNeutralNameWinsWhenBothAreGiven(t *testing.T) {
 		Services: map[string]models.ComposeService{
 			"web": {
 				Image: "nginx",
-				XComposey: map[string]interface{}{
+				XCloud: map[string]interface{}{
 					"startup_grace_period":      120,
 					"health_check_grace_period": 90,
 				},

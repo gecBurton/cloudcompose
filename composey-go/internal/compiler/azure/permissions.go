@@ -280,7 +280,7 @@ func grantServiceSecretPermissions(
 
 // grantPlatformConfigPermissions creates a Key Vault secret (placeholder
 // value) per platform-supplied configuration key
-// (`x-composey`-inferred, valued outside the compose file -- see
+// (`x-cloud`-inferred, valued outside the compose file -- see
 // service.Config's own doc comment in models/semantic.go) and the
 // RoleAssignment letting the service's identity read them, mirroring
 // aws/compute.go's handlePlatformConfig. Unlike AWS (which packs every

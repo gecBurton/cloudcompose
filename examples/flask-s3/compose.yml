@@ -8,7 +8,7 @@ services:
       BUCKET_NAME: blobs
     depends_on:
       - blobs
-    x-composey:
+    x-cloud:
       ingress: {}
   blobs:
     image: minio/minio

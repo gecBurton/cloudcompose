@@ -39,9 +39,10 @@ user-facing (the built binary, `cobra.Command.Use` strings, printed
 help/version text, docs, scripts) says `cloudcompose`; everything that's
 purely an internal implementation detail (package/directory names,
 Go identifiers, code comments referencing the old name) was deliberately
-left alone. `x-composey` (the Docker Compose extension key) is also
-unchanged for now -- it's part of the file format users write, a
-separate, larger, still-open decision from the CLI/product rename.
+left alone. `x-cloud` (the Docker Compose extension key, renamed from
+`x-composey`) is a separate, already-completed rename from the
+CLI/product rename above -- it's part of the file format users write,
+not an internal implementation detail, so it went through its own pass.
 
 ## Quick Start
 
@@ -354,8 +355,8 @@ library).
   ordered-JSON type is needed or used. Anywhere else this codebase
   produces a slice from a map (e.g. security group names, connection
   keys), it sorts explicitly rather than relying on map iteration order.
-- **No Silent Failures** — Unknown keys in `x-composey` are errors, not
-  ignored (see `models/compose.go`'s `XComposey.UnmarshalJSON`).
+- **No Silent Failures** — Unknown keys in `x-cloud` are errors, not
+  ignored (see `models/compose.go`'s `XCloud.UnmarshalJSON`).
 - **AWS-First but Cloud-Agnostic** — Semantic model designed for
   multi-cloud; AWS was ported first and most exhaustively verified, Azure
   second with matching rigor, GCP last with deliberately lighter

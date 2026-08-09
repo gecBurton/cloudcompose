@@ -470,8 +470,8 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 	}, nil
 }
 
-func SettingsFor(name string, service models.ComposeService) (*models.XComposey, error) {
-	if service.XComposey == nil {
+func SettingsFor(name string, service models.ComposeService) (*models.XCloud, error) {
+	if service.XCloud == nil {
 		// Must match UnmarshalJSON's own defaults exactly, not a bare zero
 		// value — MinScale/MaxScale are meaningful at 0 (scale-to-zero is a
 		// real, validated setting: min_scale allows 0, only max_scale
@@ -480,21 +480,22 @@ func SettingsFor(name string, service models.ComposeService) (*models.XComposey,
 		// used to paper over exactly this by resetting MinScale/MaxScale to
 		// 1 whenever both were 0 — which also reset an explicit
 		// min_scale: 0 back to 1 for any service that did have an
-		// x-composey block, since there was no way from that check alone to
+		// x-cloud block, since there was no way from that check alone to
 		// tell "unset" apart from "deliberately zero" (confirmed against a
-		// real x-composey block 2026-08-06). Fixed at the one place the
+		// real x-composey block 2026-08-06, before the extension key was
+		// renamed to x-cloud). Fixed at the one place the
 		// default actually needs to live, rather than reapplied downstream.
-		return &models.XComposey{Size: "small", MinScale: 1, MaxScale: 1}, nil
+		return &models.XCloud{Size: "small", MinScale: 1, MaxScale: 1}, nil
 	}
 
-	settings := &models.XComposey{}
-	jsonBytes, err := json.Marshal(service.XComposey)
+	settings := &models.XCloud{}
+	jsonBytes, err := json.Marshal(service.XCloud)
 	if err != nil {
-		return nil, fmt.Errorf("service '%s' has an invalid x-composey block: %v", name, err)
+		return nil, fmt.Errorf("service '%s' has an invalid x-cloud block: %v", name, err)
 	}
 
 	if err := json.Unmarshal(jsonBytes, settings); err != nil {
-		return nil, fmt.Errorf("service '%s' has an invalid x-composey block: %v", name, err)
+		return nil, fmt.Errorf("service '%s' has an invalid x-cloud block: %v", name, err)
 	}
 
 	return settings, nil

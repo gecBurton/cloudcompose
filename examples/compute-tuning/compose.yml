@@ -3,12 +3,12 @@ services:
     image: my-api:latest
     ports:
       - "80:8080"
-    x-composey:
+    x-cloud:
       ingress: {}
       cpu: 1024
       memory: 2048
   worker:
     image: my-worker:latest
-    x-composey:
+    x-cloud:
       size: medium
       memory: 4096 # Override medium's 2048

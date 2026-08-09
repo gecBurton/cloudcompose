@@ -2,16 +2,16 @@
 
 **Status:** design spike, 2026-07-25. No compiler code, nothing deployed.
 Azure was implemented shortly after this spike and has since been verified
-against real Azure deployments (see `docs/azure-todo.md`); annotations below note
-which of this spike's findings were addressed and which are still open in
-the shipped Go code (checked 2026-08-07).
+against real Azure deployments (see `../../azure-todo.md`).
 
-> **2026-08-08: `docs/azure-aws-parity-todo.md`** is a full, systematic
-> AWS-vs-Azure feature-completeness comparison (least-privilege access
-> control, WAF, secrets, autoscaling metrics, and more) that supersedes
-> this spike as the current source of truth for what's still open —
-> several findings below (`Relationship` enforcement, size ceiling) are
-> carried forward into it with the same status.
+> **For current implementation status of any finding below, see
+> `../../azure-aws-parity-todo.md`** — that doc is the actively-maintained,
+> single source of truth for what's fixed and what's still open across
+> both Azure and GCP. This spike is kept purely as the original
+> design-time record (method + verdict); it is deliberately **not**
+> re-annotated every time something below gets fixed, since doing that in
+> two places (this file and the parity doc) drifted out of sync more than
+> once in practice.
 
 ## Method
 
@@ -45,12 +45,6 @@ Five things did not survive. They are listed worst-first.
 
 ### 1. `Relationship` has no Azure enforcement point
 
-> **Superseded in part by the [GCP spike](../gcp/README.md).** GCP *does* have a
-> per-pair enforcement point (`roles/run.invoker` per calling service account),
-> so two of three clouds enforce this and Azure is the outlier. `Relationship`
-> should keep its place in the model; only the absoluteness of the docstring
-> needs qualifying. The finding below still stands for Azure specifically.
-
 `semantic.py` calls `Relationship` "the single source of truth for network
 security and service discovery". That is an AWS statement. The AWS backend turns
 each `depends_on` edge into a security group rule; `production-stack` produces
@@ -66,11 +60,9 @@ needs an explicit decision: either it is *intent* that each backend enforces as
 precisely as it can (with Azure enforcing it barely), or the claim in the
 docstring gets qualified. It cannot stay as written.
 
-> **Status (2026-08-07): still open.** `models.Relationship` (`semantic.go`)
-> is unchanged — still no enforcement-mode field or qualified docstring —
-> and GCP's inference (`gcp/infer.go`) does not emit a `roles/run.invoker`
-> binding, so the "two of three clouds enforce it" resolution proposed by
-> the GCP spike was never implemented in code.
+(See the [GCP spike](../gcp/README.md) for a related finding: GCP *does* have a
+per-pair enforcement point available (`roles/run.invoker`), which is why this
+question is "per target," not a single yes/no across all three clouds.)
 
 ### 2. `schedule` carries EventBridge syntax
 
@@ -83,12 +75,6 @@ Worse, `rate(1 hour)` has no cron equivalent at all, so a string field cannot be
 translated mechanically. The semantic model needs either standard 5-field cron
 or a small structured type, with each backend rendering its own dialect.
 
-> **Status: resolved.** `models.Schedule` (`semantic.go`) is now a
-> cloud-neutral interface with `CronSchedule{Expression}` (standard 5-field
-> cron) and `RateSchedule{Value, Unit}`. AWS-only EventBridge dialect
-> translation (the `cron(...)` wrapper, `?` placeholder, 6-field cron) is
-> isolated to `aws/scheduling.go`.
-
 ### 3. `size: large` is not expressible
 
 `large` is 4096 CPU units / 8192 MiB. A Container Apps replica on the
@@ -100,11 +86,6 @@ backend must be able to *reject* a size with a clear error, or `Environment`
 must declare which sizes it supports. Today neither is possible — `size` is a
 `Literal` that inference silently maps to whatever it likes.
 
-> **Status: still open.** `getCPUCoresAzure`/`getMemoryGBAzure`
-> (`azure/compute.go`) and GCP's `cpuLimitGcp`/`memoryLimitGcp`
-> (`gcp/infer.go`) still silently map `size: large` to a fixed value with
-> no ceiling check or rejection path on any backend.
-
 ### 4. `health_check_grace_period` is an ECS concept
 
 It means "seconds the *load balancer* health check is ignored after a task
@@ -115,10 +96,6 @@ a 10s interval, which is approximate rather than equivalent.
 It should be restated cloud-neutrally (`startup_grace_seconds`) or dropped from
 the semantic model and pushed into an AWS-specific escape hatch.
 
-> **Status: resolved.** Renamed to `StartupGracePeriod` in `models.Service`
-> (`semantic.go`); the AWS backend maps it to the ECS-specific
-> `HealthCheckGracePeriodSecs` (`aws/compute.go`).
-
 ### 5. `public_service` is singular because AWS has a shared ALB
 
 The model allows exactly one `public_service`, routed at `/*` on a shared
@@ -128,12 +105,6 @@ priority, one path pattern.
 Container Apps gives **every** app its own FQDN and terminates TLS itself. There
 is no shared listener, no priority, and no reason to nominate one public
 service. The model under-expresses here — Azure would happily expose several.
-
-> **Status: partially resolved.** `Application.PublicServices()`
-> (`semantic.go`) already returns a slice, not a single value, so the
-> model itself supports more than one public service. Whether AWS's
-> shared-ALB backend and Azure/GCP's per-service-FQDN backends all handle
-> N>1 correctly is untested.
 
 ## What the spike also confirmed
 
@@ -169,10 +140,6 @@ service. The model under-expresses here — Azure would happily expose several.
   attribute-to-variable mapping.
 
 ## Recommended actions
-
-> **Status (2026-08-07):** items 1-2 shipped; 3 did not (see the GCP
-> spike's revision on this point); 4-6 are still open, per the
-> per-finding annotations above.
 
 **Worth doing now, independent of Azure** — each is small and each improves the
 AWS backend on its own merits:

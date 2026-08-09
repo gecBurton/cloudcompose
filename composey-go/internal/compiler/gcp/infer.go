@@ -14,7 +14,7 @@ import (
 //
 // Ported with lighter verification than InferAWS/InferAzure: GCP has no
 // golden examples and essentially no dedicated Python test suite either
-// (see plan.md's Phase 4 GCP section) -- this reflects the Python
+// (see plan.md -- GCP was ported at deliberately lighter rigor) -- this reflects the Python
 // source's own logic directly, sanity-checked against a couple of
 // hand-run Python outputs, not cross-checked against an existing
 // coverage survey the way AWS/Azure were, since no equivalent survey
@@ -403,12 +403,11 @@ func memoryLimitGcp(service *models.Service) string {
 }
 
 // buildConnectionURLGcp mirrors _build_connection_url. Unlike Azure's
-// _container_spec (which always renders a postgresql:// URL, even for a
-// Redis/Storage connection, and renders "None" for unset fields), this
-// checks whether the connection actually carries a database and falls
-// back to a bare host:port otherwise -- ported exactly as Python wrote
-// it, not reconciled with Azure's different (and differently buggy)
-// approach to the same problem.
+// connectionURLAzure (which now branches on the target's actual
+// capability -- see docs/azure-aws-parity-todo.md Priority 1 item 3),
+// this checks whether the connection actually carries a database and
+// falls back to a bare host:port otherwise -- ported exactly as Python
+// wrote it, not reconciled with Azure's approach to the same problem.
 func buildConnectionURLGcp(conn *models.Connection) string {
 	if conn.Database != nil {
 		username := pyNoneStringGcp(conn.Username)
@@ -427,10 +426,12 @@ func buildConnectionURLGcp(conn *models.Connection) string {
 }
 
 // pyNoneStringGcp renders Python's f"{value}" for an Optional[str]:
-// str(None) == "None" when value is unset, not an empty string --
-// matching the same divergence Azure's _container_spec has, confirmed via
-// the same reasoning (an f-string calls str() on its argument
-// unconditionally).
+// str(None) == "None" when value is unset, not an empty string. Still a
+// live, unfixed divergence on GCP as of 2026-08-09 (an f-string calls
+// str() on its argument unconditionally) -- Azure's equivalent bug
+// (containerSpecAzure) was found and fixed in a later pass, see
+// docs/azure-aws-parity-todo.md's Priority 1 item 3; this GCP one has
+// not been revisited since.
 func pyNoneStringGcp(value *string) string {
 	if value == nil {
 		return "None"

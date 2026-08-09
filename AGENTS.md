@@ -122,6 +122,10 @@ composey-go/
 │       │   │                       # Container Apps/Jobs, Flexible
 │       │   │                       #   Server/Redis/Storage, Front Door,
 │       │   │                       #   hash-based name truncation
+│       │   ├── permissions.go      # User-assigned identity + RBAC role
+│       │   │                       #   assignments + Key Vault secrets
+│       │   │                       #   for managed-service/compose
+│       │   │                       #   secrets:/platform config: access
 │       │   ├── generator.go        # Stage 4: Terraform JSON generation
 │       │   ├── environment.go      # Azure environment YAML loader
 │       │   └── environment_generator.go
@@ -182,7 +186,7 @@ There are no golden-file fixtures checked in separately from
 `examples/*/expected/`; those are the actual regression tests for AWS and
 Azure inference (`TestInferAWS_GoldenExamplesByteIdentical`,
 `TestInferAzure_GoldenExamplesByteIdentical`). GCP has no committed golden
-files (see `plan.md`'s Phase 4 section for why); its own tests pin
+files (see `plan.md` for why); its own tests pin
 individual outputs directly or check structural validity instead.
 
 ### Verifying Terraform schema compatibility
@@ -221,8 +225,10 @@ shipped `composey` binary.
 - Comments should explain *why*, not restate *what* the code already
   says — especially for anything mirroring specific Python behavior that
   looks like it could be a bug (several genuinely are, ported faithfully
-  rather than silently "fixed"; see e.g. `azure/compute.go`'s
-  `containerSpecAzure` for one documented example)
+  rather than silently "fixed"; see e.g. `gcp/infer.go`'s
+  `pyNoneStringGcp`/`buildConnectionURLGcp` for one still-open documented
+  example — Azure's equivalent was fixed in a later pass, see
+  `docs/azure-aws-parity-todo.md`)
 
 ### Error Handling
 
@@ -245,13 +251,34 @@ show-without-stack-trace behavior, not as a general error type.
 Located in `composey-go/internal/compiler/shared/constants.go` (only the
 constants genuinely shared across clouds live here; AWS-only constants
 like `SizeMappings`/`DBInstanceClasses` are still centralized in this same
-file for now rather than split further — see the package-split section
-of `plan.md` for why):
+file for now rather than split further):
 - `DatabaseDefaultUsername` — Default DB username
 - `SecretsPlaceholderValue` — Placeholder for unset secrets
 - `DefaultPortForDatabase`/`DefaultPortRedis`/etc. — Default ports for
   managed services
 - `SizeMappings` — Compute size configurations
+
+### Key Dependencies
+
+**CLI:** `github.com/spf13/cobra`.
+
+**Parsing:** `github.com/compose-spec/compose-go/v2` (Docker Compose
+parsing).
+
+**Terraform:** no dedicated library. The generator emits Terraform's
+JSON syntax by marshalling nested structs/maps with Go's own
+`encoding/json`. There is no HashiCorp-published library for
+*generating* Terraform config from Go: `hashicorp/terraform-json` parses
+plan/state output (the opposite direction), and `hashicorp/hcl/v2`
+targets HCL syntax, which this project deliberately never emits — JSON
+syntax throughout ("Terraform is a compilation target," not something
+hand-edited). Re-confirmed more than once that no such library exists to
+adopt instead (`cmd/schema-check`'s own doc comment covers the same
+ground for schema verification specifically).
+
+**Utilities:** `gopkg.in/yaml.v3` (transitive, via compose-go, not a
+direct dependency of composey's own code), `encoding/json` (standard
+library).
 
 ## Common Tasks
 
@@ -288,7 +315,7 @@ of `plan.md` for why):
    business logic unit-testable without needing to capture `os.Exit`
    (see `environmentTarget`/`compileTerraform` in `compile.go` for the
    pattern; `init.go`'s inline validation is a deliberate exception, not
-   the norm — see `plan.md`'s Phase 5 section).
+   the norm — see `plan.md`).
 3. Update README.md with usage.
 
 ## Important Notes
@@ -312,15 +339,19 @@ of `plan.md` for why):
 - **AWS-First but Cloud-Agnostic** — Semantic model designed for
   multi-cloud; AWS was ported first and most exhaustively verified, Azure
   second with matching rigor, GCP last with deliberately lighter
-  verification (see `plan.md`'s Phase 4 GCP section for why).
+  verification (see `plan.md` for why).
 - **Terraform is a compilation target** — Never hand-edit generated
   output.
 - **Ported-not-fixed bugs exist deliberately.** Several places in this
   codebase replicate a Python behavior that reads like a bug (e.g.
-  Azure's `_container_spec` rendering `"None"` literally into a URL for
+  GCP's `pyNoneStringGcp` rendering `"None"` literally into a URL for
   an unset connection field) rather than silently correcting it during
   the port. These are commented explicitly where they occur. Don't "fix"
-  one without checking whether it's an intentional faithful port first.
+  one without checking whether it's an intentional faithful port first —
+  and don't assume a "still open" comment stays true forever, either:
+  Azure had the same bug until `docs/azure-aws-parity-todo.md`'s Priority
+  1 work fixed it; the comment pointing at it was updated at the same
+  time, not left to drift.
 
 ## Debugging
 

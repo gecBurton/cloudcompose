@@ -120,7 +120,7 @@ func NewAzureEnvironment() AzureEnvironment {
 //
 // Ported with lighter verification than AwsEnvironment/AzureEnvironment:
 // GCP has no golden examples and essentially no dedicated test suite in
-// Python either (see plan.md's Phase 4 GCP section), so this reflects the
+// Python either (see plan.md -- GCP was ported at deliberately lighter rigor), so this reflects the
 // Python model's fields directly rather than being cross-checked against
 // an existing verification surface the way the other two clouds were.
 type GcpEnvironment struct {

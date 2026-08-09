@@ -26,10 +26,11 @@ func NewContainerApp() ContainerApp {
 // ContainerAppTemplate is azurerm_container_app's `template` block: the
 // container(s) to run, replica bounds, and any HTTP-based scale rules.
 type ContainerAppTemplate struct {
-	Container     []ContainerAppContainer     `json:"container"`
-	MinReplicas   int                         `json:"min_replicas,omitempty"`
-	MaxReplicas   int                         `json:"max_replicas,omitempty"`
-	HTTPScaleRule []ContainerAppHTTPScaleRule `json:"http_scale_rule,omitempty"`
+	Container       []ContainerAppContainer       `json:"container"`
+	MinReplicas     int                           `json:"min_replicas,omitempty"`
+	MaxReplicas     int                           `json:"max_replicas,omitempty"`
+	HTTPScaleRule   []ContainerAppHTTPScaleRule   `json:"http_scale_rule,omitempty"`
+	CustomScaleRule []ContainerAppCustomScaleRule `json:"custom_scale_rule,omitempty"`
 }
 
 // ContainerAppContainer is one entry in a template's `container` block.
@@ -58,6 +59,23 @@ type ContainerAppEnvVar struct {
 type ContainerAppHTTPScaleRule struct {
 	Name               string `json:"name"`
 	ConcurrentRequests string `json:"concurrent_requests"`
+}
+
+// ContainerAppCustomScaleRule is one entry in the `custom_scale_rule`
+// block: azurerm's generic KEDA scaler wiring, used here for the `cpu`
+// and `memory` scalers (added 2026-08-08, see
+// docs/azure-aws-parity-todo.md's Priority 2 item 5 -- previously the
+// only metric type Azure's inference handled was
+// AutoScalingMetricRequestsPerTarget, via ContainerAppHTTPScaleRule
+// instead of this type). Metadata's exact keys are scaler-specific; the
+// cpu/memory scalers both want {"type": "Utilization", "value":
+// "<percentage>"} -- see
+// https://keda.sh/docs/2.14/scalers/cpu/ (memory's scaler is identical
+// in shape).
+type ContainerAppCustomScaleRule struct {
+	Name           string            `json:"name"`
+	CustomRuleType string            `json:"custom_rule_type"`
+	Metadata       map[string]string `json:"metadata"`
 }
 
 type ContainerAppIngress struct {
@@ -222,32 +240,81 @@ func NewPostgreSQLFlexibleDatabase() PostgreSQLFlexibleDatabase {
 	return PostgreSQLFlexibleDatabase{Charset: "UTF8", Collation: "en_US.utf8"}
 }
 
+// MySQLFlexibleServer mirrors azurerm_mysql_flexible_server. Storage is
+// a nested `storage { size_gb }` block here, unlike
+// PostgreSQLFlexibleServer's flat storage_mb/storage_tier attributes --
+// confirmed against the real provider schema via `go run
+// ./cmd/schema-check` after `terraform validate` caught this as a real
+// bug (2026-08-08, see docs/azure-aws-parity-todo.md): the field used to
+// be a flat StorageMb int emitting a nonexistent "storage_mb" attribute,
+// which `terraform validate` rejects outright as an "Extraneous JSON
+// object property" -- this had gone unnoticed until the MariaDB-
+// detection fix started routing more example apps through the MySQL
+// Flexible Server path for the first time.
 type MySQLFlexibleServer struct {
-	Name                       string            `json:"name"`
-	ResourceGroupName          string            `json:"resource_group_name"`
-	Location                   string            `json:"location"`
-	Version                    string            `json:"version"`
-	SkuName                    string            `json:"sku_name"`
-	StorageMb                  int               `json:"storage_mb"`
-	AdministratorLogin         string            `json:"administrator_login"`
-	AdministratorPassword      string            `json:"administrator_password"`
-	DelegatedSubnetID          *string           `json:"delegated_subnet_id,omitempty"`
-	PrivateDnsZoneID           *string           `json:"private_dns_zone_id,omitempty"`
-	PublicNetworkAccessEnabled bool              `json:"public_network_access_enabled"`
-	HighAvailability           map[string]string `json:"high_availability,omitempty"`
-	DependsOn                  []string          `json:"depends_on,omitempty"`
-	Tags                       map[string]string `json:"tags,omitempty"`
+	Name                  string                       `json:"name"`
+	ResourceGroupName     string                       `json:"resource_group_name"`
+	Location              string                       `json:"location"`
+	Version               string                       `json:"version"`
+	SkuName               string                       `json:"sku_name"`
+	Storage               []MySQLFlexibleServerStorage `json:"storage"`
+	AdministratorLogin    string                       `json:"administrator_login"`
+	AdministratorPassword string                       `json:"administrator_password"`
+	DelegatedSubnetID     *string                      `json:"delegated_subnet_id,omitempty"`
+	PrivateDnsZoneID      *string                      `json:"private_dns_zone_id,omitempty"`
+
+	// PublicNetworkAccess is a string ("Enabled"/"Disabled"), not the
+	// bool PostgreSQLFlexibleServer's equivalent field is --
+	// public_network_access_enabled on this resource is
+	// computed-only (Terraform rejects a config-supplied value for it
+	// outright: "Value for unconfigurable attribute"), confirmed against
+	// the real provider schema after `terraform validate` caught this as
+	// a real bug (2026-08-08, see docs/azure-aws-parity-todo.md).
+	// Omitted entirely (nil) when VNet-integrated: the provider docs
+	// state it's automatically set to Disabled whenever
+	// delegated_subnet_id + private_dns_zone_id are both set, so setting
+	// it explicitly in that case would just be redundant, not wrong --
+	// but there's no reason to also carry the redundant value.
+	PublicNetworkAccess *string `json:"public_network_access,omitempty"`
+
+	HighAvailability map[string]string `json:"high_availability,omitempty"`
+	DependsOn        []string          `json:"depends_on,omitempty"`
+	Tags             map[string]string `json:"tags,omitempty"`
+}
+
+// MySQLFlexibleServerStorage is the `storage` block's contents.
+// size_gb, not storage_mb -- MySQL Flexible Server's storage is sized in
+// GB, unlike PostgreSQL Flexible Server's storage_mb (confirmed against
+// the real provider schema, not assumed from the naming symmetry with
+// PostgreSQL's own field).
+type MySQLFlexibleServerStorage struct {
+	SizeGB int `json:"size_gb"`
 }
 
 func NewMySQLFlexibleServer() MySQLFlexibleServer {
-	return MySQLFlexibleServer{Version: "8.0", SkuName: "B_Standard_B1ms", StorageMb: 32768}
+	return MySQLFlexibleServer{
+		// "8.0.21" is the actual valid version string, not "8.0" --
+		// the provider's version attribute requires an exact match
+		// against one of "5.7"/"8.0.21"/"8.4", found the same way as the
+		// other MySQL Flexible Server bugs above.
+		Version: "8.0.21",
+		SkuName: "B_Standard_B1ms",
+		Storage: []MySQLFlexibleServerStorage{{SizeGB: 32}},
+	}
 }
 
+// MySQLFlexibleDatabase mirrors azurerm_mysql_flexible_database, which
+// (unlike azurerm_postgresql_flexible_server_database's server_id)
+// identifies its parent server by resource_group_name + server_name,
+// not a single reference attribute -- confirmed against the real
+// provider schema after the same terraform validate failure that found
+// MySQLFlexibleServer's storage_mb bug above.
 type MySQLFlexibleDatabase struct {
-	Name      string `json:"name"`
-	ServerID  string `json:"server_id"`
-	Charset   string `json:"charset"`
-	Collation string `json:"collation"`
+	Name              string `json:"name"`
+	ResourceGroupName string `json:"resource_group_name"`
+	ServerName        string `json:"server_name"`
+	Charset           string `json:"charset"`
+	Collation         string `json:"collation"`
 }
 
 func NewMySQLFlexibleDatabase() MySQLFlexibleDatabase {
@@ -270,6 +337,44 @@ type PrivateDnsZoneVirtualNetworkLink struct {
 	VirtualNetworkID    string            `json:"virtual_network_id"`
 	RegistrationEnabled bool              `json:"registration_enabled"`
 	Tags                map[string]string `json:"tags,omitempty"`
+}
+
+// PrivateEndpoint mirrors azurerm_private_endpoint. Added 2026-08-08 (see
+// docs/azure-aws-parity-todo.md's Priority 3 item on Redis/Blob private
+// networking) for Azure Managed Redis: unlike PostgreSQL/MySQL Flexible
+// Server (which take a delegated_subnet_id/private_dns_zone_id directly
+// on the server resource itself), Managed Redis's private connectivity
+// is a genuinely separate resource -- azurerm_managed_redis has no
+// networking-related attributes/blocks at all beyond public_network_access
+// (confirmed against the real provider schema). A private endpoint
+// attaches to a plain (non-delegated) subnet and references the target
+// resource by ID + subresource name.
+type PrivateEndpoint struct {
+	Name                     string                       `json:"name"`
+	ResourceGroupName        string                       `json:"resource_group_name"`
+	Location                 string                       `json:"location"`
+	SubnetID                 string                       `json:"subnet_id"`
+	PrivateServiceConnection []PrivateServiceConnection   `json:"private_service_connection"`
+	PrivateDnsZoneGroup      *PrivateEndpointDnsZoneGroup `json:"private_dns_zone_group,omitempty"`
+	Tags                     map[string]string            `json:"tags,omitempty"`
+}
+
+// PrivateServiceConnection is the `private_service_connection` block:
+// which resource this endpoint connects to.
+type PrivateServiceConnection struct {
+	Name                        string   `json:"name"`
+	IsManualConnection          bool     `json:"is_manual_connection"`
+	PrivateConnectionResourceID string   `json:"private_connection_resource_id"`
+	SubresourceNames            []string `json:"subresource_names,omitempty"`
+}
+
+// PrivateEndpointDnsZoneGroup is the `private_dns_zone_group` block:
+// which private DNS zone(s) get an A-record for this endpoint's IP,
+// so the resource's own FQDN resolves privately from inside the VNet
+// without any application-level configuration change.
+type PrivateEndpointDnsZoneGroup struct {
+	Name              string   `json:"name"`
+	PrivateDnsZoneIDs []string `json:"private_dns_zone_ids"`
 }
 
 type KeyVault struct {
@@ -447,13 +552,26 @@ func NewFrontDoorRoute() FrontDoorRoute {
 // DefaultDatabase block rather than on the cluster: port and
 // primary_access_key both hang off it.
 type ManagedRedis struct {
-	Name                    string            `json:"name"`
-	ResourceGroupName       string            `json:"resource_group_name"`
-	Location                string            `json:"location"`
-	SkuName                 string            `json:"sku_name"`
-	HighAvailabilityEnabled bool              `json:"high_availability_enabled"`
-	DefaultDatabase         []map[string]any  `json:"default_database"`
-	Tags                    map[string]string `json:"tags,omitempty"`
+	Name                    string           `json:"name"`
+	ResourceGroupName       string           `json:"resource_group_name"`
+	Location                string           `json:"location"`
+	SkuName                 string           `json:"sku_name"`
+	HighAvailabilityEnabled bool             `json:"high_availability_enabled"`
+	DefaultDatabase         []map[string]any `json:"default_database"`
+
+	// PublicNetworkAccess is a string ("Enabled"/"Disabled"), matching
+	// azurerm_managed_redis's own attribute name/type exactly -- unlike
+	// the two Flexible Server resources, Managed Redis has only ever had
+	// one shape for this (no bool-vs-string inconsistency to account
+	// for here, since Managed Redis didn't exist as a *composey* target
+	// before this field was added, 2026-08-08). Omitted (nil) when
+	// public access is genuinely wanted, since the provider's own
+	// default is already "Enabled" -- only set explicitly to "Disabled"
+	// once a private endpoint exists, mirroring MySQLFlexibleServer's
+	// own "only set when it deviates from the default" convention.
+	PublicNetworkAccess *string `json:"public_network_access,omitempty"`
+
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 // NewManagedRedis returns a ManagedRedis with Python's own
@@ -490,6 +608,7 @@ type AzureResources struct {
 	MySQLFlexibleDatabase            map[string]MySQLFlexibleDatabase            `json:"azurerm_mysql_flexible_database,omitempty"`
 	PrivateDnsZone                   map[string]PrivateDnsZone                   `json:"azurerm_private_dns_zone,omitempty"`
 	PrivateDnsZoneVirtualNetworkLink map[string]PrivateDnsZoneVirtualNetworkLink `json:"azurerm_private_dns_zone_virtual_network_link,omitempty"`
+	PrivateEndpoint                  map[string]PrivateEndpoint                  `json:"azurerm_private_endpoint,omitempty"`
 	KeyVault                         map[string]KeyVault                         `json:"azurerm_key_vault,omitempty"`
 	KeyVaultSecret                   map[string]KeyVaultSecret                   `json:"azurerm_key_vault_secret,omitempty"`
 	UserAssignedIdentity             map[string]UserAssignedIdentity             `json:"azurerm_user_assigned_identity,omitempty"`
@@ -533,6 +652,7 @@ func NewAzureResources() *AzureResources {
 		MySQLFlexibleDatabase:            map[string]MySQLFlexibleDatabase{},
 		PrivateDnsZone:                   map[string]PrivateDnsZone{},
 		PrivateDnsZoneVirtualNetworkLink: map[string]PrivateDnsZoneVirtualNetworkLink{},
+		PrivateEndpoint:                  map[string]PrivateEndpoint{},
 		KeyVault:                         map[string]KeyVault{},
 		KeyVaultSecret:                   map[string]KeyVaultSecret{},
 		UserAssignedIdentity:             map[string]UserAssignedIdentity{},

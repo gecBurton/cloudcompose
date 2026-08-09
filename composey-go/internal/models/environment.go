@@ -83,6 +83,20 @@ type AzureEnvironment struct {
 	PostgresqlSubnetID *string `json:"postgresql_subnet_id,omitempty"`
 	MysqlSubnetID      *string `json:"mysql_subnet_id,omitempty"`
 
+	// RedisSubnetID is where a Managed Redis instance's
+	// azurerm_private_endpoint is placed, added 2026-08-08 (see
+	// docs/azure-aws-parity-todo.md's Priority 3 Redis/Blob private
+	// networking item). Unlike Postgresql/MysqlSubnetID above, this
+	// doesn't need to be a *delegated* subnet the way Flexible Server's
+	// requires -- a private endpoint attaches to any plain subnet -- but
+	// it's kept as its own field rather than reusing
+	// InfrastructureSubnetID (the Container Apps subnet) since Azure
+	// does not allow a private endpoint and delegated Container Apps
+	// workloads to share one subnet either. Same optional/fallback
+	// convention as the two fields above: nil means fall back to public
+	// network access rather than failing to compile.
+	RedisSubnetID *string `json:"redis_subnet_id,omitempty"`
+
 	ContainerRegistryName  *string `json:"container_registry_name,omitempty"`
 	PostgresqlServerID     *string `json:"postgresql_server_id,omitempty"`
 	UserAssignedIdentityID *string `json:"user_assigned_identity_id,omitempty"`

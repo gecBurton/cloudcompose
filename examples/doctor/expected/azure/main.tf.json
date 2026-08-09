@@ -219,12 +219,7 @@
         "role_definition_name": "Storage Blob Data Contributor",
         "scope": "${azurerm_storage_account.blobs_storage.id}"
       },
-      "cache_kv_role": {
-        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
-        "role_definition_name": "Key Vault Secrets User",
-        "scope": "${azurerm_key_vault.main.id}"
-      },
-      "db_kv_role": {
+      "kv_role": {
         "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
         "role_definition_name": "Key Vault Secrets User",
         "scope": "${azurerm_key_vault.main.id}"

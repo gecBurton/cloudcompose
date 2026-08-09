@@ -30,6 +30,12 @@ func mockAzureProdEnv() models.AzureEnvironment {
 	return env
 }
 
+// testGetNameAzure is a minimal getName closure for unit tests that
+// don't otherwise need real environment/app-scoped resource naming.
+func testGetNameAzure(resourceName string) string {
+	return "prod-app-" + resourceName
+}
+
 // azureGoldenExamples lists every example this phase's Azure inference
 // pipeline claims to fully cover. Kept explicit rather than globbing
 // examples/*/expected/azure/main.tf.json for the same reason as AWS's own
@@ -46,6 +52,25 @@ var azureGoldenExamples = []string{
 	"web-api",
 	"minio-s3",
 	"nginx-flask-mysql",
+	// Added 2026-08-08 (docs/azure-aws-parity-todo.md Priority 2):
+	// previously untestable on Azure since the features these examples
+	// exercise (database sizing, compose secrets:/platform config:)
+	// were silent no-ops.
+	//
+	// "scaling" was removed from this list the same day, after the size
+	// table was consolidated with shared.SizeMappings (Priority 4): its
+	// web service's `size: large` maps to 4 vCPU, which exceeds Azure
+	// Container Apps' Consumption tier limit and is now a real,
+	// intentional composey-side rejection -- see
+	// TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap for the
+	// dedicated test covering this, since there's no valid Azure output
+	// for this example to golden-test against.
+	"platform-config",
+	// compute-tuning was never actually blocked by any Priority 2 gap
+	// (container-level cpu/memory overrides already worked correctly) --
+	// added the same day anyway, once actually checked, since nothing
+	// else was stopping it from having Azure coverage either.
+	"compute-tuning",
 }
 
 // TestInferAzure_GoldenExamplesByteIdentical mirrors
@@ -211,7 +236,10 @@ func TestContainerSpecAzure_ObjectStorageRendersAsBareHost(t *testing.T) {
 		},
 	}
 
-	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"blobs"})
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"blobs"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}
@@ -249,7 +277,10 @@ func TestContainerSpecAzure_CacheRendersAsRedisURL(t *testing.T) {
 		},
 	}
 
-	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"cache"})
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"cache"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}
@@ -293,7 +324,10 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 		"db": {Host: "db.example.com", Password: &password},
 	}
 
-	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"db"})
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"db"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}

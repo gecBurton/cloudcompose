@@ -111,7 +111,7 @@
         "template": {
           "container": [
             {
-              "cpu": 0.5,
+              "cpu": 1,
               "env": [
                 {
                   "name": "DB_HOST",
@@ -131,8 +131,26 @@
                 }
               ],
               "image": "nginx:latest",
-              "memory": "1Gi",
+              "memory": "2Gi",
               "name": "web"
+            }
+          ],
+          "custom_scale_rule": [
+            {
+              "custom_rule_type": "cpu",
+              "metadata": {
+                "type": "Utilization",
+                "value": "70"
+              },
+              "name": "cpu-rule"
+            },
+            {
+              "custom_rule_type": "memory",
+              "metadata": {
+                "type": "Utilization",
+                "value": "80"
+              },
+              "name": "memory-rule"
             }
           ],
           "http_scale_rule": [
@@ -258,12 +276,7 @@
       }
     },
     "azurerm_role_assignment": {
-      "cache_kv_role": {
-        "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
-        "role_definition_name": "Key Vault Secrets User",
-        "scope": "${azurerm_key_vault.main.id}"
-      },
-      "db_kv_role": {
+      "kv_role": {
         "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
         "role_definition_name": "Key Vault Secrets User",
         "scope": "${azurerm_key_vault.main.id}"

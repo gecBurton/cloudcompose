@@ -1,20 +1,20 @@
 # Design: Authored Environment Configuration
 
-> **Status: implemented (2026-08-08, revised same day).** Implemented
-> twice in one day: the first version generated a fact file
-> (`environment.facts.json`) via a Terraform `local_file` resource and
-> included a hash-based drift check against it. That file was removed
-> the same day in favor of reading Terraform's own live state directly
-> (`terraform output -json`) — see "Revision: no fact file" below for
-> why, and "What was built" for the current, final mapping from design
-> to code. The authored-input half of this doc (`environment.yaml`, the
-> schema, `composey init`'s behavior) is unchanged by that revision.
+> **Status: implemented (2026-08-08, revised twice since).** Implemented
+> three times in nine days:
 >
-> The two-step `init`/`main` command split this doc assumes throughout
-> (bootstrap an environment once, deploy apps against it many times) is
-> unchanged from how `composey init`/`composey main` actually work today
-> — this doc only revises what `init` takes as *input*, not the overall
-> command shape.
+> 1. The first version generated a fact file (`environment.facts.json`)
+>    via a Terraform `local_file` resource and included a hash-based
+>    drift check against it. Removed the same day in favor of reading
+>    Terraform's own live state directly (`terraform output -json`) —
+>    see "Revision 1: no fact file" below.
+> 2. The second version kept `environment.yaml` as authored input, but
+>    let CLI flags override its fields per-invocation. Removed on
+>    2026-08-09 in favor of file-only, no decision flags at all — see
+>    "Revision 2: no flags either" below.
+>
+> "What was built" at the end of this doc reflects the current, final
+> state after both revisions, not the original design.
 
 ## The problem
 
@@ -66,17 +66,15 @@ Two things, cleanly separated, but only one of them is a *file*:
 | **Input** | `environment.yaml` | Authored, committed, reviewed — same as `docker-compose.yml` |
 | **Output** | Terraform's own state, read live via `terraform output -json` | Never a file composey writes; always current, by construction |
 
-`composey init` reads `environment.yaml` as its primary input. CLI flags
-remain, but as *overrides* on top of the file — mirroring how Compose
-itself treats `docker-compose.yml` plus environment-variable overrides:
-the file is the source of truth; a flag explicitly passed on the command
-line wins over the file for that one invocation, but doesn't get written
-back into it.
+`composey init` reads `environment.yaml` as its **only** input — there
+are no decision flags (see "Revision 2: no flags either" below for why
+CLI overrides were removed). To change a decision, edit the file and
+re-run `init`.
 
 `composey main -e <environment-directory>` reads the environment's facts
 by running `terraform output -json` in that directory (which must be a
 directory `composey init` generated, with `terraform apply` already run
-in it) and decoding its `environment` output. See "Revision: no fact
+in it) and decoding its `environment` output. See "Revision 1: no fact
 file" below for why this replaced a generated file.
 
 ### Schema: common envelope + discriminated provider block
@@ -142,12 +140,15 @@ the `--azure-endpoint` dead-flag problem, had this schema existed: an
 endpoint override for a provider that isn't the declared target is a
 mistake worth failing loudly on, not a flag that quietly does nothing.
 
-### Field mapping from CLI flags
+### Field mapping from the original CLI flags
 
-Direct lift from `cmd/composey/init.go`'s flags, minus the two
-confirmed-dead ones (`--azure-endpoint`, `--gcp-endpoint`):
+Direct lift from `cmd/composey/init.go`'s original flags (all now
+removed — see "Revision 2" below), minus the two confirmed-dead ones
+(`--azure-endpoint`, `--gcp-endpoint`). Kept here purely as a historical
+map from "what you used to type" to "where that decision now lives,"
+for anyone coming from the old flag-based design:
 
-| Common envelope | Flag | Notes |
+| Common envelope | Old flag | Notes |
 |---|---|---|
 | `provider` | `--provider`/`-p` | required |
 | `name` | `--name`/`-n` | required |
@@ -156,7 +157,7 @@ confirmed-dead ones (`--azure-endpoint`, `--gcp-endpoint`):
 | `retain_data_on_destroy` | `--retain-data` | default `true` |
 | `domain` | `--domain` | optional on AWS/Azure (each gets a free CloudFront/Front Door hostname); required for GCP if any service declares `cdn: true` — see "The domain gap" below. Not yet enforced at `init` time, since whether any service uses `cdn: true` isn't known until `composey main` parses the compose file. |
 
-| `aws:` block | Flag |
+| `aws:` block | Old flag |
 |---|---|
 | `vpc_cidr` | `--vpc-cidr` |
 | `az_count` | `--az-count` |
@@ -164,18 +165,18 @@ confirmed-dead ones (`--azure-endpoint`, `--gcp-endpoint`):
 | `certificate_arn` | `--certificate-arn` |
 | `aws_endpoint` | `--aws-endpoint` |
 
-| `azure:` block | Flag |
+| `azure:` block | Old flag |
 |---|---|
 | `vnet_cidr` | `--vpc-cidr` (renamed — Azure calls it a VNet, not a VPC; the old flag name was AWS terminology applied uniformly, which this schema is a deliberate chance to fix) |
 
-| `gcp:` block | Flag |
+| `gcp:` block | Old flag |
 |---|---|
 | `vpc_cidr` | `--vpc-cidr` |
 | `project_id` | `--project-id`, **required** — not an `init` input at all before this design; see "The project_id gap" below |
 
-`--output`/`-o` stays a CLI-only concept (it's about where files get
-*written*, not a decision about the environment itself, so it doesn't
-belong in the authored file).
+`-o`/`--output` is the one flag that survived both revisions — it's
+about where files get *written*, not a decision about the environment
+itself, so it doesn't belong in the authored file.
 
 ### The `project_id` gap
 
@@ -221,21 +222,22 @@ belongs in `gcp/infer.go` once that inference exists, not in
 
 ### `composey init` behavior
 
-1. Look for `environment.yaml` in the current directory (or an explicit
-   `-f`/`--file` flag, mirroring `composey main -f`'s own convention).
+1. Look for `environment.yaml` in the current directory, or an explicit
+   `-f`/`--file` flag (default `environment.yaml`).
 2. If found: parse and validate it (required fields present, provider
-   block matches `provider:`, no unknown keys). Any CLI flag explicitly
-   passed (`cmd.Flags().Changed(...)`, the same mechanism already used
-   for `--region`'s per-provider default logic) overrides the
-   corresponding file value for this invocation only.
-3. If not found: fall back to flags-only, exactly as before this design
-   — not a breaking change. A first-time `composey init --provider aws
-   --name prod` with no file still works, quick-start ergonomics
-   preserved.
-4. On success, in addition to `main.tf.json`, write the resolved
-   `environment.yaml` back out (or confirm the existing one is
-   unchanged) so the file that produced this infrastructure is always
-   sitting next to it — not just implied by shell history.
+   block matches `provider:`, no unknown keys), then generate directly
+   from it. No flags to merge, no precedence to resolve.
+3. If not found: print an error naming the missing path and pointing at
+   `examples/hello/environment.yaml`/`docs/authored-environment-config.md`,
+   then exit non-zero. There is no flags-only fallback (see "Revision 2"
+   below) — creating the first `environment.yaml` for a new environment
+   is a file-editing task, the same as creating the first
+   `docker-compose.yml` for a new app.
+4. On success, in addition to `main.tf.json`, write a copy of the loaded
+   `environment.yaml` back out next to it, so the file that produced
+   this infrastructure is always sitting alongside it — not just implied
+   by shell history. (Since there's no override to resolve anymore, this
+   copy is always identical to the input.)
 
 ### Multi-environment repos
 
@@ -251,7 +253,7 @@ Out of scope. No reverse-generation tooling to produce a starting
 `environment.yaml` from an already-deployed environment — this design is
 forward-looking for newly-created environments only.
 
-## Revision: no fact file
+## Revision 1: no fact file
 
 The first version of this design (see git history / earlier revisions of
 this doc) generated a fact file — first `environment.yml`, then renamed
@@ -306,6 +308,57 @@ all? It doesn't:
   `terraform` CLI directly rather than adding `hashicorp/terraform-exec`
   as a dependency.
 
+## Revision 2: no flags either
+
+The second version kept the flag-override behavior described in
+"`composey init` behavior" above (an explicitly-passed CLI flag
+overrides the file's value for that invocation, via cobra's
+`Changed()`). Prompted by the question: given `environment.yaml` exists
+specifically to be the reviewable, authored source of truth — the same
+role `docker-compose.yml` plays for an app — why should it be any less
+"the whole answer" than `docker-compose.yml` is? Nobody expects
+`docker compose` itself to take per-field override flags for
+`compose.yml`; there's no reason `environment.yaml` should be different,
+especially once a real, copyable example existed
+(`examples/hello/environment.yaml`) to start from.
+
+Removed all ~14 decision flags (`--provider`, `--name`, `--region`,
+`--vpc-cidr`, `--az-count`, `--create-alb`, `--certificate-arn`,
+`--aws-endpoint`, `--project-id`, `--domain`, `--retain-data`, `--tags`).
+`composey init` now takes exactly two flags: `-f`/`--file` (which
+`environment.yaml` to read) and `-o`/`--output` (where to write the
+result) — output location isn't a decision about the environment, so it
+stays a flag.
+
+This removed the flag/file merge logic entirely: no more
+`cmd.Flags().Changed(...)` checks, no three-way precedence (flag → file
+→ hardcoded default) to keep straight, and no way for a flag to silently
+diverge from what the committed file says. If `environment.yaml`
+doesn't exist, `init` now fails immediately with a message pointing at
+`examples/hello/environment.yaml`, rather than falling back to a
+flags-only path that no longer exists.
+
+### The one real complication this created: CI needs a unique name per run
+
+`scripts/smoke-test.sh`/`scripts/smoke-test-azure.sh` run the acceptance
+workflows against a shared cloud account, and need a different resource
+name-prefix per run (`ci<run-number>`) to avoid collisions — genuinely
+not something a single committed file's `name:` field can express, and
+not solvable by adding `name` back as a flag without reintroducing
+exactly the override mechanism this revision removed.
+
+Resolved by moving the "many possible names" problem out of
+`composey init` entirely: the two scripts each read a shared, committed
+`scripts/ci-environment.{aws,azure}.yaml` (one environment per CI run,
+shared across every example that run deploys — those are separate apps
+sharing one platform environment, the whole point of the two-stage
+split), substitute `name: PLACEHOLDER` for the run-specific value (and,
+for Azure, `region:` too, since that's itself a workflow input) into a
+generated copy under `build/`, and pass *that* file to `composey init
+-f`. `composey init` itself never sees a flag or knows this substitution
+happened — from its perspective, it just read a file, exactly like every
+other invocation.
+
 ## What doesn't change
 
 - The overall two-step `init` → `apply` → `main` flow.
@@ -313,7 +366,7 @@ all? It doesn't:
   `docker-compose.yml` + `x-composey` — untouched by any of this.
 - Multiple apps (compose files) can point at the same environment
   directory, compiling independently — this was the original motivation
-  for the two-stage split and isn't affected by the fact-file revision.
+  for the two-stage split and isn't affected by either revision.
 
 ## Non-goals
 
@@ -327,14 +380,14 @@ all? It doesn't:
 - `internal/models/init_config.go` — `InitConfig`, `AwsInitConfig`,
   `AzureInitConfig`, `GcpInitConfig`, matching the schema above.
 - `internal/compiler/initconfig` — `Load` (reads `environment.yaml`,
-  returns `(nil, nil)` if the file doesn't exist) and `Validate` (the
+  returns `(nil, nil)` if the file doesn't exist — the caller, not this
+  package, decides what to do about a missing file) and `Validate` (the
   strict/discriminated checks: name required, provider supported, no
   mismatched provider block, GCP requires `project_id`).
 - `cmd/composey/init.go` — reads `-f`/`--file` (default
-  `environment.yaml`) if present, applies any explicitly-passed flag as
-  an override, and writes the resolved config back to
-  `<output>/environment.yaml` alongside `main.tf.json`. No
-  `--azure-endpoint`/`--gcp-endpoint`; `--project-id` required for GCP.
+  `environment.yaml`); no decision flags. Missing file → a specific
+  error message, not a flags-only fallback. Writes a copy of the loaded
+  config back to `<output>/environment.yaml` alongside `main.tf.json`.
 - `internal/compiler/{aws,azure,gcp}/environment_generator.go` — each
   declares a plain `output "environment"` block only; no `local_file`
   resource, no `hashicorp/local` provider dependency. GCP's generator
@@ -370,7 +423,12 @@ all? It doesn't:
   call `LoadEnvironment` against that directory — rather than writing a
   YAML file directly, since there's no longer a file-reading code path
   to test.
-- `scripts/smoke-test.sh` / `scripts/smoke-test-azure.sh` updated to pass
-  the environment directory to `-e`, not a file inside it — the flow was
-  already `init` → `apply` → `main`, so this only changed what `-e`
-  itself points at, not the ordering.
+- `scripts/ci-environment.aws.yaml` / `scripts/ci-environment.azure.yaml`
+  — the shared, committed per-cloud environment configs the CI
+  acceptance workflows generate a per-run copy of (see "Revision 2"
+  above).
+- `scripts/smoke-test.sh` / `scripts/smoke-test-azure.sh` — updated to
+  pass the environment directory to `-e` (from the earlier revision),
+  and to generate + use a per-run `environment.yaml` instead of passing
+  `--name`/`--region` flags (from this revision).
+

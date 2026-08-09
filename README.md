@@ -111,23 +111,27 @@ go build -o composey ./cmd/composey
 ### Set Up an Environment
 
 Each cloud target needs a one-time shared environment (VPC, ALB/Container
-Apps Environment, ECS cluster, etc.), created once by a platform team:
+Apps Environment, ECS cluster, etc.), created once by a platform team.
+`composey init` takes no decision flags — it reads an authored
+`environment.yaml` you write yourself (the same way you'd write
+`docker-compose.yml`), not a set of `--flag`s:
 
 ```bash
-composey init --provider aws --name prod
+cp examples/hello/environment.yaml ./environment.yaml
+# edit name/region/vpc_cidr etc. to taste
+composey init
 cd prod-infrastructure && terraform init && terraform apply
 ```
 
-This writes `environment.yaml` — the authored decisions that produced
-the infrastructure (region, VPC CIDR, whether to create an ALB — review
-and commit this like you would `docker-compose.yml`) — alongside
-`main.tf.json`. Once `terraform apply` runs, `composey main` reads the
-resulting facts (VPC ID, ALB ARN) directly from Terraform's own state via
-`terraform output -json` — no separate generated file to keep in sync.
-Re-running `composey init -f prod-infrastructure/environment.yaml` picks
-up that file as input; any flag passed explicitly overrides its value
-for that run. See `docs/authored-environment-config.md` for the full
-design, or `examples/README.md` for a real, runnable walkthrough using
+`environment.yaml` holds the authored decisions that produce the
+infrastructure (region, VPC CIDR, whether to create an ALB — review and
+commit this like you would `docker-compose.yml`). `composey init` writes
+a copy of it into the output directory alongside `main.tf.json`. Once
+`terraform apply` runs, `composey main` reads the resulting facts (VPC
+ID, ALB ARN) directly from Terraform's own state via `terraform output
+-json` — no separate generated file to keep in sync. See
+`docs/authored-environment-config.md` for the full schema, or
+`examples/README.md` for a real, runnable walkthrough using
 `examples/hello`.
 
 ### Deploy to AWS
@@ -142,10 +146,8 @@ ingress / Cloud Run URL.
 ### Deploy to Azure or GCP
 
 ```bash
-composey init --provider azure --name prod
-composey main -f docker-compose.yml -e prod-infrastructure
-
-composey init --provider gcp --name prod --project-id my-gcp-project-id
+cp examples/hello/environment.azure.yaml ./environment.yaml  # or environment.gcp.yaml for GCP
+composey init
 composey main -f docker-compose.yml -e prod-infrastructure
 ```
 
@@ -333,7 +335,7 @@ go build -o composey ./cmd/composey
 
 ```bash
 # From the composey-go directory
-./composey init --provider aws --name demo
+./composey init -f ../examples/hello/environment.yaml
 (cd demo-infrastructure && terraform init && terraform apply)
 
 ./composey main -f ../examples/hello/compose.yml -e demo-infrastructure

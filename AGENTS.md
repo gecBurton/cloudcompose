@@ -314,8 +314,10 @@ library).
    wrappers that call `os.Exit(1)` on error — this is what makes the
    business logic unit-testable without needing to capture `os.Exit`
    (see `environmentTarget`/`compileTerraform` in `compile.go` for the
-   pattern; `init.go`'s inline validation is a deliberate exception, not
-   the norm — see `plan.md`).
+   pattern; `init.go` is simple enough — two flags, no decision-merging
+   logic since `composey init` takes its input from `environment.yaml`
+   alone — that it doesn't need the same extraction, but follow
+   `compile.go`'s pattern for anything with real branching).
 3. Update README.md with usage.
 
 ## Important Notes

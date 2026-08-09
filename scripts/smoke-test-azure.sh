@@ -2,7 +2,8 @@
 #
 # End-to-end smoke test against real Azure.
 #
-# Creates environment with 'composey init --provider azure', compiles a
+# Creates environment with 'composey init' (provider: azure comes from
+# environment.yaml, not a flag), compiles a
 # compose file, deploys the resulting app, then polls the Container App
 # FQDN until it serves a page. EVERYTHING is torn down on exit (success
 # or failure) via a trap.
@@ -188,20 +189,27 @@ log "Creating Azure environment '$NAME' with composey init…"
 rm -rf "$ENV_DIR"
 cd "$ROOT"
 
-# Use the authored environment.azure.yaml sitting next to the compose file
-# if one exists (see docs/authored-environment-config.md) -- named
-# environment.azure.yaml, not environment.yaml, since an example directory
-# can have both an AWS and an Azure authored config side by side.
-# --name/--region still win over the file's own values, since this
-# script's NAME/REGION are run-specific. Falls back to flags-only exactly
-# as before for any example with no environment.azure.yaml of its own.
-ENV_CONFIG="$(dirname "$COMPOSE")/environment.azure.yaml"
-if [[ -f "$ENV_CONFIG" ]]; then
-  log "Using authored environment config: $ENV_CONFIG"
-  "$COMPOSEY" init -f "$ENV_CONFIG" --provider azure --name "$NAME" --region "$REGION" --output "$ENV_DIR"
-else
-  "$COMPOSEY" init --provider azure --name "$NAME" --region "$REGION" --output "$ENV_DIR"
-fi
+# composey init takes no decision flags -- environment.yaml is its only
+# input (see docs/authored-environment-config.md). name: and region:
+# are the two fields this script can't commit statically: name: needs a
+# unique resource prefix per run, and region: is itself a workflow input
+# (region-restricted managed-service capacity has caused a real failure
+# before -- see .github/workflows/azure-acceptance.yml's own comment).
+# Every other decision comes from the committed
+# scripts/ci-environment.azure.yaml, shared across every example this
+# script deploys (they're separate apps sharing one platform
+# environment -- the whole point of the init/main split).
+GENERATED_ENV_CONFIG="$ROOT/build/$NAME-environment-azure.yaml"
+mkdir -p "$(dirname "$GENERATED_ENV_CONFIG")"
+python3 -c "
+with open('$ROOT/scripts/ci-environment.azure.yaml') as f:
+    content = f.read()
+content = content.replace('name: PLACEHOLDER', 'name: $NAME')
+content = content.replace('region: francecentral', 'region: $REGION')
+with open('$GENERATED_ENV_CONFIG', 'w') as f:
+    f.write(content)
+"
+"$COMPOSEY" init -f "$GENERATED_ENV_CONFIG" --output "$ENV_DIR"
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"

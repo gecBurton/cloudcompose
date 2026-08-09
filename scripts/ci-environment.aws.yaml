@@ -1,0 +1,27 @@
+# Shared environment.yaml for the AWS acceptance workflow
+# (.github/workflows/acceptance.yml). One environment is created per CI
+# run and shared by whichever example that run deploys (hello,
+# minio-s3, build-webapp, doctor, web-api, production-stack) -- these
+# are all separate apps sharing one platform environment, which is the
+# whole point of the init/main split (see
+# docs/authored-environment-config.md). Not tied to any single example
+# for that reason, unlike examples/hello/environment.yaml (which exists
+# purely for the docs/README walkthrough).
+#
+# name: is a placeholder, not a real decision -- scripts/smoke-test.sh
+# generates a per-run copy of this file with name: substituted for the
+# run-specific value (ci<run-number>) before calling `composey init`,
+# since a shared AWS account needs a unique resource prefix per run and
+# composey init itself takes no flags to express that. See
+# scripts/smoke-test.sh's own comments at the point it does this.
+provider: aws
+name: PLACEHOLDER
+region: eu-west-2
+retain_data_on_destroy: false
+tags:
+  ManagedBy: composey-acceptance-ci
+
+aws:
+  vpc_cidr: 10.0.0.0/16
+  az_count: 2
+  create_alb: true

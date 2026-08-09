@@ -68,10 +68,11 @@ any other example directory and the sibling `environment.<cloud>.yaml`
 
 ## Real deployment testing
 
-`scripts/smoke-test.sh`/`scripts/smoke-test-azure.sh` deploy six
+`scripts/smoke-test.sh` deploys six
 different examples (`hello`, `minio-s3`, `build-webapp`, `doctor`,
 `web-api`, `production-stack`) against real AWS/Azure as part of this
-repo's CI acceptance workflows (see `ci/README.md` for the one-time CI
+repo's CI acceptance workflows (`PROVIDER=aws` or `PROVIDER=azure`; see
+`ci/README.md` for the one-time CI
 identity/state-backend setup they depend on). All six share **one**
 environment per run, generated from `scripts/ci-environment.aws.yaml`/
 `ci-environment.azure.yaml` — not `examples/hello/environment.yaml` —
@@ -80,7 +81,7 @@ one platform environment several separate apps deploy into, the same
 multi-app-per-environment pattern the two-step flow above supports.
 Each run substitutes a unique `name:` into a generated copy of that
 shared file before calling `composey init -f <generated file>` — see
-the comments in either smoke-test script for exactly how.
+the comments in the smoke-test script for exactly how.
 
 ## Running the golden tests yourself
 

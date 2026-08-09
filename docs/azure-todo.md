@@ -50,7 +50,7 @@ the way — full detail in git history (`7d1e301`, `3cc0721`, `387e17b`,
 1. `azurerm_cdn_frontdoor_origin` is created with `enabled=false` regardless
    of configuration — an open, unresolved azurerm provider bug
    ([#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647)).
-   Worked around in `scripts/smoke-test-azure.sh`: the app-stack apply
+   Worked around in `scripts/smoke-test.sh`: the app-stack apply
    detects this exact failure message and retries once.
 2. That retry, applied blindly to the whole stack, re-touched
    `azurerm_postgresql_flexible_server` and hit a second, unrelated,
@@ -114,7 +114,7 @@ Door / Postgres config will apply cleanly:**
   of what's configured, so any route depending on it fails its first apply.
   A second apply always succeeds. Open:
   [hashicorp/terraform-provider-azurerm#31647](https://github.com/hashicorp/terraform-provider-azurerm/issues/31647).
-  Worked around with a detect-and-retry in `scripts/smoke-test-azure.sh`.
+  Worked around with a detect-and-retry in `scripts/smoke-test.sh`.
 - `azurerm_postgresql_flexible_server`'s `zone` is assigned by Azure itself;
   any plan that reaches the resource without `ignore_changes: ["zone"]`
   tries to write back whatever value Azure picked and gets rejected with
@@ -136,8 +136,7 @@ benefit. `francecentral` is the one region checked so far with neither
 restriction: Postgres came up `Ready` and Redis came up `Running`, both within
 minutes, same day. `uksouth` remains fine — and faster to build a Container
 Apps Environment in (~3 min against 13–17 in `eastus`) — for examples that
-don't touch Redis. `REGION` in the workflow controls this and is deliberately
-separate from `STATE_LOCATION` (where the state blob lives).
+don't touch Redis. `REGION` in the workflow controls this.
 
 **`terraform validate` cannot catch several whole classes of bug.** It passed,
 happily, on: two stacks both declaring ownership of the Container Apps
@@ -173,7 +172,7 @@ the bugs accumulated.
 with Entra ID auth (shared-key access is disabled; identities need *Storage
 Blob Data Contributor* on the account, not just Contributor on the resource
 group). A clean teardown purges its own state; a failed one keeps it, because
-that is the recovery path — `scripts/smoke-test-azure.sh --destroy-only`.
+that is the recovery path — `scripts/smoke-test.sh --destroy-only`.
 
 **Run `ruff format --check` before pushing.** CI enforces it and the test suite
 does not. It has broken the build twice.

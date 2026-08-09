@@ -12,8 +12,10 @@
 # generates a per-run copy of this file with name: substituted for the
 # run-specific value (ci<run-number>) before calling `composey init`,
 # since a shared AWS account needs a unique resource prefix per run and
-# composey init itself takes no flags to express that. See
-# scripts/smoke-test.sh's own comments at the point it does this.
+# composey init itself takes no flags to express that. region: below is
+# likewise substituted per run, since it's a workflow_dispatch input
+# (see acceptance.yml). See scripts/smoke-test.sh's own comments at the
+# point it does this.
 provider: aws
 name: PLACEHOLDER
 region: eu-west-2

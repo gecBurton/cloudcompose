@@ -102,6 +102,7 @@ jobs:
 
       - name: Smoke test ${{ inputs.example }}
         env:
+          PROVIDER: azure
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
           # Authenticate Terraform as the service principal. Not via the Azure
           # CLI session: the azurerm backend refuses a CLI login owned by a
@@ -119,7 +120,6 @@ jobs:
           # Keeps Terraform state in Azure so a cancelled run can still be destroyed
           STATE_RG: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
           STATE_ACCOUNT: ${{ vars.AZURE_STATE_ACCOUNT }}
-          STATE_LOCATION: eastus
         run: |
           case "${{ inputs.example }}" in
             hello)
@@ -147,4 +147,4 @@ jobs:
               echo "::error::no smoke-test configuration for '${{ inputs.example }}'"
               exit 1 ;;
           esac
-          scripts/smoke-test-azure.sh
+          scripts/smoke-test.sh

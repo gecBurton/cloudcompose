@@ -1,50 +1,95 @@
 #!/usr/bin/env bash
 #
-# End-to-end smoke test against real AWS.
+# End-to-end smoke test against real AWS or Azure.
 #
 # Creates environment with 'composey init', compiles a compose file,
-# deploys the resulting app, then polls the ALB URL until it serves a page.
-# EVERYTHING is torn down on exit (success or failure) via a trap, so a
-# crashed run does not leave NAT gateways billing.
+# deploys the resulting app, then polls its public URL until it serves a
+# page. EVERYTHING is torn down on exit (success or failure) via a trap,
+# so a crashed run does not leave NAT gateways/Container Apps
+# environments billing.
+#
+# Unifies what used to be two near-identical scripts
+# (smoke-test.sh/smoke-test-azure.sh) into one, parameterized by
+# PROVIDER: the actual test flow (build -> init -> apply -> compile ->
+# deploy -> poll -> assert -> teardown) is identical between clouds; only
+# a handful of genuinely cloud-specific things differ (auth mechanism,
+# remote-state backend shape, what URL to poll, the known Azure
+# provider-bug retry below), and those are isolated into their own
+# functions/branches rather than duplicated across two files.
 #
 # Usage:
-#   scripts/smoke-test.sh
+#   scripts/smoke-test.sh                                    # AWS, default
+#   PROVIDER=azure scripts/smoke-test.sh
 #   PROFILE=personal COMPOSE=examples/hello/compose.yml scripts/smoke-test.sh
-#   PROFILE= scripts/smoke-test.sh        # empty PROFILE: use ambient creds (CI)
+#   PROFILE= scripts/smoke-test.sh        # empty PROFILE: use ambient AWS creds (CI)
 #   KEEP=1 scripts/smoke-test.sh          # skip teardown to inspect resources
-#   STATE_BUCKET=... NAME=ci42 scripts/smoke-test.sh --destroy-only
+#   STATE_BUCKET=... NAME=ci42 scripts/smoke-test.sh --destroy-only            # AWS
+#   PROVIDER=azure STATE_RG=... NAME=ci42 scripts/smoke-test.sh --destroy-only # Azure
 #                                         # tear down a run that leaked
 #
 # Requires: terraform, go, curl, python3 (for assert_managed.py only).
-# Locally also aws-vault (PROFILE names the profile); in CI set PROFILE=
-# (empty) to run terraform with ambient AWS credentials (e.g. an
-# OIDC-assumed role).
+# Azure also requires the az CLI. Locally also aws-vault for AWS (PROFILE
+# names the profile); in CI set PROFILE= (empty) to run terraform with
+# ambient AWS credentials (e.g. an OIDC-assumed role). Azure's own
+# credential discovery is left to Terraform itself (ARM_CLIENT_ID/etc. in
+# CI, `az login` locally) -- see the "Azure authentication" comment below.
 #
 set -euo pipefail
 
 # --- Config (override via environment) --------------------------------------
-PROFILE="${PROFILE-personal}"                        # aws-vault profile; empty = ambient creds
-NAME="${NAME:-smoke}"                                 # environment name
-COMPOSE="${COMPOSE:-examples/hello/compose.yml}"      # app to deploy
-PROJECT="${PROJECT:-hello}"                            # composey project name
-HTTP_PATH="${HTTP_PATH:-/}"                            # path to poll on the ALB
-EXPECT="${EXPECT:-Server name}"                        # string expected in HTTP body
-POLL_TIMEOUT="${POLL_TIMEOUT:-300}"                    # seconds to wait for healthy ALB
-                                                       # (ALB default health check needs
-                                                       # 5×30s + Fargate cold start)
-KEEP="${KEEP:-0}"                                      # 1 = do not destroy afterwards
-STATE_BUCKET="${STATE_BUCKET:-}"                       # S3 bucket for remote state; empty = local
-STATE_REGION="${STATE_REGION:-eu-west-2}"              # region of STATE_BUCKET
+PROVIDER="${PROVIDER:-aws}"                            # aws or azure
+PROFILE="${PROFILE-personal}"                          # aws-vault profile (AWS only); empty = ambient creds
+NAME="${NAME:-smoke}"                                   # environment name
+COMPOSE="${COMPOSE:-examples/hello/compose.yml}"        # app to deploy
+PROJECT="${PROJECT:-hello}"                              # composey project name
+HTTP_PATH="${HTTP_PATH:-/}"                              # path to poll
+EXPECT="${EXPECT:-Server name}"                          # string expected in HTTP body
+POLL_TIMEOUT="${POLL_TIMEOUT:-300}"                      # seconds to wait for a healthy app
+                                                         # (AWS: ALB default health check needs
+                                                         # 5×30s + Fargate cold start)
+KEEP="${KEEP:-0}"                                        # 1 = do not destroy afterwards
+
+# Region to deploy into. AWS default matches examples/hello/environment.yaml
+# and scripts/ci-environment.aws.yaml; Azure default avoids known
+# region-restricted managed-service capacity issues:
+#
+# Not eastus: this subscription is offer-restricted there for PostgreSQL
+# Flexible Server, which fails with LocationIsOfferRestricted twenty minutes
+# into an apply.
+#
+# Not uksouth or northeurope for anything touching Azure Managed Redis: both
+# have failed Balanced_B0/B1 creation with InsufficientCapacity (confirmed
+# against real Azure 2026-08-04). francecentral has neither restriction and
+# was confirmed clean for both Postgres and Redis the same day -- prefer it
+# whenever the example includes a cache.
+if [[ "$PROVIDER" == "azure" ]]; then
+  REGION="${REGION:-francecentral}"
+else
+  REGION="${REGION:-eu-west-2}"
+fi
+
+# Remote state. AWS uses an S3 backend (bucket+region); Azure uses an
+# Azure Blob Storage backend (resource group+storage account+container) --
+# genuinely different shapes, not just different names for the same two
+# fields, so both variable sets exist but only the relevant ones are used
+# per provider.
+STATE_BUCKET="${STATE_BUCKET:-}"                         # S3 bucket for remote state (AWS); empty = local
+STATE_REGION="${STATE_REGION:-eu-west-2}"                # region of STATE_BUCKET (AWS)
+STATE_RG="${STATE_RG:-}"                                 # Resource Group for remote state (Azure); empty = local
+STATE_ACCOUNT="${STATE_ACCOUNT:-composeyacceptstate}"    # storage account holding state (Azure)
+STATE_CONTAINER="${STATE_CONTAINER:-tfstate}"            # blob container within it (Azure)
 
 # Resolve paths relative to the repo root (this script lives in scripts/).
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_DIR="$ROOT/build/$NAME-environment"                # generated by 'composey init'
-BUILD_DIR="$ROOT/build/$PROJECT"
+ENV_DIR="$ROOT/build/$NAME-environment-$PROVIDER"        # generated by 'composey init'
+BUILD_DIR="$ROOT/build/$PROJECT-$PROVIDER"
 COMPOSEY="$ROOT/composey-go/composey-go"
 
-# With a profile, wrap terraform in aws-vault (local); without one, run it
-# directly against the ambient AWS credentials (CI / OIDC-assumed role).
-if [[ -n "$PROFILE" ]]; then
+# AWS: with a profile, wrap terraform in aws-vault (local); without one,
+# run it directly against ambient credentials (CI / OIDC-assumed role).
+# Azure: Terraform's own credential discovery is left alone deliberately
+# -- see "Azure authentication" below.
+if [[ "$PROVIDER" == "aws" && -n "$PROFILE" ]]; then
   TF="aws-vault exec $PROFILE -- terraform"
 else
   TF="terraform"
@@ -53,18 +98,33 @@ fi
 log()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\n\033[1;31mFAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# --- Azure authentication ----------------------------------------------------
+# In CI the ARM_CLIENT_ID/SECRET/TENANT_ID environment variables authenticate
+# as the service principal; on a developer machine none are set and
+# Terraform falls back to `az login`.
+#
+# Do not force ARM_USE_CLI=true here. The azurerm *backend* rejects a CLI
+# session owned by a service principal outright ("Authenticating using the
+# Azure CLI is only supported as a User"), even though the provider tolerates
+# it -- so forcing CLI auth breaks remote state in CI while appearing to work
+# locally.
+
 # --- Remote state ------------------------------------------------------------
-# State on a CI runner is ephemeral: if the run is cancelled or the runner dies,
-# a local state file dies with it and everything it created (NAT gateway, ALB,
-# RDS…) bills forever with no way to `terraform destroy` it. When STATE_BUCKET is
-# set we drop an S3 backend into each state directory, keyed by run NAME, so a
-# leaked run stays destroyable from any machine. Without it we fall back to local
-# state, which is fine on a laptop where the files persist.
+# State on a CI runner is ephemeral: if the run is cancelled or the runner
+# dies, a local state file dies with it and everything it created (NAT
+# gateway, ALB, RDS / Container Apps environment...) bills forever with no
+# way to `terraform destroy` it. When the provider's state variable(s) are
+# set we drop a remote backend into each state directory, keyed by run
+# NAME, so a leaked run stays destroyable from any machine. Without it we
+# fall back to local state, which is fine on a laptop where the files
+# persist.
 write_backend() {
   local dir="$1" key="$2"
-  [[ -n "$STATE_BUCKET" ]] || return 0
-  cat > "$dir/backend_ci.tf" <<TF
-# Generated by scripts/smoke-test.sh — not checked in.
+  case "$PROVIDER" in
+    aws)
+      [[ -n "$STATE_BUCKET" ]] || return 0
+      cat > "$dir/backend_ci.tf" <<TF
+# Generated by scripts/smoke-test.sh -- not checked in.
 terraform {
   backend "s3" {
     bucket  = "$STATE_BUCKET"
@@ -74,12 +134,72 @@ terraform {
   }
 }
 TF
+      ;;
+    azure)
+      [[ -n "$STATE_RG" ]] || return 0
+      # Falling back to local state here is what previously made a leaked
+      # run unrecoverable, so a half-configured backend is an error, not a
+      # warning.
+      [[ -n "$STATE_ACCOUNT" ]] || fail "STATE_RG is set but STATE_ACCOUNT is empty: refusing to fall back to local state"
+      # The storage account has shared-key access disabled, so the backend
+      # must authenticate with Entra ID (use_azuread_auth) rather than an
+      # account key. That works from the CI service principal and from a
+      # developer's az login alike, provided the identity holds Storage
+      # Blob Data Contributor on the account. See ci/README.md.
+      cat > "$dir/backend_ci.tf" <<TF
+# Generated by scripts/smoke-test.sh -- not checked in.
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "$STATE_RG"
+    storage_account_name = "$STATE_ACCOUNT"
+    container_name       = "$STATE_CONTAINER"
+    key                  = "$key"
+    use_azuread_auth     = true
+  }
+}
+TF
+      ;;
+  esac
+}
+
+state_configured() {
+  case "$PROVIDER" in
+    aws) [[ -n "$STATE_BUCKET" ]] ;;
+    azure) [[ -n "$STATE_RG" ]] ;;
+  esac
 }
 
 state_hint() {
-  [[ -n "$STATE_BUCKET" ]] || return 0
-  echo "  State kept at s3://$STATE_BUCKET/acceptance/$NAME/ — destroy later with:"
-  echo "    STATE_BUCKET=$STATE_BUCKET NAME=$NAME PROJECT=$PROJECT scripts/smoke-test.sh --destroy-only"
+  state_configured || return 0
+  case "$PROVIDER" in
+    aws)
+      echo "  State kept at s3://$STATE_BUCKET/acceptance/$NAME/ -- destroy later with:"
+      echo "    STATE_BUCKET=$STATE_BUCKET NAME=$NAME PROJECT=$PROJECT scripts/smoke-test.sh --destroy-only"
+      ;;
+    azure)
+      echo "  State kept at $STATE_ACCOUNT/$STATE_CONTAINER/acceptance/$NAME/ -- destroy later with:"
+      echo "    PROVIDER=azure STATE_RG=$STATE_RG NAME=$NAME PROJECT=$PROJECT scripts/smoke-test.sh --destroy-only"
+      ;;
+  esac
+}
+
+# Azure only: state that describes no resources is worse than useless --
+# --destroy-only against it reports success having done nothing, which is
+# the failure mode the backend exists to prevent. A failed teardown keeps
+# its state, because that is the recovery path. The account has blob
+# versioning and 30-day soft delete, so this is reversible if a destroy
+# reported success while leaving something behind. AWS has no equivalent
+# step: S3 objects for a torn-down run are harmless to leave and get
+# cleaned up by the bucket's own lifecycle rule.
+purge_state() {
+  [[ "$PROVIDER" == "azure" ]] || return 0
+  [[ -n "$STATE_RG" && -n "$STATE_ACCOUNT" ]] || return 0
+  az storage blob delete-batch \
+    --account-name "$STATE_ACCOUNT" \
+    --source "$STATE_CONTAINER" \
+    --pattern "acceptance/$NAME/*" \
+    --auth-mode login >/dev/null 2>&1 \
+    || echo "  NOTE: could not remove state under acceptance/$NAME/ -- harmless, prune later."
 }
 
 # --- Teardown ----------------------------------------------------------------
@@ -107,26 +227,31 @@ cleanup() {
   fi
   if [[ -d "$ENV_DIR" ]]; then
     (cd "$ENV_DIR" && eval "$TF destroy -auto-approve") \
-      || { leaked=1; echo "WARNING: environment destroy failed — CHECK NAT GATEWAYS / EIPs / ALB manually."; }
+      || { leaked=1; echo "WARNING: environment destroy failed — CHECK NAT GATEWAYS/EIPs/ALB or the RESOURCE GROUP manually."; }
   fi
 
-  (( leaked == 1 )) && state_hint
+  if (( leaked == 1 )); then
+    state_hint
+  else
+    purge_state
+  fi
   exit $status
 }
 trap cleanup EXIT INT TERM
 
 # --- Destroy-only mode -------------------------------------------------------
-# Recovery path for a run that leaked: re-point at its remote state and tear it
-# down. Requires STATE_BUCKET and the NAME the leaked run used.
+# Recovery path for a run that leaked: re-point at its remote state and tear
+# it down. Requires the provider's state variable(s) and the NAME the leaked
+# run used.
 if [[ "${1:-}" == "--destroy-only" ]]; then
-  [[ -n "$STATE_BUCKET" ]] || fail "--destroy-only needs STATE_BUCKET (runs with local state are not recoverable)"
-  log "Destroy-only mode for environment '$NAME'."
+  state_configured || fail "--destroy-only needs remote state configured (STATE_BUCKET for AWS, STATE_RG for Azure) -- runs with local state are not recoverable"
+  log "Destroy-only mode for environment '$NAME' ($PROVIDER)."
 
   write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
   (cd "$ENV_DIR" && eval "$TF init -input=false -reconfigure")
 
   # Destroying the app stack needs its generated config, not just its state:
-  # Terraform cannot configure the AWS provider from an empty directory. If the
+  # Terraform cannot configure the provider from an empty directory. If the
   # manifest is missing, recompile it with the same compose file and project
   # name first; the environment teardown below still runs either way.
   if [[ -f "$BUILD_DIR/main.tf.json" ]]; then
@@ -150,24 +275,32 @@ log "Building composey-go…"
 (cd "$ROOT/composey-go" && go build -o composey-go ./cmd/composey)
 
 # --- 1. Create environment with composey init ---------------------------------
-log "Creating environment '$NAME' with composey init…"
+log "Creating $PROVIDER environment '$NAME' with composey init…"
 rm -rf "$ENV_DIR"
 cd "$ROOT"
 
 # composey init takes no decision flags -- environment.yaml is its only
-# input (see docs/authored-environment-config.md). name: is the one
-# field this script can't just commit statically, since a shared AWS
-# account needs a unique resource prefix per run; every other decision
-# (region, VPC CIDR, AZ count, ALB) comes from the committed
-# scripts/ci-environment.aws.yaml, shared across every example this
-# script deploys (they're separate apps sharing one platform
-# environment -- the whole point of the init/main split).
-GENERATED_ENV_CONFIG="$ROOT/build/$NAME-environment.yaml"
+# input (see docs/authored-environment-config.md). name: and region: are
+# the fields this script can't commit statically: name: needs a unique
+# resource prefix per run, and region: is itself a workflow input for
+# both clouds (region-restricted managed-service capacity has caused a
+# real failure on Azure before -- see the REGION comment above; AWS's
+# own region input has no equivalent known restriction, but the same
+# templating mechanism covers it for parity). Every other decision comes
+# from the committed scripts/ci-environment.{aws,azure}.yaml, shared
+# across every example this script deploys (they're separate apps
+# sharing one platform environment -- the whole point of the init/main
+# split).
+GENERATED_ENV_CONFIG="$ROOT/build/$NAME-environment-$PROVIDER.yaml"
 mkdir -p "$(dirname "$GENERATED_ENV_CONFIG")"
 python3 -c "
-with open('$ROOT/scripts/ci-environment.aws.yaml') as f:
+with open('$ROOT/scripts/ci-environment.$PROVIDER.yaml') as f:
     content = f.read()
 content = content.replace('name: PLACEHOLDER', 'name: $NAME')
+if '$PROVIDER' == 'azure':
+    content = content.replace('region: francecentral', 'region: $REGION')
+else:
+    content = content.replace('region: eu-west-2', 'region: $REGION')
 with open('$GENERATED_ENV_CONFIG', 'w') as f:
     f.write(content)
 "
@@ -178,9 +311,19 @@ cd "$ENV_DIR"
 eval "$TF init -input=false -reconfigure"
 eval "$TF apply -auto-approve"
 
-ALB_DNS="$(eval "$TF output -raw alb_dns_name")"
-[[ -n "$ALB_DNS" ]] || fail "environment produced no alb_dns_name"
-log "Environment up. ALB: $ALB_DNS"
+# --- Provider-specific: where the app will be reachable ----------------------
+# AWS deploys behind a shared ALB (http, DNS name from the environment
+# output); Azure gives each Container App its own FQDN (https, read from
+# the app stack's own output once deployed below) -- genuinely different
+# ingress models, not just a naming difference. AWS's URL is known as soon
+# as the environment exists; Azure's only exists once the app itself is up.
+if [[ "$PROVIDER" == "aws" ]]; then
+  ALB_DNS="$(eval "$TF output -raw alb_dns_name")"
+  [[ -n "$ALB_DNS" ]] || fail "environment produced no alb_dns_name"
+  log "Environment up. ALB: $ALB_DNS"
+else
+  log "Environment up."
+fi
 
 # --- 2. Compile the app ------------------------------------------------------
 log "Compiling $COMPOSE with composey…"
@@ -192,10 +335,49 @@ log "Deploying app '$PROJECT'…"
 write_backend "$BUILD_DIR" "acceptance/$NAME/$PROJECT.tfstate"
 cd "$BUILD_DIR"
 eval "$TF init -input=false -reconfigure"
-eval "$TF apply -auto-approve"
 
-# --- 4. Poll the ALB until it serves the app ---------------------------------
-url="http://$ALB_DNS$HTTP_PATH"
+if [[ "$PROVIDER" == "azure" ]]; then
+  # azurerm_cdn_frontdoor_origin is created with enabled=false regardless of
+  # what is configured — a known, unresolved provider bug (confirmed against
+  # real Azure 2026-08-05: hashicorp/terraform-provider-azurerm#31647). Any
+  # azurerm_cdn_frontdoor_route depending on that origin fails its first apply
+  # with "Please make sure that the originGroup is created successfully and at
+  # least one enabled origin is created under the origin group." A second
+  # apply always succeeds: Terraform detects the drift on refresh and flips
+  # the origin to enabled before the route is attempted again.
+  #
+  # A -target'd retry was tried first, to avoid touching anything else on the
+  # second apply — but -target pulls in the whole dependency chain behind the
+  # route (origin -> Container App -> Postgres connection string), so it
+  # still re-touched azurerm_postgresql_flexible_server and hit a second bug:
+  # Azure assigns that resource's `zone` itself, and any plan that reaches it
+  # tries to "correct" that real value, which the API rejects
+  # (models/azure.py's PostgreSQLFlexibleServer now carries
+  # `lifecycle.ignore_changes: ["zone"]` so that no longer happens on *any*
+  # plan, not just this retry). With that fixed at the source, retrying the
+  # whole apply is simple and no longer trades one bug for another.
+  if ! eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; then
+    if grep -q "at least one enabled origin is created under the origin group" /tmp/tf-apply-app.log; then
+      log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
+      eval "$TF apply -auto-approve"
+    else
+      fail "terraform apply failed for the app stack"
+    fi
+  fi
+  # `terraform output -raw` prints its "No outputs found" warning on stdout, so
+  # a missing output is captured as the hostname rather than as an empty
+  # string. Insist on a value that looks like a hostname instead.
+  CONTAINER_APP_FQDN="$(eval "$TF output -raw fqdn" 2>/dev/null || true)"
+  [[ "$CONTAINER_APP_FQDN" =~ ^[A-Za-z0-9.-]+$ ]] \
+    || fail "app stack published no usable fqdn output (got: ${CONTAINER_APP_FQDN:-<empty>})"
+  log "Container App FQDN: $CONTAINER_APP_FQDN"
+  url="https://$CONTAINER_APP_FQDN$HTTP_PATH"
+else
+  eval "$TF apply -auto-approve"
+  url="http://$ALB_DNS$HTTP_PATH"
+fi
+
+# --- 4. Poll the app's URL until it serves the page --------------------------
 log "Polling $url (up to ${POLL_TIMEOUT}s)…"
 deadline=$(( SECONDS + POLL_TIMEOUT ))
 served=0
@@ -223,12 +405,13 @@ echo "----- response -----"
 echo "$body" | head -20
 
 # --- 5. Managed-resource assertions ------------------------------------------
-# Prove every substituted service (minio->S3, postgres->RDS, redis->ElastiCache)
-# really landed in AWS and that endpoint injection reached the deployed task.
-# Driven off applied TF state; a no-op for examples with nothing substituted.
-log "Asserting managed substitutions against applied AWS state…"
+# Prove every substituted service (minio->S3/Blob, postgres->RDS/Flexible
+# Server, redis->ElastiCache/Managed Redis) really landed in the target cloud
+# and that endpoint injection reached the deployed task. Driven off applied
+# TF state; a no-op for examples with nothing substituted.
+log "Asserting managed substitutions against applied $PROVIDER state…"
 ( cd "$BUILD_DIR" && eval "$TF show -json" ) | python3 "$ROOT/scripts/assert_managed.py" \
   || fail "managed substitution assertions failed"
 
-log "SUCCESS — everything verified on real AWS."
+log "SUCCESS — everything verified on real ${PROVIDER}."
 exit 0

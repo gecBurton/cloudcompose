@@ -180,8 +180,8 @@ Repo → **Actions → Azure Acceptance → Run workflow** → choose an example
 ## Recovering a leaked run
 
 ```bash
-STATE_RG=composey-acceptance NAME=ci42 PROJECT=hello \
-  az login && scripts/smoke-test-azure.sh --destroy-only
+PROVIDER=azure STATE_RG=composey-acceptance NAME=ci42 PROJECT=hello \
+  az login && scripts/smoke-test.sh --destroy-only
 ```
 
 ## Teardown

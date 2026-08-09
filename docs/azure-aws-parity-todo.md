@@ -296,7 +296,7 @@ been latent and untested since MySQL support was first ported.
   (`aws/connections.go:57-125`) instead of the hardcoded Postgres-shaped
   template — this is the durable fix behind the Priority 1 URL-injection
   bug item above, not just a one-off patch for that bug.
-- [ ] **Add private networking + RBAC for Azure Redis and Blob Storage.**
+- [x] **Add private networking + RBAC for Azure Redis and Blob Storage.**
   No delegated subnet/private endpoint for Managed Redis at all (unlike
   databases, which do get `privateNetworkingAzure`,
   `azure/managed.go:22-69`, when the environment has the subnet IDs set).
@@ -305,16 +305,44 @@ been latent and untested since MySQL support was first ported.
   (`docs/spikes/azure/README.md:line 153` area) and was never built.
   Naturally combines with the Priority 1 RBAC work.
 
+  **RBAC half was already done in the Priority 1 PR** (`grantManagedServicePermissions`
+  grants `Storage Blob Data Contributor` per storage relationship) —
+  this item's own description was stale by the time it was picked up.
+  **Private networking for Redis done 2026-08-08**: unlike Flexible
+  Server (which takes `delegated_subnet_id`/`private_dns_zone_id`
+  directly on the server resource), `azurerm_managed_redis` has no
+  networking attributes at all beyond `public_network_access` —
+  confirmed against the real provider schema, not assumed from the
+  naming symmetry with the database case. Private connectivity is a
+  genuinely separate `azurerm_private_endpoint` resource
+  (`models.PrivateEndpoint`, new), attached to a plain (non-delegated)
+  subnet, targeting `Microsoft.Cache/RedisEnterprise`'s `redisEnterprise`
+  subresource with private DNS zone `privatelink.redis.azure.net` — both
+  values confirmed against Microsoft's own private-endpoint DNS
+  reference, not guessed. `env.RedisSubnetID` (new field) gates this the
+  same way `PostgresqlSubnetID`/`MysqlSubnetID` already gate database
+  private networking; `composey init --provider azure` now creates a
+  4th (non-delegated) subnet for it automatically, matching the existing
+  Postgres/MySQL/Container-Apps subnet pattern. Verified end-to-end with
+  `terraform validate` against both the environment-bootstrap output and
+  a manually-generated app output with the subnet set.
+
 ## Priority 4 — Smaller robustness/consistency gaps
 
-- [ ] **Consolidate Azure's size→CPU/memory table with AWS's
+- [x] **Consolidate Azure's size→CPU/memory table with AWS's
   `shared.SizeMappings`.** `getCPUCoresAzure`/`getMemoryGBAzure`
   (`azure/compute.go:214-244`) hardcode an independent table
   (small=0.25vCPU/0.5Gi, medium=0.5/1Gi, large=1.0/2Gi) that will silently
   drift from `shared.SizeMappings` if that's ever changed for AWS. Should
   derive from the shared table (converting units as needed), not
   duplicate it.
-- [ ] **Add a size-ceiling rejection for Azure Container Apps.**
+
+  **Done, and the drift had already happened**: AWS's `medium` is
+  1024 CPU units = 1.0 vCPU; Azure's own independent table said 0.5 —
+  half, not matching, despite the same size name. Both functions now
+  derive from `shared.SizeMappings` (converting ECS CPU units → vCPU
+  cores, MiB → GiB) instead of a separate table.
+- [x] **Add a size-ceiling rejection for Azure Container Apps.**
   Consumption-tier caps at 2 vCPU/4GiB; `size: large` maps to only
   1.0vCPU/2Gi today, so the current mapping never actually hits the
   ceiling — but an explicit `cpu`/`memory` override in `x-composey` could
@@ -324,6 +352,32 @@ been latent and untested since MySQL support was first ported.
   for both non-AWS clouds together, following the pattern
   `docs/authored-environment-config.md`'s "backends should be able to
   reject what they cannot express" recommendation already established.
+
+  **Done for Azure** (GCP's equivalent not attempted here) — both
+  functions now return `(value, error)` and reject with a clear message
+  when a size *or* an explicit `cpu:`/`memory:` override would exceed
+  2 vCPU / 4GiB. Threading the error return up through
+  `containerSpecAzure` → `inferContainerApps`/`inferScheduledJobs` →
+  `InferAzure` was itself the main shape of this change (none of these
+  returned an error before). Directly caught the `scaling` example's
+  `web` service (`size: large` = 4 vCPU) as a real, correct rejection —
+  removed from `azureGoldenExamples` since there's no valid Azure output
+  to golden-test against (see `TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap`
+  for the dedicated test instead).
+
+  **New gap found while doing this, not fixed here**: Azure Container
+  Apps' Consumption tier requires CPU and memory to be an *exact matched
+  pair* from a fixed table (0.25vCPU/0.5Gi, 0.5/1.0Gi, ..., 2.0/4.0Gi) —
+  not just independently under the 2vCPU/4GiB cap. This is **not
+  enforced by Terraform's schema** (`terraform validate` passes
+  regardless) — only by Azure's own API at `apply` time. Confirmed via
+  the `compute-tuning` example's `worker` service (`size: medium` = 1.0
+  vCPU + an explicit `memory: 4096` override = 4Gi): `terraform validate`
+  accepts `cpu=1, memory="4096Mi"` even though 1.0vCPU only pairs validly
+  with 2.0Gi. This would fail at real `apply` time and composey has no
+  way to catch it today. Deliberately not fixed in this pass (scope
+  decision, not an oversight) — tracked here as a new, still-open item.
+
 - [ ] **Wire backup/HA settings for Azure databases.** `HighAvailability
   map[string]string` exists on the model (`azure.go:185`) but is never
   set by `inferDatabasesAzure` — dead field, same category as
@@ -352,9 +406,15 @@ been latent and untested since MySQL support was first ported.
 
 ## Testing debt (a consequence of the gaps above, not independent)
 
-> **Status (2026-08-08): all done.** `examples/{scaling,platform-config,
-> compute-tuning}/expected/azure/main.tf.json` all added, registered in
-> `azureGoldenExamples`, and independently `terraform validate`d. Note on
+> **Status (2026-08-08): all done, though `scaling` was later removed
+> again.** `examples/{platform-config,compute-tuning}/expected/azure/main.tf.json`
+> added, registered in `azureGoldenExamples`, and independently
+> `terraform validate`d. `examples/scaling` initially got an Azure
+> fixture too, but was removed the same day once the Priority 4
+> size-ceiling rejection landed: its `web` service's `size: large`
+> (4 vCPU) is now a correct, intentional rejection on Azure, not a value
+> to golden-test — see the size-ceiling item above and
+> `TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap`. Note on
 > `compute-tuning` specifically: checked before assuming it was blocked
 > by the sizing gap, and it wasn't — container-level `cpu`/`memory`
 > overrides already worked correctly on Azure; added anyway once

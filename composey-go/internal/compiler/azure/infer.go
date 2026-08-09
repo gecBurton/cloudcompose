@@ -73,7 +73,9 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	connectionOrder := connectionOrderForAzure(app, connections)
 
 	// Step 8: Infer container apps.
-	inferContainerApps(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder)
+	if err := inferContainerApps(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder); err != nil {
+		return nil, err
+	}
 
 	// Step 9: Scheduled services run as Jobs, not as always-on Container Apps.
 	if err := inferScheduledJobs(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder); err != nil {

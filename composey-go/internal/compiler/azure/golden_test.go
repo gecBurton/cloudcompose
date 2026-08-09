@@ -56,7 +56,15 @@ var azureGoldenExamples = []string{
 	// previously untestable on Azure since the features these examples
 	// exercise (database sizing, compose secrets:/platform config:)
 	// were silent no-ops.
-	"scaling",
+	//
+	// "scaling" was removed from this list the same day, after the size
+	// table was consolidated with shared.SizeMappings (Priority 4): its
+	// web service's `size: large` maps to 4 vCPU, which exceeds Azure
+	// Container Apps' Consumption tier limit and is now a real,
+	// intentional composey-side rejection -- see
+	// TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap for the
+	// dedicated test covering this, since there's no valid Azure output
+	// for this example to golden-test against.
 	"platform-config",
 	// compute-tuning was never actually blocked by any Priority 2 gap
 	// (container-level cpu/memory overrides already worked correctly) --
@@ -228,7 +236,10 @@ func TestContainerSpecAzure_ObjectStorageRendersAsBareHost(t *testing.T) {
 		},
 	}
 
-	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"blobs"}, testGetNameAzure, nil, "")
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"blobs"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}
@@ -266,7 +277,10 @@ func TestContainerSpecAzure_CacheRendersAsRedisURL(t *testing.T) {
 		},
 	}
 
-	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"cache"}, testGetNameAzure, nil, "")
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"cache"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}
@@ -310,7 +324,10 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 		"db": {Host: "db.example.com", Password: &password},
 	}
 
-	container, secrets := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"db"}, testGetNameAzure, nil, "")
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"db"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
 	if len(container.Env) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(container.Env))
 	}

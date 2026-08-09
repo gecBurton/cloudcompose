@@ -135,12 +135,21 @@ func containerSpecAzure(
 	getName func(string) string,
 	tags map[string]string,
 	managedServiceIdentityID string,
-) (models.ContainerAppContainer, []models.ContainerAppSecret) {
+) (models.ContainerAppContainer, []models.ContainerAppSecret, error) {
+	cpu, err := getCPUCoresAzure(service)
+	if err != nil {
+		return models.ContainerAppContainer{}, nil, err
+	}
+	memory, err := getMemoryGBAzure(service)
+	if err != nil {
+		return models.ContainerAppContainer{}, nil, err
+	}
+
 	container := models.ContainerAppContainer{
 		Name:   service.Name,
 		Image:  getContainerImageAzure(service, app, env),
-		CPU:    getCPUCoresAzure(service),
-		Memory: getMemoryGBAzure(service),
+		CPU:    cpu,
+		Memory: memory,
 		Args:   service.Command,
 	}
 
@@ -211,7 +220,7 @@ func containerSpecAzure(
 	secrets = append(secrets, configSecrets...)
 
 	container.Env = envVars
-	return container, secrets
+	return container, secrets, nil
 }
 
 // connectionURLAzure renders a connection as a URL, choosing the scheme
@@ -304,36 +313,86 @@ func getContainerImageAzure(service *models.Service, app *models.Application, en
 	return service.Image
 }
 
+// azureConsumptionMaxCPU and azureConsumptionMaxMemoryGB are Container
+// Apps' Consumption workload profile limits per container (2 vCPU / 4
+// GiB), confirmed against Microsoft's own container resource-allocation
+// documentation (learn.microsoft.com/azure/container-apps/containers#allocations).
+// Not enforced by Terraform's own schema (a plain `number`/`string`
+// with no validation) -- this is an Azure API-level constraint composey
+// checks itself, added 2026-08-08 (see docs/azure-aws-parity-todo.md's
+// Priority 4 size-ceiling item).
+const (
+	azureConsumptionMaxCPU      = 2.0
+	azureConsumptionMaxMemoryGB = 4.0
+)
+
 // getCPUCoresAzure converts service size or explicit CPU to cores,
-// mirroring _get_cpu_cores.
-func getCPUCoresAzure(service *models.Service) float64 {
+// mirroring _get_cpu_cores. Size-derived values come from
+// shared.SizeMappings (the same table AWS uses, converted from ECS CPU
+// units to vCPU cores) rather than a separately hardcoded table, fixing
+// a real, already-drifted duplicate: Azure's own table previously
+// defined medium as 0.5 vCPU where AWS's medium is 1.0 vCPU -- half,
+// not matching, despite using the same size name (see
+// docs/azure-aws-parity-todo.md's Priority 4 size-table-consolidation
+// item). Returns an error if the result would exceed the Consumption
+// tier's per-container limit -- see azureConsumptionMaxCPU's own
+// comment for why this wasn't previously reachable (the old table
+// topped out at 1.0 vCPU for "large", comfortably under the 2 vCPU cap;
+// deriving from AWS's table directly reaches 4.0 vCPU for "large",
+// which is over it) and needed the rejection added at the same time as
+// the table consolidation, not as a separate step.
+func getCPUCoresAzure(service *models.Service) (float64, error) {
 	if service.CPU != nil {
-		return float64(*service.CPU) / 1024.0
+		cores := float64(*service.CPU) / 1024.0
+		if cores > azureConsumptionMaxCPU {
+			return 0, fmt.Errorf(
+				"service %q requests %g vCPU, which exceeds Azure Container Apps' Consumption tier limit of %g vCPU per container",
+				service.Name, cores, azureConsumptionMaxCPU,
+			)
+		}
+		return cores, nil
 	}
-	switch service.Size {
-	case models.ServiceSizeMedium:
-		return 0.5
-	case models.ServiceSizeLarge:
-		return 1.0
-	default:
-		return 0.25
+	mapping, ok := shared.SizeMappings[string(service.Size)]
+	if !ok {
+		mapping = shared.SizeMappings["small"]
 	}
+	cores := float64(mapping.CPU) / 1024.0
+	if cores > azureConsumptionMaxCPU {
+		return 0, fmt.Errorf(
+			"service %q has size %q (%g vCPU), which exceeds Azure Container Apps' Consumption tier limit of %g vCPU per container; use an explicit cpu: override within the limit, or a dedicated workload profile (not yet supported by composey)",
+			service.Name, service.Size, cores, azureConsumptionMaxCPU,
+		)
+	}
+	return cores, nil
 }
 
 // getMemoryGBAzure converts service size or explicit memory to a GB
-// string, mirroring _get_memory_gb.
-func getMemoryGBAzure(service *models.Service) string {
+// string, mirroring _get_memory_gb. See getCPUCoresAzure's own doc
+// comment for the size-table consolidation and ceiling-rejection this
+// mirrors on the memory side.
+func getMemoryGBAzure(service *models.Service) (string, error) {
 	if service.Memory != nil {
-		return strconv.Itoa(*service.Memory) + "Mi"
+		gb := float64(*service.Memory) / 1024.0
+		if gb > azureConsumptionMaxMemoryGB {
+			return "", fmt.Errorf(
+				"service %q requests %dMi memory, which exceeds Azure Container Apps' Consumption tier limit of %gGi per container",
+				service.Name, *service.Memory, azureConsumptionMaxMemoryGB,
+			)
+		}
+		return strconv.Itoa(*service.Memory) + "Mi", nil
 	}
-	switch service.Size {
-	case models.ServiceSizeMedium:
-		return "1Gi"
-	case models.ServiceSizeLarge:
-		return "2Gi"
-	default:
-		return "0.5Gi"
+	mapping, ok := shared.SizeMappings[string(service.Size)]
+	if !ok {
+		mapping = shared.SizeMappings["small"]
 	}
+	gb := float64(mapping.Memory) / 1024.0
+	if gb > azureConsumptionMaxMemoryGB {
+		return "", fmt.Errorf(
+			"service %q has size %q (%gGi memory), which exceeds Azure Container Apps' Consumption tier limit of %gGi per container; use an explicit memory: override within the limit, or a dedicated workload profile (not yet supported by composey)",
+			service.Name, service.Size, gb, azureConsumptionMaxMemoryGB,
+		)
+	}
+	return fmt.Sprintf("%gGi", gb), nil
 }
 
 // inferScheduledJobs creates a Container Apps Job for each scheduled
@@ -431,7 +490,10 @@ func inferScheduledJobs(
 		}
 
 		registryConfig, secretConfig := registryAuthAzure(service)
-		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		containerSpec, connSecrets, err := containerSpecAzure(service, app, env, resources, connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		if err != nil {
+			return err
+		}
 		secretConfig = append(secretConfig, connSecrets...)
 
 		job := models.NewContainerAppJob()
@@ -465,7 +527,7 @@ func inferContainerApps(
 	identityID, managedServiceIdentityID string,
 	connections map[string]models.Connection,
 	connectionOrder []string,
-) {
+) error {
 	for i := range app.Services {
 		service := &app.Services[i]
 		if service.Capability != models.CapabilityContainer {
@@ -485,7 +547,10 @@ func inferContainerApps(
 			minReplicas = 1
 		}
 
-		containerSpec, connSecrets := containerSpecAzure(service, app, env, resources, connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		containerSpec, connSecrets, err := containerSpecAzure(service, app, env, resources, connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		if err != nil {
+			return err
+		}
 
 		var ingressConfig *models.ContainerAppIngress
 		if service.Ingress != nil {
@@ -587,4 +652,5 @@ func inferContainerApps(
 
 		resources.ContainerApp[service.Name] = containerApp
 	}
+	return nil
 }

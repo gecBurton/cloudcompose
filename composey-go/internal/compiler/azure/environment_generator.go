@@ -8,8 +8,11 @@ import (
 
 // GenerateAzureEnvironment generates Terraform JSON for a shared Azure
 // environment, mirroring environment_generator.py. Creates a Resource
-// Group, Log Analytics Workspace, VNet with three delegated subnets
-// (Container Apps, PostgreSQL, MySQL), and a Container Apps Environment.
+// Group, Log Analytics Workspace, VNet with four subnets (Container
+// Apps, PostgreSQL, MySQL -- each delegated -- and Redis, a plain
+// subnet for a Managed Redis private endpoint, added 2026-08-08, see
+// docs/azure-aws-parity-todo.md's Priority 3 Redis private networking
+// item), and a Container Apps Environment.
 //
 // The environment's facts are exposed as a plain Terraform
 // `output "environment"` block only -- see aws.GenerateAwsEnvironment's
@@ -89,6 +92,10 @@ func GenerateAzureEnvironment(
 	if err != nil {
 		return "", err
 	}
+	redisCIDR, err := shared.Cidrsubnet(vnetCIDR, 5, 3)
+	if err != nil {
+		return "", err
+	}
 
 	delegation := func(delegationName, serviceName string) []any {
 		return []any{map[string]any{
@@ -122,6 +129,16 @@ func GenerateAzureEnvironment(
 			"address_prefixes":     []string{mysqlCIDR},
 			"delegation":           delegation("mysql-flexible-server", "Microsoft.DBforMySQL/flexibleServers"),
 		},
+		// Not delegated: azurerm_private_endpoint (used for Managed
+		// Redis, see permissions.go/managed.go's privateEndpoint
+		// helpers) attaches to a plain subnet, unlike the delegated
+		// subnets Flexible Server needs above.
+		tfn + "_redis": map[string]any{
+			"name":                 "redis",
+			"resource_group_name":  fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
+			"virtual_network_name": fmt.Sprintf("${azurerm_virtual_network.%s.name}", tfn),
+			"address_prefixes":     []string{redisCIDR},
+		},
 	}
 
 	resource["azurerm_container_app_environment"] = map[string]any{
@@ -145,6 +162,7 @@ func GenerateAzureEnvironment(
 		"infrastructure_subnet_id":        fmt.Sprintf("${azurerm_subnet.%s_infrastructure.id}", tfn),
 		"postgresql_subnet_id":            fmt.Sprintf("${azurerm_subnet.%s_postgresql.id}", tfn),
 		"mysql_subnet_id":                 fmt.Sprintf("${azurerm_subnet.%s_mysql.id}", tfn),
+		"redis_subnet_id":                 fmt.Sprintf("${azurerm_subnet.%s_redis.id}", tfn),
 		"retain_data_on_destroy":          retainDataOnDestroy,
 	}
 	if len(tags) > 0 {

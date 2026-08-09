@@ -74,7 +74,7 @@
         "template": {
           "container": [
             {
-              "cpu": 0.5,
+              "cpu": 1,
               "env": [],
               "image": "my-worker:latest",
               "memory": "4096Mi",
@@ -112,4 +112,3 @@
     }
   }
 }
-

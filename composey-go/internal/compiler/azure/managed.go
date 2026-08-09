@@ -68,6 +68,88 @@ func privateNetworkingAzure(
 	}
 }
 
+// redisPrivateLinkSubresource and redisPrivateDnsZoneName are Azure
+// Managed Redis's fixed private-link identifiers, confirmed against
+// Microsoft's own private-endpoint DNS reference
+// (learn.microsoft.com/azure/private-link/private-endpoint-dns):
+// private-link resource type Microsoft.Cache/RedisEnterprise,
+// subresource "redisEnterprise", DNS zone privatelink.redis.azure.net.
+const (
+	redisPrivateLinkSubresource = "redisEnterprise"
+	redisPrivateDnsZoneName     = "privatelink.redis.azure.net"
+)
+
+// privateEndpointRedisAzure attaches a private endpoint to redis (and
+// wires the corresponding private DNS zone/link + sets
+// public_network_access to "Disabled") when env.RedisSubnetID is set,
+// added 2026-08-08 (see docs/azure-aws-parity-todo.md's Priority 3
+// Redis/Blob private networking item).
+//
+// Unlike privateNetworkingAzure above (Flexible Server takes
+// delegated_subnet_id/private_dns_zone_id directly on the server
+// resource itself), azurerm_managed_redis has no networking-related
+// attributes/blocks at all beyond public_network_access -- confirmed
+// against the real provider schema, not assumed from the naming
+// symmetry with the database case. Private connectivity is therefore a
+// genuinely separate azurerm_private_endpoint resource, attached to a
+// plain (non-delegated) subnet.
+//
+// Environments predating env.RedisSubnetID (or that never set it) have
+// no subnet to use, so the cache falls back to public network access --
+// same fallback convention as privateNetworkingAzure, not a hard error.
+func privateEndpointRedisAzure(
+	resources *models.AzureResources,
+	env *models.AzureEnvironment,
+	app *models.Application,
+	service *models.Service,
+	cacheKey string,
+	redis *models.ManagedRedis,
+	getName func(string) string,
+	tags map[string]string,
+) {
+	if env.RedisSubnetID == nil || *env.RedisSubnetID == "" {
+		return
+	}
+
+	zoneKey := "redis"
+	if _, exists := resources.PrivateDnsZone[zoneKey]; !exists {
+		resources.PrivateDnsZone[zoneKey] = models.PrivateDnsZone{
+			Name:              redisPrivateDnsZoneName,
+			ResourceGroupName: env.Name,
+			Tags:              tags,
+		}
+		resources.PrivateDnsZoneVirtualNetworkLink[zoneKey] = models.PrivateDnsZoneVirtualNetworkLink{
+			Name:               fmt.Sprintf("%s-redis-link", app.Name),
+			ResourceGroupName:  env.Name,
+			PrivateDnsZoneName: fmt.Sprintf("${azurerm_private_dns_zone.%s.name}", zoneKey),
+			VirtualNetworkID:   env.VnetID,
+			Tags:               tags,
+		}
+	}
+
+	peKey := service.Name + "_redis_pe"
+	resources.PrivateEndpoint[peKey] = models.PrivateEndpoint{
+		Name:              getName(service.Name + "-redis-pe"),
+		ResourceGroupName: env.Name,
+		Location:          env.Region,
+		SubnetID:          *env.RedisSubnetID,
+		PrivateServiceConnection: []models.PrivateServiceConnection{{
+			Name:                        getName(service.Name + "-redis-psc"),
+			IsManualConnection:          false,
+			PrivateConnectionResourceID: fmt.Sprintf("${azurerm_managed_redis.%s.id}", cacheKey),
+			SubresourceNames:            []string{redisPrivateLinkSubresource},
+		}},
+		PrivateDnsZoneGroup: &models.PrivateEndpointDnsZoneGroup{
+			Name:              "default",
+			PrivateDnsZoneIDs: []string{fmt.Sprintf("${azurerm_private_dns_zone.%s.id}", zoneKey)},
+		},
+		Tags: tags,
+	}
+
+	disabled := "Disabled"
+	redis.PublicNetworkAccess = &disabled
+}
+
 // isMySQLImage classifies a database service's image the same way
 // _infer_databases does: "mysql" or "mariadb" in the image name (and not
 // "postgres", which would otherwise misclassify a hypothetical
@@ -318,6 +400,9 @@ func inferCachesAzure(
 			},
 			Tags: tags,
 		}
+
+		privateEndpointRedisAzure(resources, env, app, service, cacheKey, &redis, getName, tags)
+
 		resources.ManagedRedis[cacheKey] = redis
 
 		// The access key hangs off the nested database, not the cluster.

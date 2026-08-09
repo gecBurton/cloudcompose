@@ -111,7 +111,7 @@
         "template": {
           "container": [
             {
-              "cpu": 0.5,
+              "cpu": 1,
               "env": [
                 {
                   "name": "DB_HOST",
@@ -131,7 +131,7 @@
                 }
               ],
               "image": "nginx:latest",
-              "memory": "1Gi",
+              "memory": "2Gi",
               "name": "web"
             }
           ],

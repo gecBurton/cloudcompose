@@ -339,6 +339,44 @@ type PrivateDnsZoneVirtualNetworkLink struct {
 	Tags                map[string]string `json:"tags,omitempty"`
 }
 
+// PrivateEndpoint mirrors azurerm_private_endpoint. Added 2026-08-08 (see
+// docs/azure-aws-parity-todo.md's Priority 3 item on Redis/Blob private
+// networking) for Azure Managed Redis: unlike PostgreSQL/MySQL Flexible
+// Server (which take a delegated_subnet_id/private_dns_zone_id directly
+// on the server resource itself), Managed Redis's private connectivity
+// is a genuinely separate resource -- azurerm_managed_redis has no
+// networking-related attributes/blocks at all beyond public_network_access
+// (confirmed against the real provider schema). A private endpoint
+// attaches to a plain (non-delegated) subnet and references the target
+// resource by ID + subresource name.
+type PrivateEndpoint struct {
+	Name                     string                       `json:"name"`
+	ResourceGroupName        string                       `json:"resource_group_name"`
+	Location                 string                       `json:"location"`
+	SubnetID                 string                       `json:"subnet_id"`
+	PrivateServiceConnection []PrivateServiceConnection   `json:"private_service_connection"`
+	PrivateDnsZoneGroup      *PrivateEndpointDnsZoneGroup `json:"private_dns_zone_group,omitempty"`
+	Tags                     map[string]string            `json:"tags,omitempty"`
+}
+
+// PrivateServiceConnection is the `private_service_connection` block:
+// which resource this endpoint connects to.
+type PrivateServiceConnection struct {
+	Name                        string   `json:"name"`
+	IsManualConnection          bool     `json:"is_manual_connection"`
+	PrivateConnectionResourceID string   `json:"private_connection_resource_id"`
+	SubresourceNames            []string `json:"subresource_names,omitempty"`
+}
+
+// PrivateEndpointDnsZoneGroup is the `private_dns_zone_group` block:
+// which private DNS zone(s) get an A-record for this endpoint's IP,
+// so the resource's own FQDN resolves privately from inside the VNet
+// without any application-level configuration change.
+type PrivateEndpointDnsZoneGroup struct {
+	Name              string   `json:"name"`
+	PrivateDnsZoneIDs []string `json:"private_dns_zone_ids"`
+}
+
 type KeyVault struct {
 	Name                     string            `json:"name"`
 	ResourceGroupName        string            `json:"resource_group_name"`
@@ -514,13 +552,26 @@ func NewFrontDoorRoute() FrontDoorRoute {
 // DefaultDatabase block rather than on the cluster: port and
 // primary_access_key both hang off it.
 type ManagedRedis struct {
-	Name                    string            `json:"name"`
-	ResourceGroupName       string            `json:"resource_group_name"`
-	Location                string            `json:"location"`
-	SkuName                 string            `json:"sku_name"`
-	HighAvailabilityEnabled bool              `json:"high_availability_enabled"`
-	DefaultDatabase         []map[string]any  `json:"default_database"`
-	Tags                    map[string]string `json:"tags,omitempty"`
+	Name                    string           `json:"name"`
+	ResourceGroupName       string           `json:"resource_group_name"`
+	Location                string           `json:"location"`
+	SkuName                 string           `json:"sku_name"`
+	HighAvailabilityEnabled bool             `json:"high_availability_enabled"`
+	DefaultDatabase         []map[string]any `json:"default_database"`
+
+	// PublicNetworkAccess is a string ("Enabled"/"Disabled"), matching
+	// azurerm_managed_redis's own attribute name/type exactly -- unlike
+	// the two Flexible Server resources, Managed Redis has only ever had
+	// one shape for this (no bool-vs-string inconsistency to account
+	// for here, since Managed Redis didn't exist as a *composey* target
+	// before this field was added, 2026-08-08). Omitted (nil) when
+	// public access is genuinely wanted, since the provider's own
+	// default is already "Enabled" -- only set explicitly to "Disabled"
+	// once a private endpoint exists, mirroring MySQLFlexibleServer's
+	// own "only set when it deviates from the default" convention.
+	PublicNetworkAccess *string `json:"public_network_access,omitempty"`
+
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 // NewManagedRedis returns a ManagedRedis with Python's own
@@ -557,6 +608,7 @@ type AzureResources struct {
 	MySQLFlexibleDatabase            map[string]MySQLFlexibleDatabase            `json:"azurerm_mysql_flexible_database,omitempty"`
 	PrivateDnsZone                   map[string]PrivateDnsZone                   `json:"azurerm_private_dns_zone,omitempty"`
 	PrivateDnsZoneVirtualNetworkLink map[string]PrivateDnsZoneVirtualNetworkLink `json:"azurerm_private_dns_zone_virtual_network_link,omitempty"`
+	PrivateEndpoint                  map[string]PrivateEndpoint                  `json:"azurerm_private_endpoint,omitempty"`
 	KeyVault                         map[string]KeyVault                         `json:"azurerm_key_vault,omitempty"`
 	KeyVaultSecret                   map[string]KeyVaultSecret                   `json:"azurerm_key_vault_secret,omitempty"`
 	UserAssignedIdentity             map[string]UserAssignedIdentity             `json:"azurerm_user_assigned_identity,omitempty"`
@@ -600,6 +652,7 @@ func NewAzureResources() *AzureResources {
 		MySQLFlexibleDatabase:            map[string]MySQLFlexibleDatabase{},
 		PrivateDnsZone:                   map[string]PrivateDnsZone{},
 		PrivateDnsZoneVirtualNetworkLink: map[string]PrivateDnsZoneVirtualNetworkLink{},
+		PrivateEndpoint:                  map[string]PrivateEndpoint{},
 		KeyVault:                         map[string]KeyVault{},
 		KeyVaultSecret:                   map[string]KeyVaultSecret{},
 		UserAssignedIdentity:             map[string]UserAssignedIdentity{},

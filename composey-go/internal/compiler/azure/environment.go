@@ -47,6 +47,7 @@ func LoadAzureEnvironment(dir string) (*models.AzureEnvironment, error) {
 	env.InfrastructureSubnetID, _ = raw["infrastructure_subnet_id"].(string)
 	env.PostgresqlSubnetID = shared.ToStringPtr(raw["postgresql_subnet_id"])
 	env.MysqlSubnetID = shared.ToStringPtr(raw["mysql_subnet_id"])
+	env.RedisSubnetID = shared.ToStringPtr(raw["redis_subnet_id"])
 	env.ContainerRegistryName = shared.ToStringPtr(raw["container_registry_name"])
 	env.PostgresqlServerID = shared.ToStringPtr(raw["postgresql_server_id"])
 	env.UserAssignedIdentityID = shared.ToStringPtr(raw["user_assigned_identity_id"])

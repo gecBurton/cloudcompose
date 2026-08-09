@@ -367,3 +367,182 @@ func TestInferContainerApps_RequestsPerTargetMetricStillUsesHttpScaleRule(t *tes
 		t.Errorf("expected 1 http_scale_rule with concurrent_requests=200, got %+v", containerApp.Template.HTTPScaleRule)
 	}
 }
+
+// Tests for docs/azure-aws-parity-todo.md's Priority 3 Redis private
+// networking item (added 2026-08-08).
+
+func TestInferCachesAzure_NoPrivateEndpointWithoutRedisSubnetID(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "myapp",
+		Services: []models.Service{
+			{Name: "cache", Capability: models.CapabilityCache, Size: models.ServiceSizeSmall},
+		},
+	}
+	env := azureTestEnv() // RedisSubnetID left unset
+	resources := models.NewAzureResources()
+
+	inferCachesAzure(resources, app, &env, minimalGetName("prod", "myapp"), nil)
+
+	redis, ok := resources.ManagedRedis["cache_redis"]
+	if !ok {
+		t.Fatalf("expected a ManagedRedis resource")
+	}
+	if redis.PublicNetworkAccess != nil {
+		t.Errorf("expected PublicNetworkAccess to be nil (public access, the provider default) when no subnet is configured, got %v", *redis.PublicNetworkAccess)
+	}
+	if len(resources.PrivateEndpoint) != 0 {
+		t.Errorf("expected no PrivateEndpoint resources without env.RedisSubnetID, got %d", len(resources.PrivateEndpoint))
+	}
+}
+
+func TestInferCachesAzure_CreatesPrivateEndpointWithRedisSubnetID(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "myapp",
+		Services: []models.Service{
+			{Name: "cache", Capability: models.CapabilityCache, Size: models.ServiceSizeSmall},
+		},
+	}
+	env := azureTestEnv()
+	subnetID := "/subscriptions/123/subnets/redis"
+	env.RedisSubnetID = &subnetID
+	resources := models.NewAzureResources()
+
+	inferCachesAzure(resources, app, &env, minimalGetName("prod", "myapp"), nil)
+
+	redis, ok := resources.ManagedRedis["cache_redis"]
+	if !ok {
+		t.Fatalf("expected a ManagedRedis resource")
+	}
+	if redis.PublicNetworkAccess == nil || *redis.PublicNetworkAccess != "Disabled" {
+		t.Errorf("expected PublicNetworkAccess = Disabled once a private endpoint exists, got %v", redis.PublicNetworkAccess)
+	}
+
+	pe, ok := resources.PrivateEndpoint["cache_redis_pe"]
+	if !ok {
+		t.Fatalf("expected a PrivateEndpoint resource, got keys %v", keysOf(resources.PrivateEndpoint))
+	}
+	if pe.SubnetID != subnetID {
+		t.Errorf("SubnetID = %q, want %q", pe.SubnetID, subnetID)
+	}
+	if len(pe.PrivateServiceConnection) != 1 {
+		t.Fatalf("expected 1 private_service_connection, got %d", len(pe.PrivateServiceConnection))
+	}
+	psc := pe.PrivateServiceConnection[0]
+	if psc.PrivateConnectionResourceID != "${azurerm_managed_redis.cache_redis.id}" {
+		t.Errorf("private_connection_resource_id = %q, want a reference to the managed redis resource", psc.PrivateConnectionResourceID)
+	}
+	if len(psc.SubresourceNames) != 1 || psc.SubresourceNames[0] != "redisEnterprise" {
+		t.Errorf("subresource_names = %v, want [redisEnterprise]", psc.SubresourceNames)
+	}
+
+	if _, ok := resources.PrivateDnsZone["redis"]; !ok {
+		t.Errorf("expected a private DNS zone for redis")
+	}
+	if _, ok := resources.PrivateDnsZoneVirtualNetworkLink["redis"]; !ok {
+		t.Errorf("expected a private DNS zone VNet link for redis")
+	}
+}
+
+func TestInferCachesAzure_SharedPrivateDnsZoneForMultipleCaches(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "myapp",
+		Services: []models.Service{
+			{Name: "cache1", Capability: models.CapabilityCache, Size: models.ServiceSizeSmall},
+			{Name: "cache2", Capability: models.CapabilityCache, Size: models.ServiceSizeSmall},
+		},
+	}
+	env := azureTestEnv()
+	subnetID := "/subscriptions/123/subnets/redis"
+	env.RedisSubnetID = &subnetID
+	resources := models.NewAzureResources()
+
+	inferCachesAzure(resources, app, &env, minimalGetName("prod", "myapp"), nil)
+
+	if len(resources.PrivateDnsZone) != 1 {
+		t.Errorf("expected exactly 1 shared private DNS zone for 2 caches, got %d", len(resources.PrivateDnsZone))
+	}
+	if len(resources.PrivateEndpoint) != 2 {
+		t.Errorf("expected 2 private endpoints (one per cache), got %d", len(resources.PrivateEndpoint))
+	}
+}
+
+// Tests for docs/azure-aws-parity-todo.md's Priority 4 size-ceiling
+// item (added 2026-08-08).
+
+func TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap(t *testing.T) {
+	t.Parallel()
+	// "large" now derives from shared.SizeMappings (4096 CPU units =
+	// 4.0 vCPU), which exceeds Container Apps' Consumption tier limit
+	// of 2 vCPU per container -- this is exactly what the "scaling"
+	// example's web service hits, which is why it was removed from
+	// azureGoldenExamples rather than golden-tested (there's no valid
+	// Azure output to compare against; the correct behavior is a
+	// rejection, not a value).
+	service := &models.Service{Name: "web", Size: models.ServiceSizeLarge}
+	_, err := getCPUCoresAzure(service)
+	if err == nil {
+		t.Fatalf("expected an error for size: large (4 vCPU > 2 vCPU cap)")
+	}
+}
+
+func TestGetCPUCoresAzure_RejectsExplicitCPUAboveConsumptionCap(t *testing.T) {
+	t.Parallel()
+	cpu := 3072 // 3.0 vCPU
+	service := &models.Service{Name: "web", CPU: &cpu}
+	_, err := getCPUCoresAzure(service)
+	if err == nil {
+		t.Fatalf("expected an error for an explicit cpu: override above the 2 vCPU cap")
+	}
+}
+
+func TestGetCPUCoresAzure_AllowsSizesWithinCap(t *testing.T) {
+	t.Parallel()
+	for _, size := range []models.ServiceSize{models.ServiceSizeSmall, models.ServiceSizeMedium} {
+		service := &models.Service{Name: "web", Size: size}
+		cores, err := getCPUCoresAzure(service)
+		if err != nil {
+			t.Errorf("size %q should be within the cap, got error: %v", size, err)
+		}
+		if cores <= 0 {
+			t.Errorf("size %q returned non-positive cores: %v", size, cores)
+		}
+	}
+}
+
+func TestGetMemoryGBAzure_RejectsSizeAboveConsumptionCap(t *testing.T) {
+	t.Parallel()
+	service := &models.Service{Name: "web", Size: models.ServiceSizeLarge}
+	_, err := getMemoryGBAzure(service)
+	if err == nil {
+		t.Fatalf("expected an error for size: large (8Gi > 4Gi cap)")
+	}
+}
+
+func TestGetMemoryGBAzure_RejectsExplicitMemoryAboveConsumptionCap(t *testing.T) {
+	t.Parallel()
+	mem := 5120 // 5Gi
+	service := &models.Service{Name: "web", Memory: &mem}
+	_, err := getMemoryGBAzure(service)
+	if err == nil {
+		t.Fatalf("expected an error for an explicit memory: override above the 4Gi cap")
+	}
+}
+
+func TestGetCPUCoresAzure_MediumMatchesAwsSizeMappings(t *testing.T) {
+	t.Parallel()
+	// Regression test for the real, already-drifted duplicate found
+	// while consolidating the size table (2026-08-08): Azure's own
+	// table previously defined medium as 0.5 vCPU where AWS's medium
+	// (shared.SizeMappings) is 1.0 vCPU.
+	service := &models.Service{Name: "web", Size: models.ServiceSizeMedium}
+	cores, err := getCPUCoresAzure(service)
+	if err != nil {
+		t.Fatalf("getCPUCoresAzure failed: %v", err)
+	}
+	if cores != 1.0 {
+		t.Errorf("medium CPU = %v, want 1.0 (matching shared.SizeMappings[\"medium\"].CPU / 1024)", cores)
+	}
+}

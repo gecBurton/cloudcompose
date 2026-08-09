@@ -84,7 +84,11 @@ file" below for why this replaced a generated file.
 Mirrors the shape the Terraform `output "environment"` block already
 uses (common fields + provider-specific fields), which is worth
 preserving rather than inventing a different convention for input vs.
-output:
+output. Real, `terraform validate`-checked examples for all three
+clouds exist at `examples/hello/environment.yaml` (AWS),
+`examples/hello/environment.azure.yaml`, and
+`examples/hello/environment.gcp.yaml` — see `examples/README.md` for
+how they fit into the overall `init`/`main` flow:
 
 ```yaml
 # environment.yaml (AWS example)

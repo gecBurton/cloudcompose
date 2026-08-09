@@ -292,7 +292,7 @@ library).
 4. Add unit tests, including a real-boundary test against an actual
    `examples/` compose file where one exists that exercises it.
 5. Consider adding to `examples/` (with a matching
-   `expected/main.tf.json`) if this is a materially new scenario.
+   `expected/aws/main.tf.json`) if this is a materially new scenario.
 
 ### Modifying the Semantic Model
 

@@ -187,7 +187,21 @@ log "Building composey-go…"
 log "Creating Azure environment '$NAME' with composey init…"
 rm -rf "$ENV_DIR"
 cd "$ROOT"
-"$COMPOSEY" init --provider azure --name "$NAME" --region "$REGION" --output "$ENV_DIR"
+
+# Use the authored environment.azure.yaml sitting next to the compose file
+# if one exists (see docs/authored-environment-config.md) -- named
+# environment.azure.yaml, not environment.yaml, since an example directory
+# can have both an AWS and an Azure authored config side by side.
+# --name/--region still win over the file's own values, since this
+# script's NAME/REGION are run-specific. Falls back to flags-only exactly
+# as before for any example with no environment.azure.yaml of its own.
+ENV_CONFIG="$(dirname "$COMPOSE")/environment.azure.yaml"
+if [[ -f "$ENV_CONFIG" ]]; then
+  log "Using authored environment config: $ENV_CONFIG"
+  "$COMPOSEY" init -f "$ENV_CONFIG" --provider azure --name "$NAME" --region "$REGION" --output "$ENV_DIR"
+else
+  "$COMPOSEY" init --provider azure --name "$NAME" --region "$REGION" --output "$ENV_DIR"
+fi
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"

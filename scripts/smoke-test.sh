@@ -153,7 +153,22 @@ log "Building composey-go…"
 log "Creating environment '$NAME' with composey init…"
 rm -rf "$ENV_DIR"
 cd "$ROOT"
-"$COMPOSEY" init --name "$NAME" --region "$STATE_REGION" --output "$ENV_DIR"
+
+# Use the authored environment.yaml sitting next to the compose file if one
+# exists (see docs/authored-environment-config.md) -- --name/--region are
+# still passed explicitly and win over the file's own values (per
+# composey init's file+override precedence), since this script's NAME/
+# STATE_REGION are run-specific, not something the committed example file
+# should hardcode. Falls back to flags-only exactly as before for any
+# example with no environment.yaml of its own, so this isn't a breaking
+# change for the rest of the example suite.
+ENV_CONFIG="$(dirname "$COMPOSE")/environment.yaml"
+if [[ -f "$ENV_CONFIG" ]]; then
+  log "Using authored environment config: $ENV_CONFIG"
+  "$COMPOSEY" init -f "$ENV_CONFIG" --name "$NAME" --region "$STATE_REGION" --output "$ENV_DIR"
+else
+  "$COMPOSEY" init --name "$NAME" --region "$STATE_REGION" --output "$ENV_DIR"
+fi
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"

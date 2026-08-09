@@ -299,9 +299,16 @@ runtime.
 | **Azure** | ✅ Verified against real deployments (see [`docs/azure-todo.md`](docs/azure-todo.md)) | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
 | **GCP** | ⚠️ Compiles and passes structural tests; not yet verified against a real deployment or covered by golden-file regression tests | Cloud Run | Cloud SQL | Memorystore | Cloud Storage | ❌ not implemented | ❌ not implemented |
 
-GCP support is intentionally less mature than AWS/Azure — see `plan.md`'s
-Phase 4 section for why, and `AGENTS.md`'s "GCP has no committed golden
+GCP support is intentionally less mature than AWS/Azure — see `plan.md`
+for why, and `AGENTS.md`'s "GCP has no committed golden
 files" note for the testing gap specifically.
+
+Azure has closed most of its feature/security gaps with AWS (RBAC and
+Key Vault-backed secrets, compose `secrets:`/platform `config:` support,
+database sizing, autoscaling) — see
+[`docs/azure-aws-parity-todo.md`](docs/azure-aws-parity-todo.md) for the
+full, actively-maintained tracker of what's done and what's still open
+(a WAF equivalent and a couple of smaller items remain).
 
 ---
 

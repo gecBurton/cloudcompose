@@ -238,7 +238,7 @@ var compileGcpCmd = &cobra.Command{
 		"in one step, mirroring compile-aws/compile-azure's design for the " +
 		"same reason. Ported with lighter verification than the AWS/Azure " +
 		"paths: GCP has no golden examples or dedicated Python test suite " +
-		"to check against (see plan.md's Phase 4 GCP section).",
+		"to check against (see plan.md -- GCP was ported at deliberately lighter rigor).",
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		filePath := args[0]

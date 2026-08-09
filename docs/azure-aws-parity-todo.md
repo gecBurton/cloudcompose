@@ -285,12 +285,13 @@ been latent and untested since MySQL support was first ported.
   (`semantic.go:142-146`) claims to be "the single source of truth for
   network security" in its own docstring, but is enforced on none of the
   three clouds consistently (AWS via security groups; Azure not at all;
-  GCP doesn't emit a `roles/run.invoker` binding either, per
-  `docs/spikes/gcp/README.md`'s own 2026-08-07 status note). Worth
+  GCP doesn't emit a `roles/run.invoker` binding either — confirmed
+  directly in `gcp/infer.go`, not via a stale doc annotation). Worth
   deciding, across all three clouds at once, whether this docstring claim
   should be qualified (best-effort per target) or actually built out for
   Azure/GCP — see `docs/spikes/azure/README.md`'s finding #1 and
-  `docs/spikes/gcp/README.md`'s reversal of it, both still open.
+  `docs/spikes/gcp/README.md`'s reversal of it for the original design
+  reasoning, both still open in code.
 - [ ] **Generalize Azure's connection-string rendering** to use something
   closer to AWS's `ResolveValue`/`shared.URLPattern` general substitution
   (`aws/connections.go:57-125`) instead of the hardcoded Postgres-shaped
@@ -302,7 +303,8 @@ been latent and untested since MySQL support was first ported.
   `azure/managed.go:22-69`, when the environment has the subnet IDs set).
   No `Storage Blob Data Contributor`-equivalent role assignment for blob
   access either — this was the spike's own explicitly recommended design
-  (`docs/spikes/azure/README.md:line 153` area) and was never built.
+  ("Azure ships the named access tiers" in `docs/spikes/azure/README.md`)
+  and was never built.
   Naturally combines with the Priority 1 RBAC work.
 
   **RBAC half was already done in the Priority 1 PR** (`grantManagedServicePermissions`
@@ -445,8 +447,9 @@ been latent and untested since MySQL support was first ported.
 ## Explicitly not a gap (architectural differences confirmed intentional)
 
 - Azure's shared-server-per-engine database topology (vs AWS's
-  dedicated-instance-per-service) — documented as an intentional design
-  choice in `plan.md`, not an oversight. Real capability tradeoff
+  dedicated-instance-per-service) — an intentional design choice, not an
+  oversight (see `azure/managed.go`'s own doc comment on
+  `largestServiceSize`). Real capability tradeoff
   (services sharing an engine can't get independent HA/sizing/maintenance
   windows) but not something to "fix" without a product decision to
   change the topology itself.

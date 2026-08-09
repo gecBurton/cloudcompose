@@ -25,7 +25,7 @@ func gcpTestEnv() models.GcpEnvironment {
 // block -- a lighter bar than AWS/Azure's byte-identical golden
 // comparisons, deliberately: GCP has no golden examples and essentially
 // no dedicated Python test suite to check against in the first place (see
-// plan.md's Phase 4 GCP section), so this is a smoke test, not a coverage
+// plan.md -- GCP was ported at deliberately lighter rigor), so this is a smoke test, not a coverage
 // claim. Byte-identity against live Python runs for these same examples
 // was checked manually during the port (2026-08-06, see the port's
 // session notes), but not preserved as a golden-file test the way AWS/

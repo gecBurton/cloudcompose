@@ -10,9 +10,11 @@
 > to code. The authored-input half of this doc (`environment.yaml`, the
 > schema, `composey init`'s behavior) is unchanged by that revision.
 >
-> Supersedes `docs/revised-design-env-init.md`. That doc's two-step
-> `init`/`main` split is unchanged and still correct — this doc revises
-> what `init` takes as *input*, not the overall command shape.
+> The two-step `init`/`main` command split this doc assumes throughout
+> (bootstrap an environment once, deploy apps against it many times) is
+> unchanged from how `composey init`/`composey main` actually work today
+> — this doc only revises what `init` takes as *input*, not the overall
+> command shape.
 
 ## The problem
 
@@ -302,8 +304,7 @@ all? It doesn't:
 
 ## What doesn't change
 
-- The overall two-step `init` → `apply` → `main` flow from
-  `docs/revised-design-env-init.md`.
+- The overall two-step `init` → `apply` → `main` flow.
 - `main` continues to resolve per-app deployment config from
   `docker-compose.yml` + `x-composey` — untouched by any of this.
 - Multiple apps (compose files) can point at the same environment

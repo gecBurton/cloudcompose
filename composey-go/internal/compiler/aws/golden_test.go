@@ -12,9 +12,9 @@ import (
 // (networking, service discovery, managed services, compute, scheduling,
 // edge, permissions) claims to fully cover -- i.e. every AWS golden example
 // that does not depend on anything still unported. Kept as an explicit
-// list rather than globbing examples/*/expected/main.tf.json so that adding
-// an Azure/GCP example later doesn't silently start asserting AWS parity
-// against it.
+// list rather than globbing examples/*/expected/aws/main.tf.json so that
+// adding an Azure/GCP example later doesn't silently start asserting AWS
+// parity against it.
 var awsGoldenExamples = []string{
 	"hello",
 	"flask",
@@ -43,11 +43,18 @@ var awsGoldenExamples = []string{
 // that a structural diff would still catch as different types).
 //
 // This test intentionally reads the already-committed
-// examples/<name>/expected/main.tf.json golden files (produced by Python)
-// rather than shelling out to Python here, since composey-go has no Python
-// runtime dependency; the two-implementation comparison in the earlier
-// hardening phase's session already verified these golden files are
-// current for the Python side.
+// examples/<name>/expected/aws/main.tf.json golden files (produced by
+// Python) rather than shelling out to Python here, since composey-go has
+// no Python runtime dependency; the two-implementation comparison in the
+// earlier hardening phase's session already verified these golden files
+// are current for the Python side.
+//
+// Moved from the bare examples/<name>/expected/main.tf.json to
+// expected/aws/main.tf.json on 2026-08-09, for symmetry with Azure/GCP's
+// own expected/{azure,gcp}/main.tf.json subfolders: AWS being first
+// meant it originally got the bare path with no cloud name at all, which
+// read as though AWS were somehow the default/canonical cloud rather
+// than just the first one built.
 func TestInferAWS_GoldenExamplesByteIdentical(t *testing.T) {
 	for _, name := range awsGoldenExamples {
 		name := name
@@ -55,14 +62,14 @@ func TestInferAWS_GoldenExamplesByteIdentical(t *testing.T) {
 			t.Parallel()
 
 			composePath := filepath.Join("../../../../examples", name, "compose.yml")
-			expectedPath := filepath.Join("../../../../examples", name, "expected", "main.tf.json")
+			expectedPath := filepath.Join("../../../../examples", name, "expected", "aws", "main.tf.json")
 
 			if _, err := os.Stat(composePath); err != nil {
 				t.Skipf("no compose.yml for %s", name)
 			}
 			expectedRaw, err := os.ReadFile(expectedPath)
 			if err != nil {
-				t.Skipf("no expected/main.tf.json for %s: %v", name, err)
+				t.Skipf("no expected/aws/main.tf.json for %s: %v", name, err)
 			}
 
 			composeApp, err := shared.ParseCompose(composePath)

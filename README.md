@@ -127,7 +127,8 @@ resulting facts (VPC ID, ALB ARN) directly from Terraform's own state via
 Re-running `composey init -f prod-infrastructure/environment.yaml` picks
 up that file as input; any flag passed explicitly overrides its value
 for that run. See `docs/authored-environment-config.md` for the full
-design.
+design, or `examples/README.md` for a real, runnable walkthrough using
+`examples/hello`.
 
 ### Deploy to AWS
 

@@ -1,0 +1,13 @@
+# Authored environment.yaml for the "hello" example, GCP variant. See
+# examples/hello/environment.yaml (the AWS version) for the full
+# explanation of what this file is and isn't.
+provider: gcp
+name: demo
+region: us-central1
+retain_data_on_destroy: true
+tags:
+  team: platform
+
+gcp:
+  vpc_cidr: 10.0.0.0/16
+  project_id: my-gcp-project-id

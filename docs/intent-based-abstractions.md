@@ -74,7 +74,7 @@ services:
 
 ### 3. Identity Intent
 
-Composey infers what a service needs to access from its declared
+Cloud Compose Compiler infers what a service needs to access from its declared
 connections and capability — there's no explicit `x-composey.access` block
 in the compose file; the compiler works this out from `depends_on` plus
 each dependency's `capability`.

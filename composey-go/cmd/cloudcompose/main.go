@@ -13,7 +13,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "composey",
+	Use:   "cloudcompose",
 	Short: "Docker Compose to Terraform compiler",
 	Long:  "Compile Docker Compose files to Terraform JSON for AWS, Azure, and GCP",
 }
@@ -46,7 +46,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version number",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("composey " + rootVersion + " (Go)")
+		fmt.Println("cloudcompose " + rootVersion + " (Go)")
 	},
 }
 
@@ -303,11 +303,11 @@ func init() {
 
 	normalizeCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
 	compileAWSCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
-	compileAWSCmd.Flags().StringP("env", "e", "", "Path to the AWS environment directory created by `composey init` (required)")
+	compileAWSCmd.Flags().StringP("env", "e", "", "Path to the AWS environment directory created by `cloudcompose init` (required)")
 	compileAzureCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
-	compileAzureCmd.Flags().StringP("env", "e", "", "Path to the Azure environment directory created by `composey init` (required)")
+	compileAzureCmd.Flags().StringP("env", "e", "", "Path to the Azure environment directory created by `cloudcompose init` (required)")
 	compileGcpCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
-	compileGcpCmd.Flags().StringP("env", "e", "", "Path to the GCP environment directory created by `composey init` (required)")
+	compileGcpCmd.Flags().StringP("env", "e", "", "Path to the GCP environment directory created by `cloudcompose init` (required)")
 }
 
 func main() {

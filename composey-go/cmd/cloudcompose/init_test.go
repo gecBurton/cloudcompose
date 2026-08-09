@@ -26,8 +26,8 @@ func buildComposeyBinary(t *testing.T) string {
 }
 
 // TestInit_MissingFileFailsWithHelpfulMessage mirrors
-// docs/authored-environment-config.md's "composey init behavior" step 3:
-// composey init has no flags-only fallback -- a missing environment.yaml
+// docs/authored-environment-config.md's "cloudcompose init behavior" step 3:
+// cloudcompose init has no flags-only fallback -- a missing environment.yaml
 // is an error naming the missing path and pointing at
 // examples/hello/environment.yaml, not a silent flags-based bootstrap.
 func TestInit_MissingFileFailsWithHelpfulMessage(t *testing.T) {
@@ -50,7 +50,7 @@ func TestInit_MissingFileFailsWithHelpfulMessage(t *testing.T) {
 	}
 }
 
-// TestInit_NoDecisionFlags confirms composey init's flag set really is
+// TestInit_NoDecisionFlags confirms cloudcompose init's flag set really is
 // just -f/-o now -- a regression test for the flag removal described in
 // docs/authored-environment-config.md's "Revision 2: no flags either".
 func TestInit_NoDecisionFlags(t *testing.T) {
@@ -60,7 +60,7 @@ func TestInit_NoDecisionFlags(t *testing.T) {
 	cmd := exec.Command(bin, "init", "--help")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("composey init --help failed: %v\n%s", err, out)
+		t.Fatalf("cloudcompose init --help failed: %v\n%s", err, out)
 	}
 
 	for _, removedFlag := range []string{
@@ -69,22 +69,22 @@ func TestInit_NoDecisionFlags(t *testing.T) {
 		"--project-id", "--domain", "--retain-data", "--tags",
 	} {
 		if contains(string(out), removedFlag) {
-			t.Errorf("expected %s to have been removed from composey init, but it's still in --help output:\n%s", removedFlag, out)
+			t.Errorf("expected %s to have been removed from cloudcompose init, but it's still in --help output:\n%s", removedFlag, out)
 		}
 	}
 	for _, keptFlag := range []string{"-f, --file", "-o, --output"} {
 		if !contains(string(out), keptFlag) {
-			t.Errorf("expected %s in composey init --help output, got:\n%s", keptFlag, out)
+			t.Errorf("expected %s in cloudcompose init --help output, got:\n%s", keptFlag, out)
 		}
 	}
 }
 
-// TestInit_RealAwsExampleProducesValidManifest exercises composey init
+// TestInit_RealAwsExampleProducesValidManifest exercises cloudcompose init
 // end-to-end against the real, committed examples/hello/environment.yaml
 // -- the same file examples/README.md's walkthrough uses -- and checks
 // the resulting main.tf.json is well-formed. Does not run `terraform
 // validate` here (that's covered manually/in CI smoke tests against real
-// cloud credentials); this only confirms composey init itself succeeds
+// cloud credentials); this only confirms cloudcompose init itself succeeds
 // and writes both expected files.
 func TestInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 	t.Parallel()
@@ -102,7 +102,7 @@ func TestInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 	cmd := exec.Command(bin, "init", "-f", envFile, "-o", outDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("composey init failed: %v\n%s", err, out)
+		t.Fatalf("cloudcompose init failed: %v\n%s", err, out)
 	}
 
 	for _, want := range []string{"main.tf.json", "environment.yaml"} {

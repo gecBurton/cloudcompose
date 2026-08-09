@@ -8,4 +8,4 @@ test:
 	cd composey-go && go test ./...
 
 build:
-	cd composey-go && go build -o composey ./cmd/composey
+	cd composey-go && go build -o cloudcompose ./cmd/cloudcompose

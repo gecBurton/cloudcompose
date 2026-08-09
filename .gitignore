@@ -187,10 +187,8 @@ __marimo__/
 build/*/backend_ci.tf
 bootstrap/backend_ci.tf
 # Go build artifacts
-composey-go/composey
-composey-go/composey.exe
-composey-go/composey-go
-composey-go/composey-go.exe
+composey-go/cloudcompose
+composey-go/cloudcompose.exe
 composey-go/cmd/schema-check/schema-check
 composey-go/schema-check
 *.test

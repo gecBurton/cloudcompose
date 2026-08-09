@@ -1,11 +1,12 @@
-# Composey: Agent Development Guide
+# Cloud Compose Compiler: Agent Development Guide
 
 ## Project Overview
 
-Composey is a Docker Compose to Terraform compiler that provides a
-PaaS-like deployment experience for AWS, Azure, and GCP. It transforms
-annotated Docker Compose files into cloud infrastructure using
-intent-based abstractions.
+Cloud Compose Compiler (CLI binary: `cloudcompose`; repo/module path still
+`composey` for historical reasons -- see "Naming" below) is a Docker
+Compose to Terraform compiler that provides a PaaS-like deployment
+experience for AWS, Azure, and GCP. It transforms annotated Docker
+Compose files into cloud infrastructure using intent-based abstractions.
 
 The compiler is implemented entirely in Go, in `composey-go/`. There is
 no Python runtime dependency: the codebase migrated incrementally from a
@@ -25,16 +26,33 @@ byte-identical against it for every supported cloud.
   Redis, Blob Storage, Key Vault, Front Door
 - **GCP**: Cloud Run, Cloud SQL, Memorystore, Cloud Storage
 
+## Naming
+
+The product is called **Cloud Compose Compiler** (CLI binary:
+`cloudcompose`). The GitHub repo, Go module path
+(`github.com/gecburton/composey`), and top-level directory are still
+named `composey` -- a leftover from the project's original name (itself
+a play on `compose-x`, no longer the reference point) -- and are staying
+that way for now to avoid rewriting 60+ Go import lines and breaking any
+existing links to the repo for no functional benefit. Everything
+user-facing (the built binary, `cobra.Command.Use` strings, printed
+help/version text, docs, scripts) says `cloudcompose`; everything that's
+purely an internal implementation detail (package/directory names,
+Go identifiers, code comments referencing the old name) was deliberately
+left alone. `x-composey` (the Docker Compose extension key) is also
+unchanged for now -- it's part of the file format users write, a
+separate, larger, still-open decision from the CLI/product rename.
+
 ## Quick Start
 
 ```bash
 cd composey-go
 
 # Build the binary
-go build -o composey ./cmd/composey
+go build -o cloudcompose ./cmd/cloudcompose
 
 # Run the compiler
-./composey main -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
+./cloudcompose main -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
 
 # Run tests
 go test ./...
@@ -50,7 +68,7 @@ Or via the `Makefile` at the repo root (`make build`, `make test`,
 
 ```
 composey-go/
-├── cmd/composey/               # CLI entry point (cobra)
+├── cmd/cloudcompose/            # CLI entry point (cobra)
 │   ├── main.go                 # root command, parse-only/normalize-only
 │   │                            #   subcommands, version
 │   ├── compile.go               # `main` command: parse -> normalize ->
@@ -77,7 +95,7 @@ composey-go/
 │   │                               #   across AWS/Azure
 │   └── compiler/
 │       ├── parser.go              # Re-exports shared.ParseCompose (thin
-│       │                          #   wrappers so cmd/composey's import
+│       │                          #   wrappers so cmd/cloudcompose's import
 │       │                          #   shape didn't need to change)
 │       ├── explain.go             # Inference reporting (--explain flag),
 │       │                          #   cloud-agnostic
@@ -97,7 +115,7 @@ composey-go/
 │       │   ├── terraform_json.go   # Shared Terraform-JSON marshalling
 │       │   │                       #   helpers used by every generator
 │       │   ├── environment_helpers.go
-│       │   │                       # CIDR/tag helpers for `composey init`'s
+│       │   │                       # CIDR/tag helpers for `cloudcompose init`'s
 │       │   │                       #   per-cloud platform generators
 │       │   ├── sorted_keys.go, url_pattern.go, schedule.go
 │       │                           # Small cloud-agnostic helpers used by
@@ -114,7 +132,7 @@ composey-go/
 │       │   ├── environment.go, environment_yaml.go
 │       │   │                       # AWS environment YAML loader/writer
 │       │   └── environment_generator.go
-│       │                           # `composey init`'s AWS platform
+│       │                           # `cloudcompose init`'s AWS platform
 │       │                           #   bootstrap Terraform generator
 │       ├── azure/                 # Azure inference + generation
 │       │   ├── infer.go            # Stage 3 orchestrator (InferAzure)
@@ -129,7 +147,7 @@ composey-go/
 │       │   ├── generator.go        # Stage 4: Terraform JSON generation
 │       │   ├── environment.go      # Azure environment YAML loader
 │       │   └── environment_generator.go
-│       │                           # `composey init`'s Azure platform
+│       │                           # `cloudcompose init`'s Azure platform
 │       │                           #   bootstrap Terraform generator
 │       └── gcp/                   # GCP inference + generation
 │           ├── infer.go            # Stage 3 orchestrator (InferGcp) +
@@ -139,7 +157,7 @@ composey-go/
 │           ├── generator.go        # Stage 4: Terraform JSON generation
 │           ├── environment.go      # GCP environment YAML loader
 │           └── environment_generator.go
-│                                   # `composey init`'s GCP platform
+│                                   # `cloudcompose init`'s GCP platform
 │                                   #   bootstrap Terraform generator
 └── go.mod
 ```
@@ -157,7 +175,7 @@ composey-go/
    by a real compose file having the right shape to expose them.
 3. **Update Constants**: Add magic strings/values to `constants.go`.
 4. **Use `ComposeyError`**: For user-facing errors in the CLI layer
-   (`cmd/composey/`), not `internal/compiler`, which returns plain `error`.
+   (`cmd/cloudcompose/`), not `internal/compiler`, which returns plain `error`.
 5. **Check determinism**: Any new map-shaped or ordered output should get
    a determinism check (run the same input several times, diff the
    output) as it's written, not discovered as a bug later — Go's map
@@ -215,7 +233,7 @@ non-slice) disagrees with the schema's cardinality. It's run in CI
 (`.github/workflows/ci.yml`) so a provider version bump that changes a
 block's cardinality fails the build rather than shipping silently wrong
 JSON. Requires network access and the `terraform` CLI; not part of the
-shipped `composey` binary.
+shipped `cloudcompose` binary.
 
 ### Code Style
 
@@ -306,16 +324,16 @@ library).
 
 ### Adding a CLI Command
 
-1. Add a new `cobra.Command` in `cmd/composey/` (see `compile.go`/`init.go`
+1. Add a new `cobra.Command` in `cmd/cloudcompose/` (see `compile.go`/`init.go`
    for the existing pattern).
 2. Keep business logic in `internal/compiler/` (or its `shared`/`aws`/
    `azure`/`gcp` sub-packages) as plain functions returning
-   `(result, error)`, and keep `cmd/composey/`'s command handlers thin
+   `(result, error)`, and keep `cmd/cloudcompose/`'s command handlers thin
    wrappers that call `os.Exit(1)` on error — this is what makes the
    business logic unit-testable without needing to capture `os.Exit`
    (see `environmentTarget`/`compileTerraform` in `compile.go` for the
    pattern; `init.go` is simple enough — two flags, no decision-merging
-   logic since `composey init` takes its input from `environment.yaml`
+   logic since `cloudcompose init` takes its input from `environment.yaml`
    alone — that it doesn't need the same extraction, but follow
    `compile.go`'s pattern for anything with real branching).
 3. Update README.md with usage.
@@ -361,8 +379,8 @@ library).
 cd composey-go
 
 # Show inference decisions without compiling
-./composey main -f compose.yml --explain
+./cloudcompose main -f compose.yml --explain
 
 # Debug with a full Go panic/stack trace on error
-COMPOSEY_DEBUG=1 ./composey main -f compose.yml -e env.yaml
+CLOUDCOMPOSE_DEBUG=1 ./cloudcompose main -f compose.yml -e env.yaml
 ```

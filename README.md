@@ -1,10 +1,10 @@
-# Composey: Docker Compose for the Cloud
+# Cloud Compose Compiler: Docker Compose for the Cloud
 
 > [!CAUTION]
 > **Project Status: PRE-ALPHA**
 > This project is in early development. APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.
 
-**The Mission**: Running services locally via Docker Compose is easy. Running them on the cloud is unnecessarily hard. Composey bridges that gap.
+**The Mission**: Running services locally via Docker Compose is easy. Running them on the cloud is unnecessarily hard. Cloud Compose Compiler bridges that gap.
 
 **The Experience**:
 ```bash
@@ -12,7 +12,7 @@
 docker compose up
 
 # Production deployment (same file!)
-composey main -f docker-compose.yml -e prod-infrastructure
+cloudcompose main -f docker-compose.yml -e prod-infrastructure
 ```
 
 ---
@@ -56,7 +56,7 @@ You need to understand:
 
 ## The Solution
 
-Composey takes your Docker Compose file and deploys it to the cloud—optimized for each provider, but with zero additional configuration.
+Cloud Compose Compiler takes your Docker Compose file and deploys it to the cloud—optimized for each provider, but with zero additional configuration.
 
 ### What You Write
 
@@ -73,7 +73,7 @@ services:
     image: postgres:15
 ```
 
-### What Composey Does
+### What Cloud Compose Compiler Does
 
 **On AWS**: ECS Fargate + RDS + ALB + Auto-scaling + HTTPS  
 **On Azure**: Container Apps + Flexible Server + Built-in ingress  
@@ -105,29 +105,29 @@ services:
 ```bash
 git clone https://github.com/gecBurton/composey.git
 cd composey/composey-go
-go build -o composey ./cmd/composey
+go build -o cloudcompose ./cmd/cloudcompose
 ```
 
 ### Set Up an Environment
 
 Each cloud target needs a one-time shared environment (VPC, ALB/Container
 Apps Environment, ECS cluster, etc.), created once by a platform team.
-`composey init` takes no decision flags — it reads an authored
+`cloudcompose init` takes no decision flags — it reads an authored
 `environment.yaml` you write yourself (the same way you'd write
 `docker-compose.yml`), not a set of `--flag`s:
 
 ```bash
 cp examples/hello/environment.yaml ./environment.yaml
 # edit name/region/vpc_cidr etc. to taste
-composey init
+cloudcompose init
 cd prod-infrastructure && terraform init && terraform apply
 ```
 
 `environment.yaml` holds the authored decisions that produce the
 infrastructure (region, VPC CIDR, whether to create an ALB — review and
-commit this like you would `docker-compose.yml`). `composey init` writes
+commit this like you would `docker-compose.yml`). `cloudcompose init` writes
 a copy of it into the output directory alongside `main.tf.json`. Once
-`terraform apply` runs, `composey main` reads the resulting facts (VPC
+`terraform apply` runs, `cloudcompose main` reads the resulting facts (VPC
 ID, ALB ARN) directly from Terraform's own state via `terraform output
 -json` — no separate generated file to keep in sync. See
 `docs/authored-environment-config.md` for the full schema, or
@@ -137,7 +137,7 @@ ID, ALB ARN) directly from Terraform's own state via `terraform output
 ### Deploy to AWS
 
 ```bash
-composey main -f docker-compose.yml -e prod-infrastructure
+cloudcompose main -f docker-compose.yml -e prod-infrastructure
 ```
 
 That's it. Your app is live behind the shared load balancer / Container App
@@ -147,8 +147,8 @@ ingress / Cloud Run URL.
 
 ```bash
 cp examples/hello/environment.azure.yaml ./environment.yaml  # or environment.gcp.yaml for GCP
-composey init
-composey main -f docker-compose.yml -e prod-infrastructure
+cloudcompose init
+cloudcompose main -f docker-compose.yml -e prod-infrastructure
 ```
 
 ---
@@ -157,9 +157,9 @@ composey main -f docker-compose.yml -e prod-infrastructure
 
 ### The Magic: Inference
 
-Composey reads your Docker Compose file and infers what you need:
+Cloud Compose Compiler reads your Docker Compose file and infers what you need:
 
-| You Write | Composey Infers |
+| You Write | Cloud Compose Compiler Infers |
 |-----------|-----------------|
 | `image: postgres` | Managed database (RDS, Cloud SQL, etc.) |
 | `image: redis` | Managed cache (ElastiCache, Redis Cache) |
@@ -194,7 +194,7 @@ services:
 
 **Deploy to AWS:**
 ```bash
-composey main -f docker-compose.yml -e prod-infrastructure
+cloudcompose main -f docker-compose.yml -e prod-infrastructure
 ```
 
 **What gets created:**
@@ -206,7 +206,7 @@ composey main -f docker-compose.yml -e prod-infrastructure
 - VPC, subnets, security groups
 - IAM roles and policies
 
-**You write 20 lines, Composey generates 500+ lines of optimized Terraform.**
+**You write 20 lines, Cloud Compose Compiler generates 500+ lines of optimized Terraform.**
 
 ---
 
@@ -241,14 +241,14 @@ services:
             target_value: 70
 ```
 
-Composey translates the same declaration into ECS target-tracking (AWS),
+Cloud Compose Compiler translates the same declaration into ECS target-tracking (AWS),
 KEDA scale rules (Azure), or Cloud Run autoscaling (GCP) — whichever is
 idiomatic for the target cloud.
 
 ### 🔍 See What Was Inferred
 
 ```bash
-composey main -f docker-compose.yml --explain
+cloudcompose main -f docker-compose.yml --explain
 ```
 
 ```
@@ -328,17 +328,17 @@ full, actively-maintained tracker of what's done and what's still open
 ```bash
 git clone https://github.com/gecBurton/composey.git
 cd composey/composey-go
-go build -o composey ./cmd/composey
+go build -o cloudcompose ./cmd/cloudcompose
 ```
 
 ### Quick Test
 
 ```bash
 # From the composey-go directory
-./composey init -f ../examples/hello/environment.yaml
+./cloudcompose init -f ../examples/hello/environment.yaml
 (cd demo-infrastructure && terraform init && terraform apply)
 
-./composey main -f ../examples/hello/compose.yml -e demo-infrastructure
+./cloudcompose main -f ../examples/hello/compose.yml -e demo-infrastructure
 ```
 
 ---
@@ -380,4 +380,4 @@ No license file has been added to this repository yet.
 
 See [plan.md](plan.md) for the migration history.
 
-**Installation:** Build the `composey-go` binary with Go 1.26+ (see Installation above). Prebuilt cross-platform binaries and a package-manager install path are not yet available.
+**Installation:** Build the `cloudcompose` binary with Go 1.26+ (see Installation above). Prebuilt cross-platform binaries and a package-manager install path are not yet available.

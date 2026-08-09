@@ -323,7 +323,7 @@ been latent and untested since MySQL support was first ported.
   values confirmed against Microsoft's own private-endpoint DNS
   reference, not guessed. `env.RedisSubnetID` (new field) gates this the
   same way `PostgresqlSubnetID`/`MysqlSubnetID` already gate database
-  private networking; `composey init` (`provider: azure` in
+  private networking; `cloudcompose init` (`provider: azure` in
   `environment.yaml`) now creates a
   4th (non-delegated) subnet for it automatically, matching the existing
   Postgres/MySQL/Container-Apps subnet pattern. Verified end-to-end with
@@ -377,9 +377,10 @@ been latent and untested since MySQL support was first ported.
   the `compute-tuning` example's `worker` service (`size: medium` = 1.0
   vCPU + an explicit `memory: 4096` override = 4Gi): `terraform validate`
   accepts `cpu=1, memory="4096Mi"` even though 1.0vCPU only pairs validly
-  with 2.0Gi. This would fail at real `apply` time and composey has no
-  way to catch it today. Deliberately not fixed in this pass (scope
-  decision, not an oversight) — tracked here as a new, still-open item.
+  with 2.0Gi. This would fail at real `apply` time and Cloud Compose
+  Compiler has no way to catch it today. Deliberately not fixed in this
+  pass (scope decision, not an oversight) — tracked here as a new,
+  still-open item.
 
 - [ ] **Wire backup/HA settings for Azure databases.** `HighAvailability
   map[string]string` exists on the model (`azure.go:185`) but is never
@@ -457,7 +458,7 @@ been latent and untested since MySQL support was first ported.
 - Azure's one-shared-ACR-per-environment vs AWS's one-ECR-repo-per-service
   — both valid, noted as a real difference in `docs/spikes/azure/README.md`,
   not a gap.
-- No shared ALB/ingress equivalent created by `composey init` for Azure
+- No shared ALB/ingress equivalent created by `cloudcompose init` for Azure
   — architecturally justified by Container Apps' per-service-FQDN
   model (no shared listener to configure), not a missing AWS parity
   feature.

@@ -19,13 +19,13 @@
 ## The problem
 
 `docker-compose.yml` is source: authored by a human, versioned, reviewed,
-and deterministic to compile. The environment side of composey had no
-equivalent. Before this design, "configuring an environment" meant
-passing CLI flags to `composey init` once, which were never recorded
-anywhere:
+and deterministic to compile. The environment side of Cloud Compose
+Compiler had no equivalent. Before this design, "configuring an
+environment" meant passing CLI flags to `cloudcompose init` once, which
+were never recorded anywhere:
 
 ```bash
-composey init --provider aws --name prod --region eu-west-2 \
+cloudcompose init --provider aws --name prod --region eu-west-2 \
   --vpc-cidr 10.0.0.0/16 --az-count 2 --create-alb
 ```
 
@@ -46,10 +46,10 @@ different kinds of information that have no business sharing one file:
 This caused real, already-observed problems, not just an aesthetic
 complaint:
 
-- `composey init --provider gcp` generated an environment file missing
+- `cloudcompose init --provider gcp` generated an environment file missing
   `project_id` — a field GCP inference depends on heavily — because
   nothing validated the generated file's completeness before handing it
-  to `composey main`. Silent until deploy time.
+  to `cloudcompose main`. Silent until deploy time.
 - `--azure-endpoint`/`--gcp-endpoint` were dead flags: declared on the
   CLI, never actually forwarded to the generator. Nothing caught this
   because there was no schema the flags were checked against.
@@ -64,16 +64,16 @@ Two things, cleanly separated, but only one of them is a *file*:
 | | What | Lifecycle |
 |---|---|---|
 | **Input** | `environment.yaml` | Authored, committed, reviewed — same as `docker-compose.yml` |
-| **Output** | Terraform's own state, read live via `terraform output -json` | Never a file composey writes; always current, by construction |
+| **Output** | Terraform's own state, read live via `terraform output -json` | Never a file Cloud Compose Compiler writes; always current, by construction |
 
-`composey init` reads `environment.yaml` as its **only** input — there
+`cloudcompose init` reads `environment.yaml` as its **only** input — there
 are no decision flags (see "Revision 2: no flags either" below for why
 CLI overrides were removed). To change a decision, edit the file and
 re-run `init`.
 
-`composey main -e <environment-directory>` reads the environment's facts
+`cloudcompose main -e <environment-directory>` reads the environment's facts
 by running `terraform output -json` in that directory (which must be a
-directory `composey init` generated, with `terraform apply` already run
+directory `cloudcompose init` generated, with `terraform apply` already run
 in it) and decoding its `environment` output. See "Revision 1: no fact
 file" below for why this replaced a generated file.
 
@@ -142,7 +142,7 @@ mistake worth failing loudly on, not a flag that quietly does nothing.
 
 ### Field mapping from the original CLI flags
 
-Direct lift from `cmd/composey/init.go`'s original flags (all now
+Direct lift from `cmd/cloudcompose/init.go`'s original flags (all now
 removed — see "Revision 2" below), minus the two confirmed-dead ones
 (`--azure-endpoint`, `--gcp-endpoint`). Kept here purely as a historical
 map from "what you used to type" to "where that decision now lives,"
@@ -155,7 +155,7 @@ for anyone coming from the old flag-based design:
 | `region` | `--region`/`-r` | optional; per-provider default preserved (`eu-west-2`/`eastus`/`us-central1`) |
 | `tags` | `--tags` | JSON object on the CLI; plain YAML map in the file |
 | `retain_data_on_destroy` | `--retain-data` | default `true` |
-| `domain` | `--domain` | optional on AWS/Azure (each gets a free CloudFront/Front Door hostname); required for GCP if any service declares `cdn: true` — see "The domain gap" below. Not yet enforced at `init` time, since whether any service uses `cdn: true` isn't known until `composey main` parses the compose file. |
+| `domain` | `--domain` | optional on AWS/Azure (each gets a free CloudFront/Front Door hostname); required for GCP if any service declares `cdn: true` — see "The domain gap" below. Not yet enforced at `init` time, since whether any service uses `cdn: true` isn't known until `cloudcompose main` parses the compose file. |
 
 | `aws:` block | Old flag |
 |---|---|
@@ -188,7 +188,7 @@ piece of evidence for why an authored, validated input is needed:
 `project_id` is unambiguously a *decision* a human makes before running
 anything (you know your GCP project before you have any infrastructure),
 so it belongs in `environment.yaml`, checked by schema validation at
-`init` time — not something discovered missing only when `composey main`
+`init` time — not something discovered missing only when `cloudcompose main`
 fails against an incomplete environment much later.
 
 ### The `domain` gap
@@ -215,12 +215,12 @@ change once it's built, not because it's consumed anywhere yet.
 
 Deliberately not validated at `init` time the way `gcp.project_id` is:
 whether any service actually declares `cdn: true` isn't knowable until
-`composey main` parses the compose file, which happens long after
+`cloudcompose main` parses the compose file, which happens long after
 `init` runs. Enforcing "domain is required if any service uses CDN"
 belongs in `gcp/infer.go` once that inference exists, not in
 `initconfig.Validate`.
 
-### `composey init` behavior
+### `cloudcompose init` behavior
 
 1. Look for `environment.yaml` in the current directory, or an explicit
    `-f`/`--file` flag (default `environment.yaml`).
@@ -258,7 +258,7 @@ forward-looking for newly-created environments only.
 The first version of this design (see git history / earlier revisions of
 this doc) generated a fact file — first `environment.yml`, then renamed
 to `environment.facts.json` — via a Terraform `local_file` resource, and
-`composey main` read that file. It also added an `environment_config_hash`
+`cloudcompose main` read that file. It also added an `environment_config_hash`
 field and a drift check comparing the current `environment.yaml`'s hash
 against the one recorded in the fact file, warning if they diverged.
 
@@ -279,12 +279,12 @@ all? It doesn't:
 - This was **not** the same as switching to `terraform_remote_state`
   (which was considered and rejected in the same conversation): that
   mechanism resolves values to unresolved HCL expression strings at
-  compile time, which would have broken every place composey's Go
-  inference branches on an environment field's actual value (e.g.
+  compile time, which would have broken every place Cloud Compose
+  Compiler's Go inference branches on an environment field's actual value (e.g.
   `AlbArn != nil` in `aws/permissions.go`). `terraform output -json`
   resolves everything to plain JSON *before* Go ever sees it — the same
   property the file had, just without writing a file to get there.
-- The one new requirement this introduces: `composey main` now needs the
+- The one new requirement this introduces: `cloudcompose main` now needs the
   `terraform` CLI on `PATH`, and the environment directory it's pointed
   at must have real applied state in it. Both were already implicitly
   true before (the fact file itself was only ever produced by `apply`),
@@ -293,7 +293,7 @@ all? It doesn't:
 
 ### What changed as a result
 
-- `composey main -e <path>` now takes an **environment directory**
+- `cloudcompose main -e <path>` now takes an **environment directory**
   (containing `main.tf.json` + Terraform state), not a file.
 - `--azure-endpoint`/`--gcp-endpoint` were already dropped by the first
   revision and stayed dropped.
@@ -311,7 +311,7 @@ all? It doesn't:
 ## Revision 2: no flags either
 
 The second version kept the flag-override behavior described in
-"`composey init` behavior" above (an explicitly-passed CLI flag
+"`cloudcompose init` behavior" above (an explicitly-passed CLI flag
 overrides the file's value for that invocation, via cobra's
 `Changed()`). Prompted by the question: given `environment.yaml` exists
 specifically to be the reviewable, authored source of truth — the same
@@ -325,7 +325,7 @@ especially once a real, copyable example existed
 Removed all ~14 decision flags (`--provider`, `--name`, `--region`,
 `--vpc-cidr`, `--az-count`, `--create-alb`, `--certificate-arn`,
 `--aws-endpoint`, `--project-id`, `--domain`, `--retain-data`, `--tags`).
-`composey init` now takes exactly two flags: `-f`/`--file` (which
+`cloudcompose init` now takes exactly two flags: `-f`/`--file` (which
 `environment.yaml` to read) and `-o`/`--output` (where to write the
 result) — output location isn't a decision about the environment, so it
 stays a flag.
@@ -348,14 +348,14 @@ not solvable by adding `name` back as a flag without reintroducing
 exactly the override mechanism this revision removed.
 
 Resolved by moving the "many possible names" problem out of
-`composey init` entirely: the script reads a shared, committed
+`cloudcompose init` entirely: the script reads a shared, committed
 `scripts/ci-environment.{aws,azure}.yaml` (one environment per CI run,
 shared across every example that run deploys — those are separate apps
 sharing one platform environment, the whole point of the two-stage
 split), substitutes `name: PLACEHOLDER` for the run-specific value (and
 `region:` too, since that's itself a workflow input for both clouds)
 into a generated copy under `build/`, and passes *that* file to
-`composey init -f`. `composey init` itself never sees a flag or knows
+`cloudcompose init -f`. `cloudcompose init` itself never sees a flag or knows
 this substitution happened — from its perspective, it just read a file,
 exactly like every other invocation.
 
@@ -370,10 +370,10 @@ exactly like every other invocation.
 
 ## Non-goals
 
-- This does not introduce composey-managed Terraform state or an
-  embedded `terraform apply` — `composey main` reads outputs, it doesn't
-  run `plan`/`apply` itself, and doesn't need a backend/state config of
-  its own to do so.
+- This does not introduce Cloud Compose Compiler-managed Terraform state
+  or an embedded `terraform apply` — `cloudcompose main` reads outputs,
+  it doesn't run `plan`/`apply` itself, and doesn't need a backend/state
+  config of its own to do so.
 
 ## What was built
 
@@ -384,7 +384,7 @@ exactly like every other invocation.
   package, decides what to do about a missing file) and `Validate` (the
   strict/discriminated checks: name required, provider supported, no
   mismatched provider block, GCP requires `project_id`).
-- `cmd/composey/init.go` — reads `-f`/`--file` (default
+- `cmd/cloudcompose/init.go` — reads `-f`/`--file` (default
   `environment.yaml`); no decision flags. Missing file → a specific
   error message, not a flags-only fallback. Writes a copy of the loaded
   config back to `<output>/environment.yaml` alongside `main.tf.json`.
@@ -411,7 +411,7 @@ exactly like every other invocation.
 - `internal/compiler/environment.go` — `LoadEnvironment(dir)` reads the
   `target` field from the live output map (via `TerraformOutputs`)
   instead of probing a file's YAML, then dispatches exactly as before.
-- `cmd/composey/compile.go` / `cmd/composey/main.go` — the `-e`/`--env`
+- `cmd/cloudcompose/compile.go` / `cmd/cloudcompose/main.go` — the `-e`/`--env`
   flag's help text and internal variable naming (`envDir`, not
   `envFile`) updated to reflect that it's a directory now.
 - Removed `internal/compiler/aws/environment_yaml.go`

@@ -17,9 +17,9 @@ import (
 // initCmd mirrors cli_env.py's `init` command: bootstraps shared
 // platform infrastructure (VPC, ALB/Container Apps Environment, ECS
 // Cluster, etc.) that multiple applications deploy to. Typically run
-// once by a platform team, then developers deploy apps with `composey
+// once by a platform team, then developers deploy apps with `cloudcompose
 // main --env <output>` (the environment directory itself, once
-// `terraform apply` has run in it -- composey main reads the resulting
+// `terraform apply` has run in it -- cloudcompose main reads the resulting
 // facts directly via `terraform output -json`, not a generated file).
 //
 // Reads an authored `environment.yaml` -- the decisions (region, VPC
@@ -48,7 +48,7 @@ var initCmd = &cobra.Command{
 		"Creates the VPC, subnets, ALB/Container Apps Environment, and other " +
 		"shared resources that multiple applications can use. This is typically " +
 		"run once by a platform team, and then developers deploy apps with " +
-		"`composey main`.\n\n" +
+		"`cloudcompose main`.\n\n" +
 		"Reads an authored environment.yaml -- there are no decision flags; " +
 		"to change a decision, edit the file. See docs/authored-environment-config.md " +
 		"for the schema and examples/hello/environment.yaml for a starting point.",
@@ -66,12 +66,12 @@ func runInit(cmd *cobra.Command, args []string) {
 	}
 	if fileConfig == nil {
 		fmt.Fprintf(os.Stderr, "Error: %s not found.\n\n", configFile)
-		fmt.Fprintln(os.Stderr, "composey init reads an authored environment.yaml -- there are no")
+		fmt.Fprintln(os.Stderr, "cloudcompose init reads an authored environment.yaml -- there are no")
 		fmt.Fprintln(os.Stderr, "decision flags. Create one (see examples/hello/environment.yaml for")
 		fmt.Fprintln(os.Stderr, "a starting point, or docs/authored-environment-config.md for the full")
 		fmt.Fprintln(os.Stderr, "schema), then run:")
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintf(os.Stderr, "  composey init -f %s\n", configFile)
+		fmt.Fprintf(os.Stderr, "  cloudcompose init -f %s\n", configFile)
 		os.Exit(1)
 	}
 
@@ -168,7 +168,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	// (identical to the input, since there are no overrides to resolve
 	// anymore) so the file that produced this infrastructure is always
 	// sitting next to it, not just implied by shell history. See
-	// docs/authored-environment-config.md's "composey init behavior".
+	// docs/authored-environment-config.md's "cloudcompose init behavior".
 	resolvedYAMLPath := filepath.Join(output, "environment.yaml")
 	resolvedYAML, err := yaml.Marshal(fileConfig)
 	if err != nil {
@@ -192,7 +192,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println("  3. terraform apply")
 	fmt.Println()
 	fmt.Println("Deploy an app:")
-	fmt.Printf("  composey main --env %s\n", output)
+	fmt.Printf("  cloudcompose main --env %s\n", output)
 }
 
 func lowerASCII(s string) string {

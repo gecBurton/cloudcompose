@@ -32,6 +32,6 @@ jobs:
       run: go run ./cmd/schema-check
       working-directory: composey-go
 
-    - name: Build composey binary
-      run: go build -o composey ./cmd/composey
+    - name: Build cloudcompose binary
+      run: go build -o cloudcompose ./cmd/cloudcompose
       working-directory: composey-go

@@ -142,7 +142,7 @@ jobs:
               # step, the registry identity likely also needs an explicit
               # AcrPull role assignment — see docs/azure-todo.md.
               export COMPOSE=examples/build-webapp/compose.yml PROJECT=buildwebapp \
-                     EXPECT="hello from a composey-built image" ;;
+                     EXPECT="hello from a cloudcompose-built image" ;;
             *)
               echo "::error::no smoke-test configuration for '${{ inputs.example }}'"
               exit 1 ;;

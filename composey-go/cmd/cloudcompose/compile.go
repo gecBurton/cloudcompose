@@ -248,7 +248,7 @@ func copyDockerBuildContexts(tfJSON, composeDir, outputDir string) error {
 
 func printUnexpectedError(err error) {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-	if os.Getenv("COMPOSEY_DEBUG") != "" {
+	if os.Getenv("CLOUDCOMPOSE_DEBUG") != "" {
 		panic(err)
 	}
 }
@@ -287,7 +287,7 @@ func init() {
 	rootCmd.AddCommand(mainCmd)
 
 	mainCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
-	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `composey init` (terraform apply must have run there already)")
+	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
 	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	mainCmd.Flags().StringP("out", "o", "terraform", "Directory to write the generated Terraform JSON")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
@@ -300,5 +300,5 @@ func init() {
 // binaries are versioned independently once this becomes the standalone
 // CLI).
 func composeyVersion() string {
-	return "composey " + rootVersion
+	return "cloudcompose " + rootVersion
 }

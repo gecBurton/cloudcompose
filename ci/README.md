@@ -3,6 +3,13 @@
 One-time setup so the **AWS Acceptance** workflow (`.github/workflows/acceptance.yml`)
 can deploy real infrastructure without any long-lived credentials in GitHub.
 
+> The product is now called Cloud Compose Compiler (CLI binary
+> `cloudcompose`), but the resource/role names below (`composey-acceptance`,
+> `composeyacceptstate`, etc.) predate that rename and match what's
+> actually provisioned today — see `AGENTS.md`'s "Naming" section. Not
+> renamed here to avoid a mismatch between this doc and live infrastructure;
+> update both together if these are ever migrated.
+
 This Terraform creates:
 - a GitHub Actions **OIDC identity provider** in your AWS account,
 - an **IAM role** (`composey-acceptance-ci`) that only `gecBurton/composey`

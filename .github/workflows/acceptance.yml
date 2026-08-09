@@ -104,7 +104,7 @@ jobs:
                      EXPECT="Server name" ;;
             build-webapp)
               export COMPOSE=examples/build-webapp/compose.yml PROJECT=buildweb \
-                     EXPECT="hello from a composey-built image" ;;
+                     EXPECT="hello from a cloudcompose-built image" ;;
             doctor)
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;

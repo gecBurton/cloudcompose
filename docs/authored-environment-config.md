@@ -340,24 +340,24 @@ flags-only path that no longer exists.
 
 ### The one real complication this created: CI needs a unique name per run
 
-`scripts/smoke-test.sh`/`scripts/smoke-test-azure.sh` run the acceptance
-workflows against a shared cloud account, and need a different resource
+`scripts/smoke-test.sh` runs the acceptance
+workflows against a shared cloud account, and needs a different resource
 name-prefix per run (`ci<run-number>`) to avoid collisions — genuinely
 not something a single committed file's `name:` field can express, and
 not solvable by adding `name` back as a flag without reintroducing
 exactly the override mechanism this revision removed.
 
 Resolved by moving the "many possible names" problem out of
-`composey init` entirely: the two scripts each read a shared, committed
+`composey init` entirely: the script reads a shared, committed
 `scripts/ci-environment.{aws,azure}.yaml` (one environment per CI run,
 shared across every example that run deploys — those are separate apps
 sharing one platform environment, the whole point of the two-stage
-split), substitute `name: PLACEHOLDER` for the run-specific value (and,
-for Azure, `region:` too, since that's itself a workflow input) into a
-generated copy under `build/`, and pass *that* file to `composey init
--f`. `composey init` itself never sees a flag or knows this substitution
-happened — from its perspective, it just read a file, exactly like every
-other invocation.
+split), substitutes `name: PLACEHOLDER` for the run-specific value (and
+`region:` too, since that's itself a workflow input for both clouds)
+into a generated copy under `build/`, and passes *that* file to
+`composey init -f`. `composey init` itself never sees a flag or knows
+this substitution happened — from its perspective, it just read a file,
+exactly like every other invocation.
 
 ## What doesn't change
 
@@ -427,8 +427,10 @@ other invocation.
   — the shared, committed per-cloud environment configs the CI
   acceptance workflows generate a per-run copy of (see "Revision 2"
   above).
-- `scripts/smoke-test.sh` / `scripts/smoke-test-azure.sh` — updated to
+- `scripts/smoke-test.sh` — updated to
   pass the environment directory to `-e` (from the earlier revision),
-  and to generate + use a per-run `environment.yaml` instead of passing
-  `--name`/`--region` flags (from this revision).
+  to generate + use a per-run `environment.yaml` instead of passing
+  `--name`/`--region` flags (from this revision), and later unified to
+  cover both AWS and Azure via a `PROVIDER` variable (see git history
+  for that merge).
 

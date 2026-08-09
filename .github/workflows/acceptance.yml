@@ -17,6 +17,14 @@ on:
           - doctor
           - production-stack
           - web-api
+      region:
+        description: AWS region to deploy into
+        type: choice
+        default: eu-west-2
+        options:
+          - eu-west-2
+          - us-east-1
+          - us-west-2
 
 permissions:
   id-token: write   # required for OIDC federation to AWS
@@ -63,7 +71,7 @@ jobs:
         timeout-minutes: 5
         with:
           role-to-assume: ${{ vars.AWS_ACCEPTANCE_ROLE_ARN }}
-          aws-region: eu-west-2
+          aws-region: ${{ inputs.region }}
           retry-max-attempts: 1
 
       - name: Set up Go
@@ -81,6 +89,7 @@ jobs:
         env:
           PROFILE: ""                      # empty -> use ambient OIDC credentials
           NAME: ci${{ github.run_number }}  # unique, short, valid resource prefix
+          REGION: ${{ inputs.region }}
           # Keeps Terraform state off the ephemeral runner so a cancelled or
           # timed-out run can still be destroyed afterwards.
           STATE_BUCKET: ${{ vars.AWS_ACCEPTANCE_STATE_BUCKET }}

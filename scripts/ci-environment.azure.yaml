@@ -2,7 +2,7 @@
 # (.github/workflows/azure-acceptance.yml). See
 # scripts/ci-environment.aws.yaml's own comments for why this is one
 # shared file rather than one per example, and why name: is a
-# placeholder scripts/smoke-test-azure.sh substitutes per run.
+# placeholder scripts/smoke-test.sh substitutes per run.
 #
 # region is francecentral, not the more obvious eastus: eastus has
 # documented PostgreSQL Flexible Server and Managed Redis capacity/quota

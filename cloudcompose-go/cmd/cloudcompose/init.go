@@ -94,6 +94,10 @@ func runInit(cmd *cobra.Command, args []string) {
 	if fileConfig.BackupRetentionDays != nil {
 		backupRetentionDays = *fileConfig.BackupRetentionDays
 	}
+	logRetentionDays := 7
+	if fileConfig.LogRetentionDays != nil {
+		logRetentionDays = *fileConfig.LogRetentionDays
+	}
 
 	if output == "" {
 		output = name + "-infrastructure"
@@ -129,7 +133,7 @@ func runInit(cmd *cobra.Command, args []string) {
 		}
 		terraformJSON, err = aws.GenerateAwsEnvironment(
 			name, region, vpcCIDR, azCount, createALB, certPtr, endpointPtr,
-			fileConfig.Tags, retainData, highAvailability, backupRetentionDays,
+			fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
 		)
 	case "azure":
 		vpcCIDR := ""
@@ -138,7 +142,7 @@ func runInit(cmd *cobra.Command, args []string) {
 			fmt.Printf("VNet CIDR: %s\n", vpcCIDR)
 		}
 		terraformJSON, err = azure.GenerateAzureEnvironment(
-			name, region, vpcCIDR, fileConfig.Tags, retainData, highAvailability, backupRetentionDays,
+			name, region, vpcCIDR, fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
 		)
 	case "gcp":
 		vpcCIDR, projectID := "", ""

@@ -449,11 +449,24 @@ been latent and untested since MySQL support was first ported.
   a custom retention value — not just the default/disabled path every
   golden fixture exercises. Not yet wired for GCP (Cloud SQL has its
   own equivalent settings); left for a follow-up.
-- [ ] **Wire `discard`/force-delete for Azure Storage Accounts.** AWS sets
+- [x] **Wire `discard`/force-delete for Azure Storage Accounts.** AWS sets
   `ForceDestroy` from `discard` (`aws/managed.go:208`); Azure's
   `StorageAccount`/`StorageContainer` models have no equivalent field and
   `discard` is never passed into `inferStorageAzure` at all.
-- [ ] **Consider a per-service log-retention override for Azure**, or
+
+  **Resolved as not-applicable (2026-08-10), no code change.** Checked
+  against the real `azurerm_storage_account`/`azurerm_storage_container`
+  schemas and Azure's own Delete Storage Account REST API docs directly:
+  there is no `force_destroy`-equivalent argument anywhere in either
+  resource's schema, and the delete operation itself has no "non-empty"
+  rejection to work around in the first place — deleting a Storage
+  Account deletes everything inside it (containers, blobs, queues,
+  tables) unconditionally. AWS's `ForceDestroy` exists specifically
+  because S3 buckets *do* refuse to delete while non-empty; Azure's
+  deletion model doesn't have that problem, so there's no missing safety
+  mechanism to mirror — this was a gap in field *names* matching, not in
+  actual capability. Not a wiring gap to fix.
+- [x] **Consider a per-service log-retention override for Azure**, or
   explicitly document why the platform-owned Log Analytics retention
   (`azure/environment_generator.go:59-68`, hardcoded 30 days) is
   sufficient and AWS's per-service `env.LogRetentionDays`
@@ -462,6 +475,31 @@ been latent and untested since MySQL support was first ported.
   `LogRetentionDays` to `AwsEnvironment` — never implemented for that
   reason either) — worth a decision either way rather than leaving it
   ambiguous.
+
+  **Done (2026-08-10), decided environment-level not per-service.**
+  Reframed while doing this: `env.LogRetentionDays` was never actually
+  "AWS's per-service setting" as originally described — it's a single
+  `AwsEnvironment`-level value applied uniformly to every service's
+  CloudWatch Log Group (`aws/compute.go:50`), and it was completely dead
+  on the input side: no `environment.yaml` field, never read from
+  `InitConfig`, never written into `GenerateAwsEnvironment`'s output
+  block — always silently defaulting to `7` no matter what a user
+  wanted, on AWS too, not just Azure. Fixed both at once: a new
+  `log_retention_days` common-envelope field, wired through the same
+  round-trip as the Priority 4 backup/HA fields, applied uniformly (no
+  per-service override, since AWS's own pre-existing field never had one
+  either and nothing in `docker-compose.yml`'s schema suggests log
+  retention should vary by service the way compute size does). Azure's
+  hardcoded `30` is now this same field — but clamped up to Azure's own
+  hard minimum of 30 days when a lower value is given (confirmed against
+  the real provider schema: `terraform validate` itself rejects anything
+  below 30 for `azurerm_log_analytics_workspace`, "expected
+  retention_in_days to be in the range (30 - 730)"), since the shared
+  default of `7` — chosen to match AWS's own long-standing default —
+  would otherwise silently break every Azure environment relying on it.
+  AWS keeps whatever value a user actually asked for; only Azure's
+  generator clamps, and only because Azure's constraint is a hard floor,
+  not a preference.
 - [ ] **Add health-check/probe configuration for Azure Container Apps.**
   No liveness/readiness/startup probe is ever populated, and
   `StartupGracePeriod` is read nowhere in `azure/*.go`. Container Apps'

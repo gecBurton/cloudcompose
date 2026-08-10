@@ -31,7 +31,8 @@ var knownTopLevelKeys = map[string]bool{
 	"provider": true, "name": true, "region": true, "tags": true,
 	"retain_data_on_destroy": true, "domain": true,
 	"high_availability_enabled": true, "backup_retention_days": true,
-	"aws": true, "azure": true, "gcp": true,
+	"log_retention_days": true,
+	"aws":                true, "azure": true, "gcp": true,
 }
 
 // Load reads and validates an environment.yaml file at path. Returns

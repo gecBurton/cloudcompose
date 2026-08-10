@@ -96,6 +96,7 @@ region: eu-west-2
 retain_data_on_destroy: true
 high_availability_enabled: false
 backup_retention_days: 7
+log_retention_days: 7
 tags:
   Team: platform
 
@@ -114,6 +115,7 @@ region: eastus
 retain_data_on_destroy: true
 high_availability_enabled: false
 backup_retention_days: 7
+log_retention_days: 7
 tags: {}
 
 azure:
@@ -190,6 +192,25 @@ AWS (`aws_db_instance.multi_az`/`backup_retention_period`) and Azure
 `backup_retention_days`), applied uniformly to every database an
 environment's apps create — not yet wired for GCP (Cloud SQL has its
 own equivalent settings; left for a follow-up).
+
+`log_retention_days` (common envelope, default `7`) is a related but
+different case: it existed on `AwsEnvironment`/`AzureEnvironment`
+*before* this design (`LoadAwsEnvironment` read it, `aws/compute.go`'s
+CloudWatch Log Group inference used it), but had no corresponding
+`environment.yaml` field, was never read from `InitConfig`, and was
+never written into `GenerateAwsEnvironment`'s output block — dead on
+the input side, always silently defaulting to `7` no matter what a user
+might have wanted. Azure's Log Analytics Workspace retention was a
+separate, unrelated problem in the same area: hardcoded to `30` in the
+generator with no field backing it at all. Both are fixed by this one
+field now: applied uniformly, not per-service, on both clouds — AWS's
+own pre-existing field never had a per-service override either, and
+nothing in `docker-compose.yml`'s schema suggests log retention should
+vary by service the way compute size does. Azure's Log Analytics
+Workspace has a hard minimum of 30 days (`terraform validate` itself
+rejects anything lower); `GenerateAzureEnvironment` clamps up to 30 if
+a lower value is given, rather than raising the shared default — AWS
+keeps whatever value a user actually asked for.
 
 `-o`/`--output` is the one flag that survived both revisions — it's
 about where files get *written*, not a decision about the environment

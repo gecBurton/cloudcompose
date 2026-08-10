@@ -79,6 +79,36 @@ as fully proven.
   a local-only image.
 - The persistent-environment restructure (see below) is now much less urgent.
 
+### 3. Key Vault role-assignment RBAC propagation can fail a run
+
+Confirmed against a real `production-stack` run in `francecentral`
+(2026-08-10, testing the WAF/security-policy item in
+`docs/azure-aws-parity-todo.md`): `azurerm_role_assignment.kv_role`
+(the grant letting the app's identity read Key Vault secrets) can take
+several minutes to actually propagate on Azure's side even after
+Terraform reports the resource created. Every downstream resource
+needing that access before propagation finishes — `GetSecret` calls,
+even a *second*, unrelated `azurerm_role_assignment` write in the same
+run — fails with `403 Forbidden`/`AuthorizationFailed`, and Azure's own
+error message names this exact cause ("If access was recently granted,
+please refresh your credentials"). Not a regression from any specific
+change: the run's own WAF resources (`azurerm_cdn_frontdoor_firewall_policy`,
+`azurerm_cdn_frontdoor_security_policy`) created and destroyed cleanly
+in the same run; the failure was isolated entirely to the
+pre-existing Key Vault/RBAC path.
+
+Not yet worked around. The Front Door origin-race retry
+(`scripts/smoke-test.sh`, section 1 above) is the precedent for how this
+project has handled a similar Azure-side propagation/eventual-consistency
+issue before — a targeted, documented retry at the specific step known
+to be flaky, not a blanket retry-the-whole-apply. The same shape of fix
+(retry the `apply` once, or add an explicit wait after the role
+assignment before anything tries to use it) would likely apply here too,
+but hasn't been implemented or verified yet — flagged here rather than
+silently accepted as one-off flakiness, since the exact same failure
+class recurring would suggest a real, fixable gap rather than genuine
+randomness.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

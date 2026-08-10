@@ -201,6 +201,30 @@ func azureDBSkuFor(size models.ServiceSize) string {
 // section): the shared server is sized for its largest consumer, since
 // under-provisioning a resource multiple services depend on is a worse
 // failure mode than over-provisioning it for the smallest one.
+// highAvailabilityAzure returns the high_availability block for a
+// Flexible Server (PostgreSQL or MySQL -- both take the identical
+// {mode, standby_availability_zone} shape), or nil when disabled.
+//
+// AwsEnvironment/AzureEnvironment's HighAvailabilityEnabled is one bool
+// mirroring AWS's aws_db_instance.multi_az (also just a bool), applied
+// uniformly to every database in the environment -- see
+// docs/azure-aws-parity-todo.md's Priority 4 backup/HA item. Always maps
+// to "ZoneRedundant", not "SameZone": AWS's Multi-AZ places the standby
+// in a different Availability Zone from the primary, and ZoneRedundant
+// is the mode that actually matches that (SameZone keeps standby and
+// primary in one AZ, protecting against node failure but not a zone
+// outage -- a materially weaker guarantee, confirmed against Microsoft's
+// own reliability docs, not assumed from the name). standby_availability_zone
+// is left unset in both modes: Azure auto-assigns it, the same way
+// PostgreSQLFlexibleServer.Lifecycle already ignores changes to the
+// primary's own auto-assigned zone.
+func highAvailabilityAzure(env *models.AzureEnvironment) map[string]string {
+	if !env.HighAvailabilityEnabled {
+		return nil
+	}
+	return map[string]string{"mode": "ZoneRedundant"}
+}
+
 func largestServiceSize(services []*models.Service) models.ServiceSize {
 	rank := map[models.ServiceSize]int{
 		models.ServiceSizeSmall:  0,
@@ -255,6 +279,8 @@ func inferDatabasesAzure(
 		server.AdministratorLogin = shared.DatabaseDefaultUsername
 		server.AdministratorPassword = passwordRef
 		server.SkuName = azureDBSkuFor(largestServiceSize(pgServices))
+		server.BackupRetentionDays = env.BackupRetentionDays
+		server.HighAvailability = highAvailabilityAzure(env)
 		server.Tags = tags
 
 		networking := privateNetworkingAzure(resources, env, app, "postgresql", env.PostgresqlSubnetID, tags)
@@ -303,6 +329,8 @@ func inferDatabasesAzure(
 		server.AdministratorLogin = shared.DatabaseDefaultUsername
 		server.AdministratorPassword = passwordRef
 		server.SkuName = azureDBSkuFor(largestServiceSize(mysqlServices))
+		server.BackupRetentionDays = env.BackupRetentionDays
+		server.HighAvailability = highAvailabilityAzure(env)
 		server.Tags = tags
 
 		networking := privateNetworkingAzure(resources, env, app, "mysql", env.MysqlSubnetID, tags)

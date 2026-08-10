@@ -16,6 +16,8 @@ provider: aws
 name: demo
 region: eu-west-2
 retain_data_on_destroy: true
+high_availability_enabled: false # Multi-AZ roughly doubles RDS compute cost; opt-in
+backup_retention_days: 7
 tags:
   Team: platform
 

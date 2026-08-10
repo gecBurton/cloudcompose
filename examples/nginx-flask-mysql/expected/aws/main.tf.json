@@ -18,12 +18,14 @@
     "aws_db_instance": {
       "db_db": {
         "allocated_storage": 20,
+        "backup_retention_period": 7,
         "db_name": "example",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "mariadb",
         "final_snapshot_identifier": "prod-nginx-flask-mysql-db-final-${random_id.db_snapshot.hex}",
         "identifier": "prod-nginx-flask-mysql-db",
         "instance_class": "db.t3.micro",
+        "multi_az": false,
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
         "skip_final_snapshot": false,

@@ -417,12 +417,38 @@ been latent and untested since MySQL support was first ported.
   independent-of-`size:` compute override) since `cpu:`/`memory:` are
   now overridden together rather than one alone.
 
-- [ ] **Wire backup/HA settings for Azure databases.** `HighAvailability
+- [x] **Wire backup/HA settings for Azure databases.** `HighAvailability
   map[string]string` exists on the model (`azure.go:185`) but is never
   set by `inferDatabasesAzure` — dead field, same category as
   `RoleAssignment`. No backup-retention field exists on the model at all
   (AWS wires `SkipFinalSnapshot`/`FinalSnapshotIdentifier` from `discard`,
   `aws/managed.go:100-102,124-128`).
+
+  **Done (2026-08-10).** Reframed while doing this: AWS's own
+  `aws_db_instance` had no `multi_az`/`backup_retention_period` wiring
+  either — the doc's original comparison conflated `discard`-driven
+  final-snapshot behavior with ongoing HA/backup retention, two
+  different things. Fixed on **both** clouds together rather than
+  giving Azure a capability AWS still lacked: a new common-envelope
+  `environment.yaml` pair, `high_availability_enabled` (default `false`
+  — Multi-AZ/`ZoneRedundant` roughly doubles compute cost, so it's
+  opt-in, not silent) and `backup_retention_days` (default `7`, the
+  baseline both clouds already agree on), threaded through
+  `InitConfig` → `GenerateAwsEnvironment`/`GenerateAzureEnvironment`'s
+  output block → `LoadAwsEnvironment`/`LoadAzureEnvironment`'s decode →
+  `AwsEnvironment`/`AzureEnvironment` → `inferDatabase`/
+  `inferDatabasesAzure`. AWS sets `multi_az`/`backup_retention_period`
+  directly; Azure's `high_availability_enabled=true` always maps to
+  `{"mode": "ZoneRedundant"}`, not `"SameZone"` — confirmed against
+  Microsoft's own reliability docs that `ZoneRedundant` (standby in a
+  different AZ) is the mode that actually matches what AWS's Multi-AZ
+  does, where `SameZone` is a materially weaker guarantee (protects
+  against node failure, not a zone outage). `terraform validate`d
+  against the real `azurerm`/`aws` provider schemas with HA enabled on
+  both PostgreSQL and MySQL Flexible Server, and with AWS Multi-AZ +
+  a custom retention value — not just the default/disabled path every
+  golden fixture exercises. Not yet wired for GCP (Cloud SQL has its
+  own equivalent settings); left for a follow-up.
 - [ ] **Wire `discard`/force-delete for Azure Storage Accounts.** AWS sets
   `ForceDestroy` from `discard` (`aws/managed.go:208`); Azure's
   `StorageAccount`/`StorageContainer` models have no equivalent field and

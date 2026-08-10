@@ -191,6 +191,7 @@
       "main": {
         "administrator_login": "cloudcompose",
         "administrator_password": "${random_password.postgres_admin.result}",
+        "backup_retention_days": 7,
         "lifecycle": {
           "ignore_changes": [
             "zone"

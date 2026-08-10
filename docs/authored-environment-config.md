@@ -94,6 +94,8 @@ provider: aws
 name: prod
 region: eu-west-2
 retain_data_on_destroy: true
+high_availability_enabled: false
+backup_retention_days: 7
 tags:
   Team: platform
 
@@ -110,6 +112,8 @@ provider: azure
 name: prod
 region: eastus
 retain_data_on_destroy: true
+high_availability_enabled: false
+backup_retention_days: 7
 tags: {}
 
 azure:
@@ -173,6 +177,19 @@ for anyone coming from the old flag-based design:
 |---|---|
 | `vpc_cidr` | `--vpc-cidr` |
 | `project_id` | `--project-id`, **required** — not an `init` input at all before this design; see "The project_id gap" below |
+
+### Fields added after the flag-based design was retired
+
+`high_availability_enabled`/`backup_retention_days` (common envelope,
+default `false`/`7`) have no corresponding entry above — they didn't
+exist as flags at any point; both were added directly as
+`environment.yaml`-only fields once `init` was already flags-free (see
+`docs/azure-aws-parity-todo.md`'s Priority 4 backup/HA item). Wired for
+AWS (`aws_db_instance.multi_az`/`backup_retention_period`) and Azure
+(`azurerm_*_flexible_server`'s `high_availability`/
+`backup_retention_days`), applied uniformly to every database an
+environment's apps create — not yet wired for GCP (Cloud SQL has its
+own equivalent settings; left for a follow-up).
 
 `-o`/`--output` is the one flag that survived both revisions — it's
 about where files get *written*, not a decision about the environment

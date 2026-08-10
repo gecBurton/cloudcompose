@@ -228,6 +228,44 @@ func TestInferDatabase_DiscardSkipsSnapshot(t *testing.T) {
 	}
 }
 
+// Tests for docs/azure-aws-parity-todo.md's Priority 4 backup/HA item:
+// AwsEnvironment.HighAvailabilityEnabled/BackupRetentionDays wired into
+// aws_db_instance.multi_az/backup_retention_period.
+
+func TestInferDatabase_HighAvailabilityDisabledByDefault(t *testing.T) {
+	t.Parallel()
+	service := &models.Service{Name: "db", Image: "postgres:16", Capability: models.CapabilityDatabase}
+	env := fullMockProdEnv()
+	resources := models.NewAWSResources()
+	inferDatabase(resources, service, &env, minimalGetName("prod", "app"), nil, false)
+
+	dbInstance := resources.DbInstance["db_db"]
+	if dbInstance.MultiAz {
+		t.Errorf("expected MultiAz = false by default (HA doubles compute cost, so it's opt-in)")
+	}
+	if dbInstance.BackupRetentionPeriod != 7 {
+		t.Errorf("BackupRetentionPeriod = %d, want 7 (the default both NewAwsEnvironment and NewAzureEnvironment share)", dbInstance.BackupRetentionPeriod)
+	}
+}
+
+func TestInferDatabase_HighAvailabilityEnabledSetsMultiAz(t *testing.T) {
+	t.Parallel()
+	service := &models.Service{Name: "db", Image: "postgres:16", Capability: models.CapabilityDatabase}
+	env := fullMockProdEnv()
+	env.HighAvailabilityEnabled = true
+	env.BackupRetentionDays = 14
+	resources := models.NewAWSResources()
+	inferDatabase(resources, service, &env, minimalGetName("prod", "app"), nil, false)
+
+	dbInstance := resources.DbInstance["db_db"]
+	if !dbInstance.MultiAz {
+		t.Errorf("expected MultiAz = true when HighAvailabilityEnabled is set")
+	}
+	if dbInstance.BackupRetentionPeriod != 14 {
+		t.Errorf("BackupRetentionPeriod = %d, want 14", dbInstance.BackupRetentionPeriod)
+	}
+}
+
 func TestInferObjectStorage_BucketNameSanitized(t *testing.T) {
 	t.Parallel()
 	service := &models.Service{Name: "blobs", Capability: models.CapabilityObjectStorage}

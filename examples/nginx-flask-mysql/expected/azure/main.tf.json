@@ -142,6 +142,7 @@
       "main": {
         "administrator_login": "cloudcompose",
         "administrator_password": "${random_password.mysql_admin.result}",
+        "backup_retention_days": 7,
         "location": "eastus",
         "name": "prod-nginx-flask-mysql-mysql",
         "public_network_access": "Enabled",

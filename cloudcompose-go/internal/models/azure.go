@@ -213,6 +213,7 @@ type PostgreSQLFlexibleServer struct {
 	DelegatedSubnetID          *string             `json:"delegated_subnet_id,omitempty"`
 	PrivateDnsZoneID           *string             `json:"private_dns_zone_id,omitempty"`
 	PublicNetworkAccessEnabled bool                `json:"public_network_access_enabled"`
+	BackupRetentionDays        int                 `json:"backup_retention_days,omitempty"`
 	HighAvailability           map[string]string   `json:"high_availability,omitempty"`
 	DatabaseName               *string             `json:"database_name,omitempty"`
 	DependsOn                  []string            `json:"depends_on,omitempty"`
@@ -277,9 +278,10 @@ type MySQLFlexibleServer struct {
 	// but there's no reason to also carry the redundant value.
 	PublicNetworkAccess *string `json:"public_network_access,omitempty"`
 
-	HighAvailability map[string]string `json:"high_availability,omitempty"`
-	DependsOn        []string          `json:"depends_on,omitempty"`
-	Tags             map[string]string `json:"tags,omitempty"`
+	BackupRetentionDays int               `json:"backup_retention_days,omitempty"`
+	HighAvailability    map[string]string `json:"high_availability,omitempty"`
+	DependsOn           []string          `json:"depends_on,omitempty"`
+	Tags                map[string]string `json:"tags,omitempty"`
 }
 
 // MySQLFlexibleServerStorage is the `storage` block's contents.

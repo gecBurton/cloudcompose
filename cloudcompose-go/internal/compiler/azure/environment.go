@@ -40,6 +40,12 @@ func LoadAzureEnvironment(dir string) (*models.AzureEnvironment, error) {
 	if retainData, ok := raw["retain_data_on_destroy"].(bool); ok {
 		env.RetainDataOnDestroy = retainData
 	}
+	if highAvailability, ok := raw["high_availability_enabled"].(bool); ok {
+		env.HighAvailabilityEnabled = highAvailability
+	}
+	if backupRetentionDays, ok := raw["backup_retention_days"].(float64); ok {
+		env.BackupRetentionDays = int(backupRetentionDays)
+	}
 	env.Tags = shared.ToStringMap(raw["tags"])
 	env.ContainerAppsEnvironmentName, _ = raw["container_apps_environment_name"].(string)
 	env.LogAnalyticsWorkspaceID, _ = raw["log_analytics_workspace_id"].(string)

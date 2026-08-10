@@ -14,12 +14,14 @@
     "aws_db_instance": {
       "db_db": {
         "allocated_storage": 20,
+        "backup_retention_period": 7,
         "db_name": "scaling_db",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "engine": "postgres",
         "final_snapshot_identifier": "prod-scaling-db-final-${random_id.db_snapshot.hex}",
         "identifier": "prod-scaling-db",
         "instance_class": "db.t3.medium",
+        "multi_az": false,
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
         "skip_final_snapshot": false,

@@ -31,6 +31,8 @@ func GenerateAwsEnvironment(
 	awsEndpoint *string,
 	tags map[string]string,
 	retainDataOnDestroy bool,
+	highAvailabilityEnabled bool,
+	backupRetentionDays int,
 ) (string, error) {
 	tfn := shared.TfName(name)
 	envTag := map[string]string{"Environment": name}
@@ -274,14 +276,16 @@ func GenerateAwsEnvironment(
 	}
 
 	environmentConfig := map[string]any{
-		"target":                 "aws",
-		"name":                   name,
-		"region":                 region,
-		"vpc_id":                 fmt.Sprintf("${aws_vpc.%s.id}", tfn),
-		"public_subnets":         publicSubnetRefs,
-		"private_subnets":        privateSubnetRefs,
-		"ecs_cluster_arn":        fmt.Sprintf("${aws_ecs_cluster.%s.arn}", tfn),
-		"retain_data_on_destroy": retainDataOnDestroy,
+		"target":                    "aws",
+		"name":                      name,
+		"region":                    region,
+		"vpc_id":                    fmt.Sprintf("${aws_vpc.%s.id}", tfn),
+		"public_subnets":            publicSubnetRefs,
+		"private_subnets":           privateSubnetRefs,
+		"ecs_cluster_arn":           fmt.Sprintf("${aws_ecs_cluster.%s.arn}", tfn),
+		"retain_data_on_destroy":    retainDataOnDestroy,
+		"high_availability_enabled": highAvailabilityEnabled,
+		"backup_retention_days":     backupRetentionDays,
 	}
 	if createALB {
 		environmentConfig["alb_arn"] = fmt.Sprintf("${aws_lb.%s.arn}", tfn)

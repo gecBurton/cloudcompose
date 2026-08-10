@@ -41,6 +41,12 @@ func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
 	if retainData, ok := raw["retain_data_on_destroy"].(bool); ok {
 		env.RetainDataOnDestroy = retainData
 	}
+	if highAvailability, ok := raw["high_availability_enabled"].(bool); ok {
+		env.HighAvailabilityEnabled = highAvailability
+	}
+	if backupRetentionDays, ok := raw["backup_retention_days"].(float64); ok {
+		env.BackupRetentionDays = int(backupRetentionDays)
+	}
 	env.Tags = shared.ToStringMap(raw["tags"])
 	env.VpcID, _ = raw["vpc_id"].(string)
 	env.PublicSubnets = shared.ToStringSlice(raw["public_subnets"])

@@ -149,6 +149,15 @@ type IamRolePolicy struct {
 	Policy string `json:"policy"`
 }
 
+// DbInstance mirrors aws_db_instance. MultiAz/BackupRetentionPeriod are
+// environment-level decisions (AwsEnvironment.HighAvailabilityEnabled/
+// BackupRetentionDays), applied uniformly to every database this app
+// creates, not a per-service x-cloud setting -- see
+// docs/azure-aws-parity-todo.md's Priority 4 backup/HA item for why.
+// `omitempty` on both is cosmetic, not semantic: false/0 are both real,
+// valid values the provider accepts (Multi-AZ off, zero-day retention),
+// and every call site sets them explicitly from the environment rather
+// than leaving either unset.
 type DbInstance struct {
 	Identifier              string            `json:"identifier"`
 	Engine                  string            `json:"engine"`
@@ -160,6 +169,8 @@ type DbInstance struct {
 	SkipFinalSnapshot       bool              `json:"skip_final_snapshot"`
 	FinalSnapshotIdentifier *string           `json:"final_snapshot_identifier,omitempty"`
 	PubliclyAccessible      bool              `json:"publicly_accessible"`
+	MultiAz                 bool              `json:"multi_az"`
+	BackupRetentionPeriod   int               `json:"backup_retention_period"`
 	Username                *string           `json:"username,omitempty"`
 	Password                *string           `json:"password,omitempty"`
 	Tags                    map[string]string `json:"tags,omitempty"`

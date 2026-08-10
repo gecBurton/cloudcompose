@@ -21,6 +21,8 @@ func GenerateAzureEnvironment(
 	name, location, vnetCIDR string,
 	tags map[string]string,
 	retainDataOnDestroy bool,
+	highAvailabilityEnabled bool,
+	backupRetentionDays int,
 ) (string, error) {
 	tfn := shared.TfName(name)
 	envTag := map[string]string{"Environment": name}
@@ -164,6 +166,8 @@ func GenerateAzureEnvironment(
 		"mysql_subnet_id":                 fmt.Sprintf("${azurerm_subnet.%s_mysql.id}", tfn),
 		"redis_subnet_id":                 fmt.Sprintf("${azurerm_subnet.%s_redis.id}", tfn),
 		"retain_data_on_destroy":          retainDataOnDestroy,
+		"high_availability_enabled":       highAvailabilityEnabled,
+		"backup_retention_days":           backupRetentionDays,
 	}
 	if len(tags) > 0 {
 		environmentConfig["tags"] = tags

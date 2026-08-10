@@ -66,15 +66,21 @@ var azureGoldenExamples = []string{
 	// dedicated test covering this, since there's no valid Azure output
 	// for this example to golden-test against.
 	"platform-config",
-	// "compute-tuning" was added the same day (its container-level
-	// cpu/memory overrides worked correctly at the time), then removed
-	// again once the exact-CPU/memory-pair validation below was added:
-	// its worker service (size: medium + an explicit memory: 4096
-	// override) resolves to 1.0 vCPU + 4Gi, which is not one of
-	// Consumption's fixed pairs (1.0 vCPU pairs only with 2.0Gi) -- a
-	// real, intentional rejection, not a bug, so there's no valid Azure
-	// output for this example either. See
-	// TestResolveContainerResourcesAzure_RejectsMismatchedCpuMemoryPair.
+	// "compute-tuning" was added 2026-08-08 (its container-level
+	// cpu/memory overrides worked correctly at the time), removed again
+	// once the exact-CPU/memory-pair validation was added the same
+	// week (its worker service's `size: medium` + an explicit
+	// `memory: 4096` override resolved to 1.0 vCPU + 4Gi -- not one of
+	// Consumption's fixed pairs, correctly rejected), then added back
+	// once more (2026-08-10) after the example's worker override was
+	// changed to a matched pair valid on both clouds (2.0 vCPU/4Gi,
+	// via an explicit `cpu:` override alongside `memory:` rather than
+	// overriding memory alone against a `size:` default) -- see
+	// docs/azure-aws-parity-todo.md's Priority 4 item for the full
+	// history, and TestResolveContainerResourcesAzure_AllowsMatchedExplicitOverrides
+	// for the dedicated test covering the pattern this example now
+	// demonstrates.
+	"compute-tuning",
 }
 
 // TestInferAzure_GoldenExamplesByteIdentical mirrors

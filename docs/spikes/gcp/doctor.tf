@@ -5,7 +5,7 @@
 # startup_grace_period. This is the example the AWS acceptance run proves.
 
 locals {
-  project  = "prod-composey"
+  project  = "prod-cloudcompose"
   region   = "europe-west2"
   app_name = "doctor"
 }
@@ -16,7 +16,7 @@ data "google_compute_network" "env" {
 }
 
 # --- build: ECR -> Artifact Registry -----------------------------------------
-# Platform-owned, like ACR: one repository holds many images, so composey has no
+# Platform-owned, like ACR: one repository holds many images, so cloudcompose has no
 # per-service repository to create.
 data "google_artifact_registry_repository" "env" {
   project       = local.project
@@ -90,7 +90,7 @@ resource "google_sql_database_instance" "db" {
 }
 
 resource "google_sql_user" "db" {
-  name     = "composey"
+  name     = "cloudcompose"
   project  = local.project
   instance = google_sql_database_instance.db.name
   password = random_password.db.result
@@ -166,7 +166,7 @@ resource "google_cloud_run_v2_service" "doctor" {
         }
       }
 
-      # Cloud Run injects PORT and routes to exactly one port. composey's
+      # Cloud Run injects PORT and routes to exactly one port. cloudcompose's
       # `port` maps, but a service exposing several ports cannot be expressed.
       ports {
         container_port = 80
@@ -240,4 +240,4 @@ resource "google_cloud_run_v2_service_iam_member" "doctor_public" {
 #
 # The app then connects to /cloudsql/<connection_name> — a socket path, not a
 # host. See README.md: this is the finding that matters most here, because
-# composey's endpoint injection assumes a database endpoint is a hostname.
+# cloudcompose's endpoint injection assumes a database endpoint is a hostname.

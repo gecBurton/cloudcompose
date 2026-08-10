@@ -12,7 +12,7 @@ services:
     depends_on:
       - cache
       - db
-    x-composey:
+    x-cloud:
       ingress: {}
       size: medium
       min_scale: 2
@@ -30,5 +30,5 @@ services:
   cleanup:
     image: busybox
     command: ["echo", "cleaning up..."]
-    x-composey:
+    x-cloud:
       schedule: "0 2 * * *"

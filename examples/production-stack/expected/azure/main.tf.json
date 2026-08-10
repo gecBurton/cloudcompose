@@ -251,7 +251,7 @@
     },
     "azurerm_postgresql_flexible_server": {
       "main": {
-        "administrator_login": "composey",
+        "administrator_login": "cloudcompose",
         "administrator_password": "${random_password.postgres_admin.result}",
         "lifecycle": {
           "ignore_changes": [

@@ -1,4 +1,4 @@
-# Build-from-source: `web` has a build context instead of an image, so composey
+# Build-from-source: `web` has a build context instead of an image, so cloudcompose
 # provisions an ECR repo and builds+pushes the image via Terraform (kreuzwerker/
 # docker) during `terraform apply`, then runs it on Fargate behind the ALB.
 services:
@@ -9,7 +9,7 @@ services:
       - 80:80
     networks:
       - public
-    x-composey:
+    x-cloud:
       ingress: {}
 networks:
   public:

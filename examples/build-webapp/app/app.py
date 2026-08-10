@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 @app.get("/")
 def root():
-    return "hello from a composey-built image\n", 200
+    return "hello from a cloudcompose-built image\n", 200
 
 
 if __name__ == "__main__":

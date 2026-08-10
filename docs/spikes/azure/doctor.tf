@@ -78,7 +78,7 @@ resource "azurerm_postgresql_flexible_server" "db" {
   location            = data.azurerm_resource_group.env.location
   version             = "16"
 
-  administrator_login    = "composey"
+  administrator_login    = "cloudcompose"
   administrator_password = random_password.db.result
 
   sku_name   = "B_Standard_B1ms"
@@ -107,7 +107,7 @@ resource "azurerm_user_assigned_identity" "doctor" {
 
 # Built-in RBAC roles replace synthesised policy documents entirely. Note this
 # is exactly the "named access tier" idea borrowed from ecs_composex, except
-# Azure ships the vocabulary rather than requiring composey to define it.
+# Azure ships the vocabulary rather than requiring cloudcompose to define it.
 resource "azurerm_role_assignment" "doctor_blobs" {
   scope                = azurerm_storage_container.blobs.resource_manager_id
   role_definition_name = "Storage Blob Data Contributor"

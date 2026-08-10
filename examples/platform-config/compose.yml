@@ -5,7 +5,7 @@
 # and values like ENVIRONMENT=local that are simply wrong once deployed — ends up
 # baked into the generated Terraform.
 #
-# Composey carries across only what is written literally here. Everything else
+# cloudcompose carries across only what is written literally here. Everything else
 # contributes its name: the variable is created in Secrets Manager and injected
 # from there, for an operator to fill in.
 services:
@@ -19,5 +19,5 @@ services:
       # Named here, valued elsewhere: becomes a Secrets Manager reference.
       API_TOKEN: ${API_TOKEN}
       SENTRY_DSN: ${SENTRY_DSN}
-    x-composey:
+    x-cloud:
       ingress: {}

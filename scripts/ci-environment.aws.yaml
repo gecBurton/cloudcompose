@@ -10,9 +10,9 @@
 #
 # name: is a placeholder, not a real decision -- scripts/smoke-test.sh
 # generates a per-run copy of this file with name: substituted for the
-# run-specific value (ci<run-number>) before calling `composey init`,
+# run-specific value (ci<run-number>) before calling `cloudcompose init`,
 # since a shared AWS account needs a unique resource prefix per run and
-# composey init itself takes no flags to express that. region: below is
+# cloudcompose init itself takes no flags to express that. region: below is
 # likewise substituted per run, since it's a workflow_dispatch input
 # (see acceptance.yml). See scripts/smoke-test.sh's own comments at the
 # point it does this.
@@ -21,7 +21,7 @@ name: PLACEHOLDER
 region: eu-west-2
 retain_data_on_destroy: false
 tags:
-  ManagedBy: composey-acceptance-ci
+  ManagedBy: cloudcompose-acceptance-ci
 
 aws:
   vpc_cidr: 10.0.0.0/16

@@ -27,7 +27,7 @@ services:
       - private
     depends_on:
       - db
-    x-composey:
+    x-cloud:
       ingress: {}
   db:
     # We use a mariadb image which supports both amd64 & arm64 architecture
@@ -62,7 +62,7 @@ networks:
   public:
   private:
 volumes:
-  # Mounted by `db`, which composey substitutes for RDS: the managed database
+  # Mounted by `db`, which cloudcompose substitutes for RDS: the managed database
   # brings its own storage, so the volume is accepted and ignored.
   db-data:
 secrets:

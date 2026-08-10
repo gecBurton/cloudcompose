@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert composey's managed-service substitutions actually landed in AWS.
+"""Assert cloudcompose's managed-service substitutions actually landed in AWS.
 
 Reads `terraform show -json` output (the applied state, so every resource here
 really exists in AWS) on stdin and, for each substitution the example uses,
@@ -166,7 +166,7 @@ def check_rds(by_type):
 
     # Warn rather than fail: a compose file may legitimately set a *_PASSWORD
     # variable to a file path or a placeholder, and that is the author's choice,
-    # not something composey introduced. Failing the deployment on a heuristic
+    # not something cloudcompose introduced. Failing the deployment on a heuristic
     # this loose would block real runs for the wrong reason.
     plaintext = [
         f"{name}={value!r}"

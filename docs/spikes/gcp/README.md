@@ -2,10 +2,10 @@
 
 **Status:** design spike, 2026-07-25. No compiler code, nothing deployed.
 Companion to [`../azure/README.md`](../azure/README.md), same method: the same
-three examples, hand-written by hand as the Terraform composey *should* produce,
+three examples, hand-written by hand as the Terraform cloudcompose *should* produce,
 then compared against the AWS output it produces today. GCP was implemented
-shortly after this spike, with lighter verification than AWS/Azure — see
-`plan.md` for why.
+shortly after this spike, with lighter verification than AWS/Azure: it has
+never been tested against a real deployment.
 
 > **For current implementation status of any finding below, see
 > `../../azure-aws-parity-todo.md`** — that doc is the actively-maintained,
@@ -106,7 +106,7 @@ ecs_composex comparison reached from a different direction.
   `BaseEnvironment`, the evidence now says it belongs on `AwsEnvironment`: AWS
   is the only target where the compiled application owns its log store.
 - **One port per service.** Cloud Run routes to a single container port and
-  injects `PORT`. composey already takes `ports[0]`, so nothing breaks, but
+  injects `PORT`. cloudcompose already takes `ports[0]`, so nothing breaks, but
   multi-port services are unrepresentable on this target.
 
 ## Three-cloud comparison

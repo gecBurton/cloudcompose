@@ -5,7 +5,7 @@ can deploy real infrastructure without any long-lived credentials in GitHub.
 
 This Terraform creates:
 - a GitHub Actions **OIDC identity provider** in your AWS account,
-- an **IAM role** (`composey-acceptance-ci`) that only `gecBurton/composey`
+- an **IAM role** (`cloudcompose-acceptance-ci`) that only `gecBurton/cloudcompose`
   workflows may assume, with `AdministratorAccess` (pragmatic for a sandbox;
   scope down as a follow-up), and
 - an **S3 bucket** holding Terraform state for the acceptance runs, so that a
@@ -96,13 +96,13 @@ Similar setup for the **Azure Acceptance** workflow (`.github/workflows/azure-ac
 
 ```bash
 # Create a resource group for CI resources
-az group create --name composey-acceptance --location eastus
+az group create --name cloudcompose-acceptance --location eastus
 
 # Create a service principal for GitHub Actions
 az ad sp create-for-rbac \
-  --name "composey-acceptance-ci" \
+  --name "cloudcompose-acceptance-ci" \
   --role "Contributor" \
-  --scopes /subscriptions/{subscription-id}/resourceGroups/composey-acceptance
+  --scopes /subscriptions/{subscription-id}/resourceGroups/cloudcompose-acceptance
 ```
 
 ## Create the Terraform state backend
@@ -116,11 +116,11 @@ Contributor** on the account. Contributor on the resource group is not enough;
 that grants control-plane rights, not data-plane ones.
 
 ```bash
-SA=composeyacceptstate   # globally unique, 3-24 lowercase alphanumeric
+SA=cloudcomposeacceptstate   # globally unique, 3-24 lowercase alphanumeric
 
 az storage account create \
   --name "$SA" \
-  --resource-group composey-acceptance \
+  --resource-group cloudcompose-acceptance \
   --location uksouth \
   --sku Standard_LRS \
   --kind StorageV2 \
@@ -130,10 +130,10 @@ az storage account create \
 
 # Versioning and soft delete make a corrupted or truncated state recoverable.
 az storage account blob-service-properties update \
-  --account-name "$SA" --resource-group composey-acceptance \
+  --account-name "$SA" --resource-group cloudcompose-acceptance \
   --enable-versioning true --enable-delete-retention true --delete-retention-days 30
 
-SCOPE=$(az storage account show -n "$SA" -g composey-acceptance --query id -o tsv)
+SCOPE=$(az storage account show -n "$SA" -g cloudcompose-acceptance --query id -o tsv)
 
 # The CI service principal, then yourself.
 az role assignment create --assignee <service-principal-object-id> \
@@ -152,12 +152,12 @@ with no way to destroy them except by hand, and `--destroy-only` cannot help.
 ## Configure Federated Credentials (OIDC)
 
 In Azure Portal:
-1. Go to **Azure AD → App registrations → composey-acceptance-ci**
+1. Go to **Azure AD → App registrations → cloudcompose-acceptance-ci**
 2. **Certificates & secrets → Federated credentials**
 3. Add credential:
    - **Scenario**: GitHub Actions deploying Azure resources
    - **Organization**: gecBurton
-   - **Repository**: composey
+   - **Repository**: cloudcompose
    - **Entity type**: Branch
    - **Branch**: main (and/or pull_request)
 
@@ -170,8 +170,8 @@ Repo → **Settings → Secrets and variables → Actions → Variables**, add:
 | `AZURE_CLIENT_ID` | Service principal app ID |
 | `AZURE_TENANT_ID` | Azure AD tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
-| `AZURE_STATE_RESOURCE_GROUP` | `composey-acceptance` (or your RG name) |
-| `AZURE_STATE_ACCOUNT` | `composeyacceptstate` (the storage account above) |
+| `AZURE_STATE_RESOURCE_GROUP` | `cloudcompose-acceptance` (or your RG name) |
+| `AZURE_STATE_ACCOUNT` | `cloudcomposeacceptstate` (the storage account above) |
 
 ## Run
 
@@ -180,13 +180,13 @@ Repo → **Actions → Azure Acceptance → Run workflow** → choose an example
 ## Recovering a leaked run
 
 ```bash
-PROVIDER=azure STATE_RG=composey-acceptance NAME=ci42 PROJECT=hello \
+PROVIDER=azure STATE_RG=cloudcompose-acceptance NAME=ci42 PROJECT=hello \
   az login && scripts/smoke-test.sh --destroy-only
 ```
 
 ## Teardown
 
 ```bash
-az group delete --name composey-acceptance --yes
+az group delete --name cloudcompose-acceptance --yes
 az ad sp delete --id <service-principal-app-id>
 ```

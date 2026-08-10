@@ -6,13 +6,13 @@
 > Azure backend's output actually apply against real Azure); this doc
 > tracks *feature completeness* relative to AWS. Related open items
 > already tracked elsewhere (`docs/spikes/azure/README.md`'s
-> `Relationship` enforcement and size-ceiling findings, `plan.md`'s GCP
+> `Relationship` enforcement and size-ceiling findings, GCP's
 > lighter-verification decision) are cross-referenced, not duplicated.
 
 ## Why this exists
 
-AWS was ported first and most rigorously; Azure got the same review
-discipline for its initial port but has visibly fewer capabilities today.
+AWS was implemented first and most rigorously; Azure got the same review
+discipline for its initial implementation but has visibly fewer capabilities today.
 This is the first systematic, code-read (not guessed) comparison of
 where the two diverge, prioritized by actual impact rather than by
 which file happens to be smaller.
@@ -150,7 +150,7 @@ on Azure — no error, just missing behavior.
   Azure-correct constant from AWS's `shared.SecretsPlaceholderValue`,
   whose own wording says "CHANGE IN AWS CONSOLE"), wired via
   `ContainerAppEnvVar.SecretName`.
-- [x] **Implement `x-composey` platform `config:` support for Azure.**
+- [x] **Implement `x-cloud` platform `config:` support for Azure.**
   `handlePlatformConfig` (`aws/compute.go:342-400`) likewise has no Azure
   equivalent. Same Key Vault-backed mechanism as secrets, once that
   exists. This is the direct reason `examples/platform-config` has no
@@ -323,7 +323,7 @@ been latent and untested since MySQL support was first ported.
   values confirmed against Microsoft's own private-endpoint DNS
   reference, not guessed. `env.RedisSubnetID` (new field) gates this the
   same way `PostgresqlSubnetID`/`MysqlSubnetID` already gate database
-  private networking; `composey init` (`provider: azure` in
+  private networking; `cloudcompose init` (`provider: azure` in
   `environment.yaml`) now creates a
   4th (non-delegated) subnet for it automatically, matching the existing
   Postgres/MySQL/Container-Apps subnet pattern. Verified end-to-end with
@@ -348,7 +348,7 @@ been latent and untested since MySQL support was first ported.
 - [x] **Add a size-ceiling rejection for Azure Container Apps.**
   Consumption-tier caps at 2 vCPU/4GiB; `size: large` maps to only
   1.0vCPU/2Gi today, so the current mapping never actually hits the
-  ceiling — but an explicit `cpu`/`memory` override in `x-composey` could
+  ceiling — but an explicit `cpu`/`memory` override in `x-cloud` could
   exceed it with no rejection path. Still-open finding from
   `docs/spikes/azure/README.md` (finding #3) and
   `docs/spikes/gcp/README.md`'s equivalent finding for GCP — worth fixing
@@ -377,9 +377,10 @@ been latent and untested since MySQL support was first ported.
   the `compute-tuning` example's `worker` service (`size: medium` = 1.0
   vCPU + an explicit `memory: 4096` override = 4Gi): `terraform validate`
   accepts `cpu=1, memory="4096Mi"` even though 1.0vCPU only pairs validly
-  with 2.0Gi. This would fail at real `apply` time and composey has no
-  way to catch it today. Deliberately not fixed in this pass (scope
-  decision, not an oversight) — tracked here as a new, still-open item.
+  with 2.0Gi. This would fail at real `apply` time and Cloud Compose
+  Compiler has no way to catch it today. Deliberately not fixed in this
+  pass (scope decision, not an oversight) — tracked here as a new,
+  still-open item.
 
 - [ ] **Wire backup/HA settings for Azure databases.** `HighAvailability
   map[string]string` exists on the model (`azure.go:185`) but is never
@@ -457,7 +458,7 @@ been latent and untested since MySQL support was first ported.
 - Azure's one-shared-ACR-per-environment vs AWS's one-ECR-repo-per-service
   — both valid, noted as a real difference in `docs/spikes/azure/README.md`,
   not a gap.
-- No shared ALB/ingress equivalent created by `composey init` for Azure
+- No shared ALB/ingress equivalent created by `cloudcompose init` for Azure
   — architecturally justified by Container Apps' per-service-FQDN
   model (no shared listener to configure), not a missing AWS parity
   feature.

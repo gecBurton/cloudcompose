@@ -16,7 +16,7 @@ against real Azure deployments (see `../../azure-todo.md`).
 ## Method
 
 Three examples were chosen to stress different parts of the model, and the
-Terraform that composey *should* produce for each on Azure was written by hand:
+Terraform that cloudcompose *should* produce for each on Azure was written by hand:
 
 | Example | Stresses |
 | --- | --- |
@@ -24,7 +24,7 @@ Terraform that composey *should* produce for each on Azure was written by hand:
 | `production-stack.tf` | cdn + waf, autoscaling, schedule, RDS + cache substitution, relationships |
 | `doctor.tf` | build-from-source, object storage, health check grace period |
 
-Each was then compared against the AWS output composey generates today. The
+Each was then compared against the AWS output cloudcompose generates today. The
 target platform is **Azure Container Apps** — the closest analogue to ECS
 Fargate. ACI is too primitive (no ingress, no scaling) and AKS too heavy.
 
@@ -157,5 +157,5 @@ AWS backend on its own merits:
 6. Should `public_service` become a set?
 
 **Explicitly not needed:** no new capabilities, and no change to the
-compose-facing `x-composey` surface. The parts of the design that users touch
+compose-facing `x-cloud` surface. The parts of the design that users touch
 came through unchanged.

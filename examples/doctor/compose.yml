@@ -1,7 +1,7 @@
-# composey-doctor: proves real read/write connectivity to every managed service.
+# cloudcompose-doctor: proves real read/write connectivity to every managed service.
 #
 # minio -> S3, postgres -> RDS, redis -> ElastiCache are all substituted, and
-# composey injects each endpoint/credential into the doctor. The doctor is built
+# cloudcompose injects each endpoint/credential into the doctor. The doctor is built
 # from source (ECR) and its GET /health does a real round-trip against each:
 # S3 put+get, Postgres write+read, Redis set+get.
 services:
@@ -24,7 +24,7 @@ services:
     networks:
       - public
       - private
-    x-composey:
+    x-cloud:
       ingress: {}
       startup_grace_period: 120
   blobs:

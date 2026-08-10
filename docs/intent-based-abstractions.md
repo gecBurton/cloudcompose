@@ -5,8 +5,8 @@ The docker-compose.yml captures **application intent**. The compiler translates 
 > This is a live design principle, not a historical doc — it still
 > accurately describes how `internal/compiler/{aws,azure,gcp}` work today.
 > An earlier version of this file proposed a more elaborate intent syntax
-> (`x-composey.capacity.scale_on`, `x-composey.access`) that was never
-> built; the examples below have been corrected to the `x-composey` keys
+> (`x-cloud.capacity.scale_on`, `x-cloud.access`) that was never
+> built; the examples below have been corrected to the `x-cloud` keys
 > that actually exist (`internal/models/compose.go`), and the Python
 > inference snippets have been replaced with the real Go functions.
 
@@ -22,13 +22,13 @@ The docker-compose.yml captures **application intent**. The compiler translates 
 
 ### 1. Scaling Intent
 
-One `x-composey.auto_scaling.metrics` list, cloud-agnostic in the compose
+One `x-cloud.auto_scaling.metrics` list, cloud-agnostic in the compose
 file, translated per cloud at compile time:
 
 ```yaml
 services:
   api:
-    x-composey:
+    x-cloud:
       min_scale: 2
       max_scale: 10
       auto_scaling:
@@ -74,8 +74,8 @@ services:
 
 ### 3. Identity Intent
 
-Composey infers what a service needs to access from its declared
-connections and capability — there's no explicit `x-composey.access` block
+Cloud Compose Compiler infers what a service needs to access from its declared
+connections and capability — there's no explicit `x-cloud.access` block
 in the compose file; the compiler works this out from `depends_on` plus
 each dependency's `capability`.
 

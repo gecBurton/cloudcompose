@@ -382,6 +382,24 @@ been latent and untested since MySQL support was first ported.
   pass (scope decision, not an oversight) — tracked here as a new,
   still-open item.
 
+  **Done (2026-08-10).** `azureCPUMemoryPairAzure` (`azure/compute.go`)
+  validates the resolved (cpu, memory) pair together — checking CPU
+  lands on a 0.25 vCPU step and that memory equals exactly `2 × cpu` GiB,
+  both confirmed against Microsoft's own vCPU/memory allocation table
+  (learn.microsoft.com/azure/container-apps/containers), not guessed.
+  `resolveContainerResourcesAzure` is the one call site
+  (`containerSpecAzure`, shared by both Container Apps and Jobs) that
+  resolves and validates the pair together, replacing two independent
+  calls to `getCPUCoresAzure`/`getMemoryGBAzure` that each only checked
+  their own value against the ceiling. `compute-tuning`'s `worker`
+  service now correctly rejects (the exact bug this item found) —
+  removed from `azureGoldenExamples` the same way `scaling` was for its
+  own Priority 4 rejection, since there's no valid Azure output to
+  golden-test against; see
+  `TestResolveContainerResourcesAzure_RejectsMismatchedCpuMemoryPair`
+  and the rest of `compute_resources_test.go` for dedicated coverage
+  instead.
+
 - [ ] **Wire backup/HA settings for Azure databases.** `HighAvailability
   map[string]string` exists on the model (`azure.go:185`) but is never
   set by `inferDatabasesAzure` — dead field, same category as
@@ -443,8 +461,10 @@ been latent and untested since MySQL support was first ported.
   Partially addressed as a side effect of Priority 2 (a new
   `priority2_test.go`, 14 tests, was added alongside the feature work
   rather than folded into `coverage_test.go` — the "do it incrementally"
-  approach this item recommended), but Azure unit coverage is still not
-  split into per-concern files the way AWS's is. Left open.
+  approach this item recommended), and again by the Priority 4
+  CPU/memory-pair fix (a new `compute_resources_test.go`, 8 tests, added
+  the same way), but Azure unit coverage is still not split into
+  per-concern files the way AWS's is. Left open.
 
 ## Explicitly not a gap (architectural differences confirmed intentional)
 

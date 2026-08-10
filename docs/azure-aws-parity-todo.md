@@ -546,7 +546,7 @@ been latent and untested since MySQL support was first ported.
   `terraform validate`d against the real `azurerm` provider afterward,
   not just trusted structurally.
 
-- [ ] **`FrontDoorOriginGroup.HealthProbe` is a second, unrelated dead
+- [x] **`FrontDoorOriginGroup.HealthProbe` is a second, unrelated dead
   field** — found while doing the Container Apps probe item above, not
   the same gap: `models.FrontDoorOriginGroup.HealthProbe`
   (`azure.go:505`) is Front Door's own health probe (whether an *origin*
@@ -560,6 +560,32 @@ been latent and untested since MySQL support was first ported.
   concept — it retries failed requests instead). Not scoped or
   implemented here; flagged as its own item since it's a different
   resource and a different kind of "health" than what this item closed.
+
+  **Done (2026-08-10).** Not an AWS-parity fix (confirmed CloudFront's
+  `origin` block genuinely has no equivalent concept — nothing to
+  mirror), but a real Azure-side capability improvement:
+  `frontDoorHealthProbeFor` (`azure/edge.go`) populates `health_probe`
+  from the same `service.Ingress.HealthCheck.Path` already collected for
+  the service's Container App `liveness_probe`, reusing a signal that
+  already exists rather than adding a new one. `protocol` is always
+  `"Https"`, not derived from the service's own `HealthCheck.Type`
+  (http/tcp): Front Door's route always forwards to the origin over
+  HTTPS regardless (`NewFrontDoorRoute`'s `ForwardingProtocol` is
+  unconditionally `"HttpsOnly"`), confirmed via a real `terraform
+  validate`, not assumed from the naming symmetry with Container Apps'
+  own transport choice — a probe checking any other protocol would be
+  checking something real traffic never uses. `interval_in_seconds: 30`
+  and `request_type: "HEAD"` come directly from Microsoft's own health-probes
+  documentation (30s is the documented default probe frequency; HEAD is
+  the explicitly recommended request type "to lower the load and cost
+  to your origins").
+
+  `FrontDoorHealthProbe` modeled as a bare struct pointer, not a slice
+  (unlike `ContainerAppProbe`): confirmed against the real schema
+  (`go run ./cmd/schema-check`, zero mismatches) that `health_probe` is
+  genuinely capped at one entry (`max_items: 1`), a real cardinality
+  difference from the Container Apps probes, not an oversight repeating
+  that item's own bug.
 
 ## Testing debt (a consequence of the gaps above, not independent)
 

@@ -529,10 +529,29 @@ type FrontDoorEndpoint struct {
 }
 
 type FrontDoorOriginGroup struct {
-	Name                  string         `json:"name"`
-	CdnFrontdoorProfileID string         `json:"cdn_frontdoor_profile_id"`
-	LoadBalancing         map[string]any `json:"load_balancing"`
-	HealthProbe           map[string]any `json:"health_probe,omitempty"`
+	Name                  string                `json:"name"`
+	CdnFrontdoorProfileID string                `json:"cdn_frontdoor_profile_id"`
+	LoadBalancing         map[string]any        `json:"load_balancing"`
+	HealthProbe           *FrontDoorHealthProbe `json:"health_probe,omitempty"`
+}
+
+// FrontDoorHealthProbe mirrors azurerm_cdn_frontdoor_origin_group's
+// health_probe block -- confirmed against the real schema that this is
+// capped at one entry (nesting_mode: list, max_items: 1), unlike the
+// Container Apps probe blocks (see ContainerAppProbe's own doc comment
+// for that contrast), so a bare struct is correct here, not a slice.
+//
+// This is not an AWS-parity item: CloudFront's own `origin` block has no
+// health-probe/origin-health concept at all (it routes on origin
+// failover config, not periodic polling) -- populating this is a
+// genuine Azure-side capability improvement using a signal
+// (service.Ingress.HealthCheck.Path) already collected for Container
+// Apps' own liveness_probe, not something to mirror from AWS.
+type FrontDoorHealthProbe struct {
+	Protocol          string `json:"protocol"`
+	IntervalInSeconds int    `json:"interval_in_seconds"`
+	Path              string `json:"path,omitempty"`
+	RequestType       string `json:"request_type,omitempty"`
 }
 
 // FrontDoorOrigin mirrors FrontDoorOrigin: the backend Front Door forwards

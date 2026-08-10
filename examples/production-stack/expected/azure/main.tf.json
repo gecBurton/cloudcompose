@@ -43,6 +43,12 @@
     "azurerm_cdn_frontdoor_origin_group": {
       "web": {
         "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
+        "health_probe": {
+          "interval_in_seconds": 30,
+          "path": "/",
+          "protocol": "Https",
+          "request_type": "HEAD"
+        },
         "load_balancing": {},
         "name": "web"
       }

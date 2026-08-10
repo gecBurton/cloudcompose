@@ -168,7 +168,7 @@ bug found in a 45-minute CI run this session was findable that way.
 has had the equivalent since the start and Azure had none, which is most of why
 the bugs accumulated.
 
-**State and cleanup.** Terraform state lives in `composeyacceptstate/tfstate`
+**State and cleanup.** Terraform state lives in `cloudcomposeacceptstate/tfstate`
 with Entra ID auth (shared-key access is disabled; identities need *Storage
 Blob Data Contributor* on the account, not just Contributor on the resource
 group). A clean teardown purges its own state; a failed one keeps it, because

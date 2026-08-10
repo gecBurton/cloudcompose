@@ -15,7 +15,7 @@ Deploying any of these examples for real is a two-step process — bootstrap
 a shared environment once, then deploy one or more apps into it:
 
 ```bash
-cd composey-go
+cd cloudcompose-go
 
 # Step 1: bootstrap the shared platform infrastructure (VPC, ECS
 # cluster/Container Apps Environment, etc.) — run once per environment,
@@ -86,7 +86,7 @@ the comments in the smoke-test script for exactly how.
 ## Running the golden tests yourself
 
 ```bash
-cd composey-go
+cd cloudcompose-go
 go test ./internal/compiler/aws/... -run TestInferAWS_GoldenExamplesByteIdentical -v
 go test ./internal/compiler/azure/... -run TestInferAzure_GoldenExamplesByteIdentical -v
 ```

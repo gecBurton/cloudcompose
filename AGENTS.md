@@ -2,17 +2,12 @@
 
 ## Project Overview
 
-Cloud Compose Compiler (CLI binary: `cloudcompose`; repo/module path still
-`composey` for historical reasons -- see "Naming" below) is a Docker
+Cloud Compose Compiler (CLI binary: `cloudcompose`) is a Docker
 Compose to Terraform compiler that provides a PaaS-like deployment
 experience for AWS, Azure, and GCP. It transforms annotated Docker
 Compose files into cloud infrastructure using intent-based abstractions.
 
-The compiler is implemented entirely in Go, in `composey-go/`. There is
-no Python runtime dependency: the codebase migrated incrementally from a
-Python prototype (see `plan.md` for that history) and the last Python
-source was removed once the Go implementation was verified
-byte-identical against it for every supported cloud.
+The compiler is implemented entirely in Go, in `cloudcompose-go/`.
 
 **Architecture**: 4-stage compiler pipeline
 1. **Parse**: Load Compose files via the `compose-go` library
@@ -26,28 +21,10 @@ byte-identical against it for every supported cloud.
   Redis, Blob Storage, Key Vault, Front Door
 - **GCP**: Cloud Run, Cloud SQL, Memorystore, Cloud Storage
 
-## Naming
-
-The product is called **Cloud Compose Compiler** (CLI binary:
-`cloudcompose`). The GitHub repo, Go module path
-(`github.com/gecburton/composey`), and top-level directory are still
-named `composey` -- a leftover from the project's original name (itself
-a play on `compose-x`, no longer the reference point) -- and are staying
-that way for now to avoid rewriting 60+ Go import lines and breaking any
-existing links to the repo for no functional benefit. Everything
-user-facing (the built binary, `cobra.Command.Use` strings, printed
-help/version text, docs, scripts) says `cloudcompose`; everything that's
-purely an internal implementation detail (package/directory names,
-Go identifiers, code comments referencing the old name) was deliberately
-left alone. `x-cloud` (the Docker Compose extension key, renamed from
-`x-composey`) is a separate, already-completed rename from the
-CLI/product rename above -- it's part of the file format users write,
-not an internal implementation detail, so it went through its own pass.
-
 ## Quick Start
 
 ```bash
-cd composey-go
+cd cloudcompose-go
 
 # Build the binary
 go build -o cloudcompose ./cmd/cloudcompose
@@ -68,7 +45,7 @@ Or via the `Makefile` at the repo root (`make build`, `make test`,
 ## Project Structure
 
 ```
-composey-go/
+cloudcompose-go/
 ├── cmd/cloudcompose/            # CLI entry point (cobra)
 │   ├── main.go                 # root command, parse-only/normalize-only
 │   │                            #   subcommands, version
@@ -112,7 +89,7 @@ composey-go/
 │       │   ├── parser.go           # Stage 1: parse Compose via compose-go
 │       │   ├── normalizer.go       # Stage 2: normalize to semantic model
 │       │   ├── constants.go        # Centralized cloud-agnostic constants
-│       │   ├── errors.go           # ComposeyError
+│       │   ├── errors.go           # CloudComposeError
 │       │   ├── terraform_json.go   # Shared Terraform-JSON marshalling
 │       │   │                       #   helpers used by every generator
 │       │   ├── environment_helpers.go
@@ -172,10 +149,10 @@ composey-go/
 2. **Add Tests**: Unit tests for logic; real-boundary tests that go
    through `ParseCompose` → `Normalize` → `Infer*` against an actual
    compose file in `examples/`, not just hand-built structs — several
-   real bugs during this codebase's Python-to-Go port were only caught
-   by a real compose file having the right shape to expose them.
+   real bugs were only caught by a real compose file having the right
+   shape to expose them.
 3. **Update Constants**: Add magic strings/values to `constants.go`.
-4. **Use `ComposeyError`**: For user-facing errors in the CLI layer
+4. **Use `CloudComposeError`**: For user-facing errors in the CLI layer
    (`cmd/cloudcompose/`), not `internal/compiler`, which returns plain `error`.
 5. **Check determinism**: Any new map-shaped or ordered output should get
    a determinism check (run the same input several times, diff the
@@ -186,7 +163,7 @@ composey-go/
 ### Testing
 
 ```bash
-cd composey-go
+cd cloudcompose-go
 
 # Run all tests
 go test ./...
@@ -205,7 +182,9 @@ There are no golden-file fixtures checked in separately from
 `examples/*/expected/`; those are the actual regression tests for AWS and
 Azure inference (`TestInferAWS_GoldenExamplesByteIdentical`,
 `TestInferAzure_GoldenExamplesByteIdentical`). GCP has no committed golden
-files (see `plan.md` for why); its own tests pin
+files: it has never been tested against a real deployment, and its test
+coverage remains intentionally lighter than AWS/Azure's -- a scope
+decision made once, not a gap that crept in unnoticed. Its own tests pin
 individual outputs directly or check structural validity instead.
 
 ### Verifying Terraform schema compatibility
@@ -222,12 +201,12 @@ silently wrong rather than a compile error — this is exactly the bug
 `cmd/schema-check` found in `ContainerAppIngress.TrafficWeight`.
 
 ```bash
-cd composey-go
+cd cloudcompose-go
 go run ./cmd/schema-check
 ```
 
 This shells out to `terraform providers schema -json` for every provider
-composey generates config for, at the exact versions pinned in each
+cloudcompose generates config for, at the exact versions pinned in each
 cloud's `generator.go`, and reflects over the models package's
 `*Resources` structs to flag any nested block whose Go shape (slice vs.
 non-slice) disagrees with the schema's cardinality. It's run in CI
@@ -242,9 +221,8 @@ shipped `cloudcompose` binary.
 - `go vet` before considering anything done (`make vet`)
 - Prefer explicit over implicit
 - Comments should explain *why*, not restate *what* the code already
-  says — especially for anything mirroring specific Python behavior that
-  looks like it could be a bug (several genuinely are, ported faithfully
-  rather than silently "fixed"; see e.g. `gcp/infer.go`'s
+  says — especially for anything that looks like it could be a bug but
+  is deliberate (see e.g. `gcp/infer.go`'s
   `pyNoneStringGcp`/`buildConnectionURLGcp` for one still-open documented
   example — Azure's equivalent was fixed in a later pass, see
   `docs/azure-aws-parity-todo.md`)
@@ -252,22 +230,22 @@ shipped `cloudcompose` binary.
 ### Error Handling
 
 ```go
-import "github.com/gecburton/composey/internal/compiler/shared"
+import "github.com/gecburton/cloudcompose/internal/compiler/shared"
 
 // For user-facing CLI errors:
-err := shared.NewComposeyError("service X is invalid because ...")
+err := shared.NewCloudComposeError("service X is invalid because ...")
 
 // With additional detail shown beneath the main message:
-err := shared.NewComposeyErrorWithDetails("message", "details")
+err := shared.NewCloudComposeErrorWithDetails("message", "details")
 ```
 
 Everywhere else, return plain `error` values with `fmt.Errorf`-style
-wrapping; `ComposeyError` exists specifically for the CLI's
+wrapping; `CloudComposeError` exists specifically for the CLI's
 show-without-stack-trace behavior, not as a general error type.
 
 ### Key Constants
 
-Located in `composey-go/internal/compiler/shared/constants.go` (only the
+Located in `cloudcompose-go/internal/compiler/shared/constants.go` (only the
 constants genuinely shared across clouds live here; AWS-only constants
 like `SizeMappings`/`DBInstanceClasses` are still centralized in this same
 file for now rather than split further):
@@ -296,7 +274,7 @@ adopt instead (`cmd/schema-check`'s own doc comment covers the same
 ground for schema verification specifically).
 
 **Utilities:** `gopkg.in/yaml.v3` (transitive, via compose-go, not a
-direct dependency of composey's own code), `encoding/json` (standard
+direct dependency of cloudcompose's own code), `encoding/json` (standard
 library).
 
 ## Common Tasks
@@ -341,14 +319,8 @@ library).
 
 ## Important Notes
 
-- **No Python.** The codebase used to be a Python prototype with an
-  incremental Go migration; that migration is complete, and all Python
-  source/tests were removed. `plan.md` documents the full migration
-  history if you need context on why something is the way it is.
 - **Determinism is critical** — output must be repeatable for the same
-  inputs (though it no longer needs to be byte-identical to any specific
-  historical Python output — that constraint was retired once the Python
-  implementation was fully removed). Go's map iteration order is
+  inputs. Go's map iteration order is
   randomized, but `encoding/json.Marshal` always sorts map keys
   alphabetically before writing JSON, which is what every generator in
   this codebase relies on for deterministic key ordering — no custom
@@ -358,26 +330,25 @@ library).
 - **No Silent Failures** — Unknown keys in `x-cloud` are errors, not
   ignored (see `models/compose.go`'s `XCloud.UnmarshalJSON`).
 - **AWS-First but Cloud-Agnostic** — Semantic model designed for
-  multi-cloud; AWS was ported first and most exhaustively verified, Azure
+  multi-cloud; AWS was implemented first and most exhaustively verified, Azure
   second with matching rigor, GCP last with deliberately lighter
-  verification (see `plan.md` for why).
+  verification: it has never been tested against a real deployment.
 - **Terraform is a compilation target** — Never hand-edit generated
   output.
-- **Ported-not-fixed bugs exist deliberately.** Several places in this
-  codebase replicate a Python behavior that reads like a bug (e.g.
+- **Deliberate-not-accidental quirks exist.** A few places in this
+  codebase have behavior that reads like it could be a bug (e.g.
   GCP's `pyNoneStringGcp` rendering `"None"` literally into a URL for
-  an unset connection field) rather than silently correcting it during
-  the port. These are commented explicitly where they occur. Don't "fix"
-  one without checking whether it's an intentional faithful port first —
-  and don't assume a "still open" comment stays true forever, either:
-  Azure had the same bug until `docs/azure-aws-parity-todo.md`'s Priority
-  1 work fixed it; the comment pointing at it was updated at the same
-  time, not left to drift.
+  an unset connection field) but is intentional, commented explicitly
+  where it occurs. Don't "fix" one without checking whether it's
+  deliberate first — and don't assume a "still open" comment stays true
+  forever, either: Azure had the same quirk until
+  `docs/azure-aws-parity-todo.md`'s Priority 1 work fixed it; the comment
+  pointing at it was updated at the same time, not left to drift.
 
 ## Debugging
 
 ```bash
-cd composey-go
+cd cloudcompose-go
 
 # Show inference decisions without compiling
 ./cloudcompose main -f compose.yml --explain

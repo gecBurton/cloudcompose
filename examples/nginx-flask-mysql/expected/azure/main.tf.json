@@ -140,7 +140,7 @@
     },
     "azurerm_mysql_flexible_server": {
       "main": {
-        "administrator_login": "composey",
+        "administrator_login": "cloudcompose",
         "administrator_password": "${random_password.mysql_admin.result}",
         "location": "eastus",
         "name": "prod-nginx-flask-mysql-mysql",

@@ -21,17 +21,17 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: composey-go/go.mod
-        cache-dependency-path: composey-go/go.sum
+        go-version-file: cloudcompose-go/go.mod
+        cache-dependency-path: cloudcompose-go/go.sum
 
     - name: Run go vet and go test
       run: go vet ./... && go test ./...
-      working-directory: composey-go
+      working-directory: cloudcompose-go
 
     - name: Check Terraform schema compatibility
       run: go run ./cmd/schema-check
-      working-directory: composey-go
+      working-directory: cloudcompose-go
 
     - name: Build cloudcompose binary
       run: go build -o cloudcompose ./cmd/cloudcompose
-      working-directory: composey-go
+      working-directory: cloudcompose-go

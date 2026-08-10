@@ -7,7 +7,7 @@ variable "region" {
 variable "github_repo" {
   type        = string
   description = "owner/repo allowed to assume the role via OIDC. Documentation only; the trust is enforced by github_subject_patterns."
-  default     = "gecBurton/composey"
+  default     = "gecBurton/cloudcompose"
 }
 
 variable "github_subject_patterns" {
@@ -31,15 +31,15 @@ variable "github_subject_patterns" {
     prints the `sub` that GitHub actually sent; match it here.
   EOT
   default = [
-    "repo:gecBurton@8233643/composey@1305607063:*",
-    "repo:gecBurton/composey:*",
+    "repo:gecBurton@8233643/cloudcompose@1305607063:*",
+    "repo:gecBurton/cloudcompose:*",
   ]
 }
 
 variable "role_name" {
   type        = string
   description = "Name of the IAM role GitHub Actions assumes."
-  default     = "composey-acceptance-ci"
+  default     = "cloudcompose-acceptance-ci"
 }
 
 variable "create_oidc_provider" {

@@ -163,7 +163,7 @@
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
         "skip_final_snapshot": false,
-        "username": "composey",
+        "username": "cloudcompose",
         "vpc_security_group_ids": [
           "${aws_security_group.default_sg.id}"
         ]
@@ -349,7 +349,7 @@
     "aws_secretsmanager_secret_version": {
       "db_db_secret_v1": {
         "secret_id": "${aws_secretsmanager_secret.db_db_secret.id}",
-        "secret_string": "{\"username\": \"composey\", \"password\": \"${random_password.db_password.result}\", \"engine\": \"postgres\"}"
+        "secret_string": "{\"username\": \"cloudcompose\", \"password\": \"${random_password.db_password.result}\", \"engine\": \"postgres\"}"
       }
     },
     "aws_security_group": {

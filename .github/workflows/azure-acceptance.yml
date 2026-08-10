@@ -60,7 +60,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: composey-go/go.mod
+          go-version-file: cloudcompose-go/go.mod
 
       - name: Install Azure CLI
         run: |

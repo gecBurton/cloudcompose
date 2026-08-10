@@ -13,7 +13,7 @@ name: PLACEHOLDER
 region: francecentral
 retain_data_on_destroy: false
 tags:
-  ManagedBy: composey-acceptance-ci
+  ManagedBy: cloudcompose-acceptance-ci
 
 azure:
   vnet_cidr: 10.0.0.0/16

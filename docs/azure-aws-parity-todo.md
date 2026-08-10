@@ -6,13 +6,13 @@
 > Azure backend's output actually apply against real Azure); this doc
 > tracks *feature completeness* relative to AWS. Related open items
 > already tracked elsewhere (`docs/spikes/azure/README.md`'s
-> `Relationship` enforcement and size-ceiling findings, `plan.md`'s GCP
+> `Relationship` enforcement and size-ceiling findings, GCP's
 > lighter-verification decision) are cross-referenced, not duplicated.
 
 ## Why this exists
 
-AWS was ported first and most rigorously; Azure got the same review
-discipline for its initial port but has visibly fewer capabilities today.
+AWS was implemented first and most rigorously; Azure got the same review
+discipline for its initial implementation but has visibly fewer capabilities today.
 This is the first systematic, code-read (not guessed) comparison of
 where the two diverge, prioritized by actual impact rather than by
 which file happens to be smaller.

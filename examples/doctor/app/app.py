@@ -1,11 +1,11 @@
-"""composey-doctor: proves real read/write connectivity to managed services.
+"""cloudcompose-doctor: proves real read/write connectivity to managed services.
 
 GET /health runs one check per capability, each conditional on the env vars
-composey injects. A capability whose env is absent is "skipped", not failed, so
+cloudcompose injects. A capability whose env is absent is "skipped", not failed, so
 the same image validates any environment. Returns 200 only if every active check
 passes, 503 otherwise — with a per-service breakdown.
 
-Env contract (what composey injects):
+Env contract (what cloudcompose injects):
   S3    : BUCKET_NAME               (bucket id)
   RDS   : DB_HOST + DB_USERNAME/DB_PASSWORD (secrets)
   RDS   : DATABASE_URL              (secret; credentials and database included)
@@ -28,8 +28,8 @@ def check_s3():
     import boto3
 
     s3 = boto3.client("s3")
-    key = "composey-doctor/health.txt"
-    payload = b"composey-doctor"
+    key = "cloudcompose-doctor/health.txt"
+    payload = b"cloudcompose-doctor"
     s3.put_object(Bucket=bucket, Key=key, Body=payload)
     got = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
     if got != payload:
@@ -54,13 +54,13 @@ def check_db():
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
-                "CREATE TABLE IF NOT EXISTS composey_doctor (k text primary key, v text)"
+                "CREATE TABLE IF NOT EXISTS cloudcompose_doctor (k text primary key, v text)"
             )
             cur.execute(
-                "INSERT INTO composey_doctor (k, v) VALUES ('health', 'ok') "
+                "INSERT INTO cloudcompose_doctor (k, v) VALUES ('health', 'ok') "
                 "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"
             )
-            cur.execute("SELECT v FROM composey_doctor WHERE k = 'health'")
+            cur.execute("SELECT v FROM cloudcompose_doctor WHERE k = 'health'")
             got = cur.fetchone()[0]
     finally:
         conn.close()
@@ -76,8 +76,8 @@ def check_redis():
     import redis
 
     r = redis.from_url(url, socket_connect_timeout=5)
-    r.set("composey-doctor", "ok")
-    got = r.get("composey-doctor")
+    r.set("cloudcompose-doctor", "ok")
+    got = r.get("cloudcompose-doctor")
     if got != b"ok":
         raise RuntimeError("Redis round-trip mismatch")
     return f"ok: set+get on {url}"
@@ -133,7 +133,7 @@ def health():
 @app.get("/")
 def root():
     # Kept trivially healthy so the ALB target passes while checks run on /health.
-    return "composey-doctor: GET /health\n", 200
+    return "cloudcompose-doctor: GET /health\n", 200
 
 
 if __name__ == "__main__":

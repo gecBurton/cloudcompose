@@ -35,7 +35,7 @@
         "password": "${random_password.db_password.result}",
         "publicly_accessible": false,
         "skip_final_snapshot": false,
-        "username": "composey",
+        "username": "cloudcompose",
         "vpc_security_group_ids": [
           "${aws_security_group.private_sg.id}"
         ]
@@ -217,11 +217,11 @@
     "aws_secretsmanager_secret_version": {
       "db_db_secret_v1": {
         "secret_id": "${aws_secretsmanager_secret.db_db_secret.id}",
-        "secret_string": "{\"username\": \"composey\", \"password\": \"${random_password.db_password.result}\", \"engine\": \"postgres\"}"
+        "secret_string": "{\"username\": \"cloudcompose\", \"password\": \"${random_password.db_password.result}\", \"engine\": \"postgres\"}"
       },
       "doctor_database_url_url_v1": {
         "secret_id": "${aws_secretsmanager_secret.doctor_database_url_url.id}",
-        "secret_string": "postgres://composey:${random_password.db_password.result}@${aws_db_instance.db_db.address}:5432/doctor_db"
+        "secret_string": "postgres://cloudcompose:${random_password.db_password.result}@${aws_db_instance.db_db.address}:5432/doctor_db"
       }
     },
     "aws_security_group": {

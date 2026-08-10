@@ -7,7 +7,7 @@
 # The GcpEnvironment equivalent of vpc_id / ecs_cluster_arn / alb_arn. GCP has
 # no cluster to join: Cloud Run is regional and scoped by project alone.
 locals {
-  project  = "prod-composey"
+  project  = "prod-cloudcompose"
   region   = "europe-west2"
   env_name = "prod"
 }

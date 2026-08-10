@@ -53,7 +53,7 @@ resource "azurerm_postgresql_flexible_server" "db" {
   location            = data.azurerm_resource_group.env.location
   version             = "16"
 
-  administrator_login    = "composey"
+  administrator_login    = "cloudcompose"
   administrator_password = random_password.db.result
 
   # size: small -> burstable tier. The size vocabulary maps cleanly here.

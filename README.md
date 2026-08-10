@@ -103,8 +103,8 @@ services:
 ### Installation
 
 ```bash
-git clone https://github.com/gecBurton/composey.git
-cd composey/composey-go
+git clone https://github.com/gecBurton/cloudcompose.git
+cd cloudcompose/cloudcompose-go
 go build -o cloudcompose ./cmd/cloudcompose
 ```
 
@@ -302,8 +302,8 @@ runtime.
 | **Azure** | ✅ Verified against real deployments (see [`docs/azure-todo.md`](docs/azure-todo.md)) | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
 | **GCP** | ⚠️ Compiles and passes structural tests; not yet verified against a real deployment or covered by golden-file regression tests | Cloud Run | Cloud SQL | Memorystore | Cloud Storage | ❌ not implemented | ❌ not implemented |
 
-GCP support is intentionally less mature than AWS/Azure — see `plan.md`
-for why, and `AGENTS.md`'s "GCP has no committed golden
+GCP support is intentionally less mature than AWS/Azure — see
+`AGENTS.md`'s "GCP has no committed golden
 files" note for the testing gap specifically.
 
 Azure has closed most of its feature/security gaps with AWS (RBAC and
@@ -326,15 +326,15 @@ full, actively-maintained tracker of what's done and what's still open
 ### Install
 
 ```bash
-git clone https://github.com/gecBurton/composey.git
-cd composey/composey-go
+git clone https://github.com/gecBurton/cloudcompose.git
+cd cloudcompose/cloudcompose-go
 go build -o cloudcompose ./cmd/cloudcompose
 ```
 
 ### Quick Test
 
 ```bash
-# From the composey-go directory
+# From the cloudcompose-go directory
 ./cloudcompose init -f ../examples/hello/environment.yaml
 (cd demo-infrastructure && terraform init && terraform apply)
 
@@ -345,7 +345,6 @@ go build -o cloudcompose ./cmd/cloudcompose
 
 ## Documentation
 
-- [Design history and migration log](plan.md)
 - [Azure deployment status](docs/azure-todo.md)
 - [Azure/AWS feature parity gap analysis](docs/azure-aws-parity-todo.md)
 - [Design docs and spikes](docs/)
@@ -376,8 +375,6 @@ No license file has been added to this repository yet.
 
 ## Project Status
 
-**Current Phase:** Fully migrated to Go. All parsing, normalization, inference, generation, and CLI logic run in `composey-go` — there is no Python runtime dependency anymore.
-
-See [plan.md](plan.md) for the migration history.
+**Current Phase:** Pre-alpha. All parsing, normalization, inference, generation, and CLI logic run in `cloudcompose-go`.
 
 **Installation:** Build the `cloudcompose` binary with Go 1.26+ (see Installation above). Prebuilt cross-platform binaries and a package-manager install path are not yet available.

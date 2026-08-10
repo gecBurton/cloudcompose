@@ -5,7 +5,7 @@
 # substitution, and relationship-derived connectivity. AWS emits 33 resources.
 
 locals {
-  project  = "prod-composey"
+  project  = "prod-cloudcompose"
   region   = "europe-west2"
   env_name = "prod"
   app_name = "production-stack"
@@ -62,7 +62,7 @@ resource "google_sql_database_instance" "db" {
 }
 
 resource "google_sql_user" "db" {
-  name     = "composey"
+  name     = "cloudcompose"
   project  = local.project
   instance = google_sql_database_instance.db.name
   password = random_password.db.result

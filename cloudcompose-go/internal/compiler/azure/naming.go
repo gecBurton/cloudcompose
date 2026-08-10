@@ -96,6 +96,21 @@ func FrontDoorProfileName(envName, appName string) string {
 	return strings.Trim(azureFit(candidate, full, 1, 64, "-"), "-")
 }
 
+// FrontDoorFirewallPolicyName names an azurerm_cdn_frontdoor_firewall_policy:
+// 1-128 characters, alphanumeric only -- confirmed via a real terraform
+// validate failure ("name" did not match regex "(^[a-zA-Z])([\\da-zA-Z]{0,127})$"),
+// not assumed from this file's other, dash-permitting Front Door names
+// (FrontDoorProfileName above accepts dashes just fine; this resource is
+// the odd one out). Starting with a digit is separately impossible here
+// in practice (envName/appName/serviceName all come from
+// user-authored names that are themselves constrained elsewhere), so
+// unlike KeyVaultName this doesn't guard for it.
+func FrontDoorFirewallPolicyName(envName, appName, serviceName string) string {
+	full := envName + "-" + appName + "-" + serviceName + "-waf"
+	candidate := nonAlphanumeric.ReplaceAllString(full, "")
+	return azureFit(candidate, full, 1, 128, "")
+}
+
 func isAlpha(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }

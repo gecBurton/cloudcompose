@@ -268,7 +268,7 @@ been latent and untested since MySQL support was first ported.
 
 ## Priority 3 — Architectural gaps (larger design work, not small fixes)
 
-- [ ] **Design and implement an Azure WAF/security-policy equivalent.**
+- [x] **Design and implement an Azure WAF/security-policy equivalent.**
   Not a wiring gap — the resource type doesn't exist in the model at
   all. No `azurerm_cdn_frontdoor_firewall_policy`/`_security_policy`
   anywhere in `models/azure.go` or `azure/edge.go`. AWS creates a WAFv2
@@ -276,6 +276,44 @@ been latent and untested since MySQL support was first ported.
   (`aws/edge.go:28-59,96-97`). This is a bigger lift than most items here
   — needs new model structs, a new inference function, and a design
   decision on which managed rule set(s) to default to.
+
+  **Done (2026-08-10), not a like-for-like mirror by design.** AWS
+  attaches `AWSManagedRulesCommonRuleSet` (a managed, OWASP-style rule
+  group) to every CDN-enabled service for free. Front Door's real
+  equivalent (`managed_rule`) requires the `Premium_AzureFrontDoor` SKU
+  — `Standard_AzureFrontDoor` (this codebase's current SKU,
+  `NewFrontDoorProfile`) may only contain `custom_rule` blocks at all,
+  confirmed against the real provider schema and docs. Upgrading every
+  CDN-enabled environment to Premium to get managed-rule parity was a
+  real option, rejected: it changes cost for every existing Azure
+  deployment using `cdn: true`, not just newly-added WAF behavior.
+  Implemented instead: `FrontDoorFirewallPolicy` +
+  `FrontDoorSecurityPolicy` (`models/azure.go`), wired into
+  `inferCdnAzure` (`azure/edge.go`) at the same per-service granularity
+  AWS already uses (`aws/edge.go`'s `wafKey := service.Name + "_waf"`)
+  — one rate-limit `custom_rule` (100 requests/minute per client IP,
+  matching every request via Microsoft's own documented "Host header
+  length >= 0" pattern for match-everything conditions) rather than
+  AWS's managed ruleset — a real, always-available Standard-SKU
+  protection, honestly short of what AWS's managed rules cover, not a
+  re-skinned version of the same thing.
+
+  Found and fixed a real `terraform validate` failure while doing this:
+  `azurerm_cdn_frontdoor_firewall_policy.name` is alphanumeric-only, no
+  dashes at all — genuinely stricter than every other Front Door
+  resource's own `name` field (`_profile`/`_endpoint`/`_security_policy`
+  all accept dashes, confirmed the same way). Added
+  `FrontDoorFirewallPolicyName` to `azure/naming.go`, following that
+  file's own established convention (`ContainerRegistryName`'s
+  alphanumeric-only shape) rather than a one-off fix, since the
+  constraint and the pattern for handling it already existed in this
+  codebase.
+
+  Flagging as a real, deliberate gap rather than a silent omission: no
+  `managed_rule` support at all (would require modeling the Premium SKU
+  path as a genuinely separate option, not just a flag flip — a
+  follow-up, not folded into this pass).
+
 - [ ] **Design network-isolation enforcement for Azure (or explicitly
   document its absence as intentional).** `NetworkIsolationSegments`
   drives real per-segment security groups on AWS

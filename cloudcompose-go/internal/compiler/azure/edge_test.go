@@ -126,3 +126,126 @@ func TestInferCdnAzure_OriginGroupHasHealthProbe(t *testing.T) {
 		t.Errorf("HealthProbe.Protocol = %q, want Https", group.HealthProbe.Protocol)
 	}
 }
+
+// Tests for docs/azure-aws-parity-todo.md's WAF/security-policy item:
+// inferCdnAzure now also creates a FrontDoorFirewallPolicy +
+// FrontDoorSecurityPolicy per CDN-enabled service, matching AWS's own
+// per-service granularity (aws/edge.go's wafKey := service.Name + "_waf").
+
+func TestInferCdnAzure_CreatesFirewallAndSecurityPolicy(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/"}},
+		},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, testGetNameAzure, nil)
+
+	waf, ok := resources.CdnFrontdoorFirewallPolicy["web"]
+	if !ok {
+		t.Fatalf("expected a FrontDoorFirewallPolicy for web")
+	}
+	if waf.Mode != "Prevention" {
+		t.Errorf("waf.Mode = %q, want Prevention (Detection mode would create the resource but never enforce anything)", waf.Mode)
+	}
+	if len(waf.CustomRule) != 1 {
+		t.Fatalf("expected exactly one custom_rule, got %d", len(waf.CustomRule))
+	}
+	if waf.CustomRule[0]["type"] != "RateLimitRule" {
+		t.Errorf(`custom_rule[0]["type"] = %v, want "RateLimitRule"`, waf.CustomRule[0]["type"])
+	}
+
+	secPolicy, ok := resources.CdnFrontdoorSecurityPolicy["web"]
+	if !ok {
+		t.Fatalf("expected a FrontDoorSecurityPolicy for web")
+	}
+	if secPolicy.Name == "" {
+		t.Errorf("expected secPolicy.Name to be set")
+	}
+}
+
+// TestInferCdnAzure_FirewallPolicyNameIsAlphanumericOnly is the
+// end-to-end companion to TestFrontDoorFirewallPolicyName_ObeysAzureRules:
+// checks inferCdnAzure actually calls FrontDoorFirewallPolicyName rather
+// than, say, getName (which permits dashes) for this one field.
+func TestInferCdnAzure_FirewallPolicyNameIsAlphanumericOnly(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "nginx-flask-mysql",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/"}},
+		},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, testGetNameAzure, nil)
+
+	waf := resources.CdnFrontdoorFirewallPolicy["web"]
+	if !alphanumericOnly.MatchString(waf.Name) {
+		t.Errorf("waf.Name = %q, want alphanumeric only", waf.Name)
+	}
+}
+
+func TestInferCdnAzure_SecurityPolicyReferencesTheFirewallPolicyAndEndpoint(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/"}},
+		},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, testGetNameAzure, nil)
+
+	secPolicy := resources.CdnFrontdoorSecurityPolicy["web"]
+	if len(secPolicy.SecurityPolicies) != 1 {
+		t.Fatalf("expected exactly one security_policies entry, got %d", len(secPolicy.SecurityPolicies))
+	}
+	firewall, ok := secPolicy.SecurityPolicies[0]["firewall"].([]map[string]any)
+	if !ok || len(firewall) != 1 {
+		t.Fatalf("expected exactly one firewall entry, got %v", secPolicy.SecurityPolicies[0]["firewall"])
+	}
+	firewallPolicyID, _ := firewall[0]["cdn_frontdoor_firewall_policy_id"].(string)
+	if firewallPolicyID != "${azurerm_cdn_frontdoor_firewall_policy.web.id}" {
+		t.Errorf("cdn_frontdoor_firewall_policy_id = %q, want a reference to the web firewall policy", firewallPolicyID)
+	}
+	association, ok := firewall[0]["association"].([]map[string]any)
+	if !ok || len(association) != 1 {
+		t.Fatalf("expected exactly one association entry, got %v", firewall[0]["association"])
+	}
+	domain, ok := association[0]["domain"].([]map[string]any)
+	if !ok || len(domain) != 1 {
+		t.Fatalf("expected exactly one domain entry, got %v", association[0]["domain"])
+	}
+	domainID, _ := domain[0]["cdn_frontdoor_domain_id"].(string)
+	if domainID != "${azurerm_cdn_frontdoor_endpoint.web.id}" {
+		t.Errorf("cdn_frontdoor_domain_id = %q, want a reference to the web endpoint", domainID)
+	}
+}
+
+func TestInferCdnAzure_MultipleServicesGetDistinctFirewallPolicies(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/"}},
+			{Name: "api", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/api"}},
+		},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, testGetNameAzure, nil)
+
+	if len(resources.CdnFrontdoorFirewallPolicy) != 2 {
+		t.Fatalf("expected 2 distinct firewall policies (matching AWS's own per-service WAF granularity), got %d", len(resources.CdnFrontdoorFirewallPolicy))
+	}
+	webWaf := resources.CdnFrontdoorFirewallPolicy["web"]
+	apiWaf := resources.CdnFrontdoorFirewallPolicy["api"]
+	if webWaf.Name == apiWaf.Name {
+		t.Errorf("expected distinct firewall policy names, both got %q", webWaf.Name)
+	}
+}

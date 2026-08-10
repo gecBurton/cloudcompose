@@ -29,6 +29,36 @@
         "name": "prod-production-stack-web-fd"
       }
     },
+    "azurerm_cdn_frontdoor_firewall_policy": {
+      "web": {
+        "custom_rule": [
+          {
+            "action": "Block",
+            "enabled": true,
+            "match_condition": [
+              {
+                "match_values": [
+                  "0"
+                ],
+                "match_variable": "RequestHeader",
+                "negation_condition": false,
+                "operator": "GreaterThanOrEqual",
+                "selector": "Host"
+              }
+            ],
+            "name": "RateLimit",
+            "priority": 1,
+            "rate_limit_duration_in_minutes": 1,
+            "rate_limit_threshold": 100,
+            "type": "RateLimitRule"
+          }
+        ],
+        "mode": "Prevention",
+        "name": "prodproductionstackwebwaf",
+        "resource_group_name": "prod",
+        "sku_name": "Standard_AzureFrontDoor"
+      }
+    },
     "azurerm_cdn_frontdoor_origin": {
       "web": {
         "cdn_frontdoor_origin_group_id": "${azurerm_cdn_frontdoor_origin_group.web.id}",
@@ -76,6 +106,33 @@
         "supported_protocols": [
           "Http",
           "Https"
+        ]
+      }
+    },
+    "azurerm_cdn_frontdoor_security_policy": {
+      "web": {
+        "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
+        "name": "prod-production-stack-web-secpolicy",
+        "security_policies": [
+          {
+            "firewall": [
+              {
+                "association": [
+                  {
+                    "domain": [
+                      {
+                        "cdn_frontdoor_domain_id": "${azurerm_cdn_frontdoor_endpoint.web.id}"
+                      }
+                    ],
+                    "patterns_to_match": [
+                      "/*"
+                    ]
+                  }
+                ],
+                "cdn_frontdoor_firewall_policy_id": "${azurerm_cdn_frontdoor_firewall_policy.web.id}"
+              }
+            ]
+          }
         ]
       }
     },

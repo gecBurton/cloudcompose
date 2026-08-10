@@ -37,12 +37,42 @@ type ContainerAppTemplate struct {
 // cpu/memory sit directly on it; azurerm has no nested "resources" block
 // the way ECS does.
 type ContainerAppContainer struct {
-	Name   string               `json:"name"`
-	Image  string               `json:"image"`
-	CPU    float64              `json:"cpu"`
-	Memory string               `json:"memory"`
-	Args   []string             `json:"args,omitempty"`
-	Env    []ContainerAppEnvVar `json:"env"`
+	Name           string               `json:"name"`
+	Image          string               `json:"image"`
+	CPU            float64              `json:"cpu"`
+	Memory         string               `json:"memory"`
+	Args           []string             `json:"args,omitempty"`
+	Env            []ContainerAppEnvVar `json:"env"`
+	LivenessProbe  []ContainerAppProbe  `json:"liveness_probe,omitempty"`
+	ReadinessProbe []ContainerAppProbe  `json:"readiness_probe,omitempty"`
+	StartupProbe   []ContainerAppProbe  `json:"startup_probe,omitempty"`
+}
+
+// ContainerAppProbe mirrors the (near-identical) liveness_probe/
+// readiness_probe/startup_probe blocks -- confirmed against the real
+// provider schema that all three take the same {transport, port, path,
+// interval_seconds, failure_count_threshold} shape (readiness_probe
+// additionally supports success_count_threshold, not modeled here since
+// nothing currently sets it). `path` only applies to HTTP/HTTPS
+// transport; left empty for TCP, matching AWS's own equivalent gating
+// (ALB target-group health checks are always HTTP-shaped in this
+// codebase's inference, so this asymmetry has not needed handling yet).
+//
+// ContainerAppContainer's three probe fields are slices, not bare
+// structs, even though this codebase only ever sets one entry each:
+// confirmed against the real schema (`go run ./cmd/schema-check`) that
+// all three are `nesting_mode: list` with no `max_items` cap -- Azure
+// genuinely allows multiple liveness/readiness/startup probes per
+// container. A bare-struct field would silently only ever be able to
+// express one, the exact class of bug `cmd/schema-check` exists to
+// catch (see its own doc comment's `ContainerAppIngress.TrafficWeight`
+// precedent).
+type ContainerAppProbe struct {
+	Transport             string `json:"transport"`
+	Port                  int    `json:"port"`
+	Path                  string `json:"path,omitempty"`
+	IntervalSeconds       int    `json:"interval_seconds,omitempty"`
+	FailureCountThreshold int    `json:"failure_count_threshold,omitempty"`
 }
 
 // ContainerAppEnvVar is one entry in a container's `env` block: either a

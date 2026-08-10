@@ -49,6 +49,13 @@
               "cpu": 0.25,
               "env": [],
               "image": "nginxdemos/hello:plain-text",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 80,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "0.5Gi",
               "name": "web"
             }

@@ -65,6 +65,13 @@
                 }
               ],
               "image": "flask-app",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 5000,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "0.5Gi",
               "name": "web"
             }

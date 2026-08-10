@@ -68,6 +68,13 @@
                 }
               ],
               "image": "flask-redis-web:latest",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 8000,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "0.5Gi",
               "name": "web"
             }

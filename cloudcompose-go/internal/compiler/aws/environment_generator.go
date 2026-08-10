@@ -33,6 +33,7 @@ func GenerateAwsEnvironment(
 	retainDataOnDestroy bool,
 	highAvailabilityEnabled bool,
 	backupRetentionDays int,
+	logRetentionDays int,
 ) (string, error) {
 	tfn := shared.TfName(name)
 	envTag := map[string]string{"Environment": name}
@@ -286,6 +287,7 @@ func GenerateAwsEnvironment(
 		"retain_data_on_destroy":    retainDataOnDestroy,
 		"high_availability_enabled": highAvailabilityEnabled,
 		"backup_retention_days":     backupRetentionDays,
+		"log_retention_days":        logRetentionDays,
 	}
 	if createALB {
 		environmentConfig["alb_arn"] = fmt.Sprintf("${aws_lb.%s.arn}", tfn)

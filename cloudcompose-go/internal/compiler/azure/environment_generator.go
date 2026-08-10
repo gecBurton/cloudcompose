@@ -23,9 +23,31 @@ func GenerateAzureEnvironment(
 	retainDataOnDestroy bool,
 	highAvailabilityEnabled bool,
 	backupRetentionDays int,
+	logRetentionDays int,
 ) (string, error) {
 	tfn := shared.TfName(name)
 	envTag := map[string]string{"Environment": name}
+
+	// azurerm_log_analytics_workspace.retention_in_days has a hard
+	// minimum of 30 days -- confirmed against the real provider schema
+	// (`terraform validate` itself rejects anything lower, "expected
+	// retention_in_days to be in the range (30 - 730)"), not a matter of
+	// preference the way the shared 7-day default otherwise is. AWS's
+	// CloudWatch equivalent has no such floor (its own minimum is 1
+	// day), so log_retention_days' shared default of 7 -- chosen to
+	// match AWS's own long-standing default, unrelated to Azure's
+	// constraint -- would silently break every Azure environment that
+	// doesn't override it. Clamped here, not by raising the shared
+	// default: AWS keeps whatever value a user actually asked for.
+	// The output block below reports this clamped value too, not the
+	// raw request: it's meant to reflect what's actually deployed, and
+	// a silent mismatch between the output and the real resource would
+	// be its own confusing bug for whatever later reads it back via
+	// LoadAzureEnvironment.
+	workspaceRetentionDays := logRetentionDays
+	if workspaceRetentionDays < 30 {
+		workspaceRetentionDays = 30
+	}
 
 	requiredProviders := map[string]any{
 		"azurerm": map[string]any{"source": "hashicorp/azurerm", "version": "~> 4.0"},
@@ -67,7 +89,7 @@ func GenerateAzureEnvironment(
 			"location":            location,
 			"resource_group_name": fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
 			"sku":                 "PerGB2018",
-			"retention_in_days":   30,
+			"retention_in_days":   workspaceRetentionDays,
 			"tags":                shared.MergedTags(tags, envTag),
 		},
 	}
@@ -168,6 +190,7 @@ func GenerateAzureEnvironment(
 		"retain_data_on_destroy":          retainDataOnDestroy,
 		"high_availability_enabled":       highAvailabilityEnabled,
 		"backup_retention_days":           backupRetentionDays,
+		"log_retention_days":              workspaceRetentionDays,
 	}
 	if len(tags) > 0 {
 		environmentConfig["tags"] = tags

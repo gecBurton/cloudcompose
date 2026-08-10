@@ -11,7 +11,7 @@ func TestGenerateAzureEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAzureEnvironment(
 		"prod", "eastus", "10.0.0.0/16",
-		map[string]string{"Team": "platform"}, true, false, 7,
+		map[string]string{"Team": "platform"}, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
@@ -38,6 +38,74 @@ func keysOfAny(m map[string]any) []string {
 	return keys
 }
 
+// TestGenerateAzureEnvironment_LogRetentionDaysFlowsIntoWorkspaceAndOutput
+// is the Azure counterpart to
+// aws.TestGenerateAwsEnvironment_LogRetentionDaysFlowsIntoOutput --
+// checks the value actually reaches both the real
+// azurerm_log_analytics_workspace.retention_in_days attribute (which
+// used to be hardcoded to 30 with no field backing it at all) and the
+// output block LoadAzureEnvironment later reads back, not just that the
+// generator runs without error.
+func TestGenerateAzureEnvironment_LogRetentionDaysFlowsIntoWorkspaceAndOutput(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateAzureEnvironment(
+		"prod", "eastus", "10.0.0.0/16",
+		nil, true, false, 7, 90,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	resource := parsed["resource"].(map[string]any)
+	workspace := resource["azurerm_log_analytics_workspace"].(map[string]any)["prod"].(map[string]any)
+	if workspace["retention_in_days"] != float64(90) {
+		t.Errorf("azurerm_log_analytics_workspace.retention_in_days = %v, want 90", workspace["retention_in_days"])
+	}
+	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
+	if envConfig["log_retention_days"] != float64(90) {
+		t.Errorf("output log_retention_days = %v, want 90", envConfig["log_retention_days"])
+	}
+}
+
+// TestGenerateAzureEnvironment_LogRetentionDaysClampedToAzureMinimum
+// checks the real, found-by-testing-the-shared-default problem: the
+// shared log_retention_days default is 7 (matching AWS's own
+// long-standing default), but azurerm_log_analytics_workspace requires
+// a minimum of 30 -- terraform validate rejects anything lower
+// ("expected retention_in_days to be in the range (30 - 730)"). Without
+// this clamp, every Azure environment.yaml relying on the default (not
+// explicitly overriding log_retention_days) would generate Terraform
+// that fails to validate.
+func TestGenerateAzureEnvironment_LogRetentionDaysClampedToAzureMinimum(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateAzureEnvironment(
+		"prod", "eastus", "10.0.0.0/16",
+		nil, true, false, 7, 7,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	resource := parsed["resource"].(map[string]any)
+	workspace := resource["azurerm_log_analytics_workspace"].(map[string]any)["prod"].(map[string]any)
+	if workspace["retention_in_days"] != float64(30) {
+		t.Errorf("azurerm_log_analytics_workspace.retention_in_days = %v, want 30 (clamped from the shared default of 7)", workspace["retention_in_days"])
+	}
+	// The output block should report the clamped value actually
+	// deployed, not the raw request that was passed in -- a mismatch
+	// here would make LoadAzureEnvironment lie about what's real.
+	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
+	if envConfig["log_retention_days"] != float64(30) {
+		t.Errorf("output log_retention_days = %v, want 30 (clamped, matching the real resource)", envConfig["log_retention_days"])
+	}
+}
+
 // TestGenerateAzureEnvironment_ComprehensiveResourcePresence mirrors
 // test_creates_resource_group, test_creates_log_analytics_workspace,
 // test_creates_virtual_network, test_subnet_is_delegated_to_container_apps,
@@ -45,7 +113,7 @@ func keysOfAny(m map[string]any) []string {
 // test_target_is_azure.
 func TestGenerateAzureEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7)
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
 	}

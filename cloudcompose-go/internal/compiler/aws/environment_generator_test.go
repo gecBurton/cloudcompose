@@ -14,7 +14,7 @@ func TestGenerateAwsEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		map[string]string{"Team": "platform"}, true, false, 7,
+		map[string]string{"Team": "platform"}, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -73,7 +73,7 @@ func TestGenerateAwsEnvironment_NoAlbOmitsAlbResources(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"staging", "us-east-1", "10.0.0.0/16", 2, false, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -102,7 +102,7 @@ func TestGenerateAwsEnvironment_CertificateEnablesHTTPS(t *testing.T) {
 	cert := "arn:aws:acm:us-east-1:123:certificate/abc"
 	out, err := GenerateAwsEnvironment(
 		"prod", "us-east-1", "10.0.0.0/16", 2, true, &cert, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -131,7 +131,7 @@ func TestEnvironmentGenerators_WriteReadableFile(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -164,7 +164,7 @@ func TestGenerateAwsEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -230,7 +230,7 @@ func TestGenerateAwsEnvironment_CustomAzCount(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 3, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -256,7 +256,7 @@ func TestGenerateAwsEnvironment_CustomVpcCidr(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "172.16.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -278,7 +278,7 @@ func TestGenerateAwsEnvironment_HyphenatedName(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"my-prod-env", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -305,7 +305,7 @@ func TestGenerateAwsEnvironment_RetainDataFalse(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, false, false, 7,
+		nil, false, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -320,13 +320,42 @@ func TestGenerateAwsEnvironment_RetainDataFalse(t *testing.T) {
 	}
 }
 
+// TestGenerateAwsEnvironment_LogRetentionDaysFlowsIntoOutput is the
+// counterpart to docs/azure-aws-parity-todo.md's "per-service
+// log-retention" item: LogRetentionDays existed on the runtime
+// AwsEnvironment model and was read by aws/compute.go's CloudWatch Log
+// Group inference, but had no environment.yaml field and was never
+// written into this output block -- dead on the input side, always
+// silently defaulting to 7 no matter what a user wrote. This checks the
+// value a caller passes in actually reaches the output block
+// `LoadAwsEnvironment` later reads back, not just that the generator
+// runs without error.
+func TestGenerateAwsEnvironment_LogRetentionDaysFlowsIntoOutput(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateAwsEnvironment(
+		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
+		nil, true, false, 7, 90,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
+	if envConfig["log_retention_days"] != float64(90) {
+		t.Errorf("log_retention_days = %v, want 90", envConfig["log_retention_days"])
+	}
+}
+
 // TestGenerateAwsEnvironment_OutputsIncludeAllRequiredFields mirrors
 // test_outputs_include_required_fields and test_outputs_include_alb_when_created.
 func TestGenerateAwsEnvironment_OutputsIncludeAllRequiredFields(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -357,7 +386,7 @@ func TestGenerateAwsEnvironment_NoAlbExcludesAlbOutputFields(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, false, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -380,7 +409,7 @@ func TestGenerateAwsEnvironment_HttpListenerWhenNoCertificate(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -409,7 +438,7 @@ func TestGenerateAwsEnvironment_AwsEndpointFlowsIntoProvider(t *testing.T) {
 	endpoint := "http://localhost:4566"
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, &endpoint,
-		nil, true, false, 7,
+		nil, true, false, 7, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)

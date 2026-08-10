@@ -38,6 +38,33 @@ type InitConfig struct {
 	HighAvailabilityEnabled *bool `yaml:"high_availability_enabled,omitempty"`
 	BackupRetentionDays     *int  `yaml:"backup_retention_days,omitempty"`
 
+	// LogRetentionDays is likewise common-envelope: one value applied to
+	// every service's log group/workspace, matching what
+	// AwsEnvironment/AzureEnvironment.LogRetentionDays already was on
+	// the runtime-model side -- this field is what was actually missing.
+	// LogRetentionDays existed on both environment models and was read
+	// by aws/compute.go's CloudWatch Log Group inference, but had no
+	// environment.yaml field, was never read from InitConfig, and was
+	// never written into GenerateAwsEnvironment's output block -- dead
+	// on the input side, always silently defaulting to 7 no matter what
+	// a user wrote (see docs/azure-aws-parity-todo.md's "per-service
+	// log-retention" item; found to be dead on AWS too while deciding
+	// this, not Azure-only as originally framed). Azure's Log Analytics
+	// Workspace retention was separately hardcoded to 30 in the
+	// generator with no field backing it at all. Both now read this one
+	// value; neither cloud gets a per-service override, since AWS's own
+	// pre-existing field never had one either and nothing in
+	// docker-compose.yml's schema suggests log retention varies by
+	// service the way compute size does.
+	//
+	// Not validated here: both clouds' real enum/range constraints
+	// (AWS: one of a fixed list, 1-3653 or 0; Azure: 30-730) are already
+	// enforced by `terraform validate` against the real provider schema,
+	// confirmed directly rather than assumed -- duplicating that check
+	// here would be maintaining a second copy of a constraint Terraform
+	// itself already owns.
+	LogRetentionDays *int `yaml:"log_retention_days,omitempty"`
+
 	// Domain is the custom domain a CDN-enabled service
 	// (`x-cloud.cdn: true` in docker-compose.yml) is served under.
 	// Common-envelope, not per-cloud: a domain is owned once, by the

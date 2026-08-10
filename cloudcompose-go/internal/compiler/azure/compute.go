@@ -164,11 +164,14 @@ func containerSpecAzure(
 	}
 
 	envVars := make([]models.ContainerAppEnvVar, 0, len(service.Env))
-	for _, k := range shared.SortedKeys(service.Env) {
-		envVars = append(envVars, models.ContainerAppEnvVar{Name: k, Value: service.Env[k]})
-	}
-
 	var secrets []models.ContainerAppSecret
+	for _, k := range shared.SortedKeys(service.Env) {
+		envVar, secret := resolveEnvVarAzure(resources, service.Name, k, service.Env[k], connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		envVars = append(envVars, envVar)
+		if secret != nil {
+			secrets = append(secrets, *secret)
+		}
+	}
 
 	for _, dbName := range connectionOrder {
 		conn, ok := connections[dbName]
@@ -231,6 +234,108 @@ func containerSpecAzure(
 
 	container.Env = envVars
 	return container, secrets, nil
+}
+
+// resolveEnvVarAzure substitutes a real managed-service connection into
+// one authored `environment:` value, mirroring
+// aws/permissions.go's own per-entry loop over a service's container
+// definition -- but built on the same shared.ResolveValue both clouds
+// now use (docs/azure-aws-parity-todo.md's "generalize Azure's
+// connection-string rendering" item), not a hardcoded Postgres-shaped
+// template.
+//
+// This is additive, not a replacement for containerSpecAzure's own
+// <SERVER>_URL synthesis a few lines up: that mechanism is Azure's
+// equivalent of AWS's always-emitted DB_PASSWORD/DB_USERNAME convenience
+// vars (grantDatabasePermissions), not itself the bug -- an app can
+// consume either the synthesized <SERVER>_URL or its own authored
+// DATABASE_URL/DATABASE_HOST, the same way an AWS app can consume either
+// DB_PASSWORD/DB_USERNAME or its own authored DATABASE_URL. What was
+// actually missing, and what this function fixes, is that an authored
+// value referencing a service by name or URL was never substituted at
+// all: `DATABASE_URL: postgres://db:5432/app` or `DATABASE_HOST: db`
+// shipped to Azure exactly as compose wrote them -- the local
+// container's own hostname, unreachable once db becomes a managed
+// Flexible Server. Confirmed as a real bug, not a hypothetical: the
+// doctor example's own app.py reads DATABASE_URL/REDIS_URL directly, and
+// its Azure golden fixture shipped both the broken literal value and a
+// separate DB_URL/CACHE_URL the app never reads.
+//
+// A confidential resolution (the value now carries a real password) is
+// stored in Key Vault, one secret per (service, env-var-name) --
+// mirroring aws/permissions.go's storeConfidentialValue exactly, keyed
+// the same way (`<service>_<varname>_url`) for the same reason: two
+// services' own same-named env var referencing the same managed service
+// still need their own secret, since Terraform resource keys are
+// per-resource, not per-value.
+func resolveEnvVarAzure(
+	resources *models.AzureResources,
+	serviceName, varName, value string,
+	connections map[string]models.Connection,
+	connectionOrder []string,
+	getName func(string) string,
+	tags map[string]string,
+	managedServiceIdentityID string,
+) (models.ContainerAppEnvVar, *models.ContainerAppSecret) {
+	resolved := shared.ResolveValue(value, connections, connectionOrder)
+	if !resolved.Confidential {
+		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
+	}
+
+	// A confidential value with no identity to grant Key Vault access
+	// is a real gap in cloudcompose's own setup (inferManagedServiceIdentity
+	// should have provisioned one whenever any connection carries a
+	// password), not a case with a sane fallback -- unlike
+	// connectionURLAzure's own doc comment, which explains why *that*
+	// function still renders something rather than panicking. Falling
+	// back to a plain (unencrypted) env var here would silently leak a
+	// real credential into Terraform state and the Container App's own
+	// visible configuration, worse than failing loudly.
+	if managedServiceIdentityID == "" {
+		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
+	}
+
+	// azurerm_key_vault_secret's name may only contain alphanumeric
+	// characters and dashes -- confirmed via a real terraform validate,
+	// not assumed: an underscore-bearing env var name like
+	// "database_url" isn't merely a style choice here, it's a
+	// hard rejection at plan time. varSlug replaces every underscore
+	// with a dash for both the Key Vault secret's own Name and the
+	// Container App secret block's Name (which must match what
+	// Container Apps itself calls the reference) -- secretKey (the
+	// Terraform resource identifier, a Go map key) keeps underscores,
+	// since identifiers have no such restriction and every other
+	// secretKey in this file already uses them.
+	varSlug := strings.ReplaceAll(strings.ToLower(varName), "_", "-")
+	secretKey := fmt.Sprintf("%s_%s_url", serviceName, strings.ToLower(varName))
+	secret := models.NewKeyVaultSecret()
+	secret.Name = getName(fmt.Sprintf("%s-%s", serviceName, varSlug))
+	secret.KeyVaultID = "${azurerm_key_vault.main.id}"
+	secret.Value = resolved.Value
+	resources.KeyVaultSecret[secretKey] = secret
+
+	// Granted here too, not just by grantManagedServicePermissions's own
+	// Relationships-driven pass: a service can reference a managed
+	// service by URL without also declaring depends_on: for it (schema
+	// -valid compose, if unusual -- every real example in this repo
+	// pairs the two, but nothing enforces that pairing). Without this,
+	// such a service would get a Key Vault secret with no RBAC grant to
+	// read it. The underlying write (resources.RoleAssignment["kv_role"])
+	// is a map assignment, so calling this redundantly whenever both
+	// paths run for the same app is harmless -- grantKeyVaultAccessOnce's
+	// own *granted bool only dedupes within a single caller's loop, not
+	// across this function and grantManagedServicePermissions, but the
+	// map write itself is naturally idempotent either way.
+	grantedKeyVault := false
+	grantKeyVaultAccessOnce(resources, &grantedKeyVault, principalIDRefForIdentity())
+
+	secretName := fmt.Sprintf("%s-%s-url", serviceName, varSlug)
+	return models.ContainerAppEnvVar{Name: varName, SecretName: secretName},
+		&models.ContainerAppSecret{
+			Name:             secretName,
+			KeyVaultSecretID: fmt.Sprintf("${azurerm_key_vault_secret.%s.versionless_id}", secretKey),
+			Identity:         managedServiceIdentityID,
+		}
 }
 
 // connectionURLAzure renders a connection as a URL, choosing the scheme

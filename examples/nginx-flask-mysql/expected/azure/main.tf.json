@@ -49,7 +49,7 @@
               "env": [
                 {
                   "name": "DATABASE_HOST",
-                  "value": "db"
+                  "value": "${azurerm_mysql_flexible_server.main.fqdn}"
                 },
                 {
                   "name": "DB_URL",

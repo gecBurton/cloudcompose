@@ -60,7 +60,7 @@
               "env": [
                 {
                   "name": "REDIS_HOST",
-                  "value": "redis"
+                  "value": "${azurerm_managed_redis.redis_redis.hostname}"
                 },
                 {
                   "name": "REDIS_URL",

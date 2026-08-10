@@ -94,7 +94,7 @@
                 },
                 {
                   "name": "DATABASE_HOST",
-                  "value": "db"
+                  "value": "${azurerm_mysql_flexible_server.main.fqdn}"
                 },
                 {
                   "name": "DATABASE_PASSWORD",

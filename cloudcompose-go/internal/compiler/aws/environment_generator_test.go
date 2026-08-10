@@ -14,7 +14,7 @@ func TestGenerateAwsEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		map[string]string{"Team": "platform"}, true,
+		map[string]string{"Team": "platform"}, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -73,7 +73,7 @@ func TestGenerateAwsEnvironment_NoAlbOmitsAlbResources(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"staging", "us-east-1", "10.0.0.0/16", 2, false, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -102,7 +102,7 @@ func TestGenerateAwsEnvironment_CertificateEnablesHTTPS(t *testing.T) {
 	cert := "arn:aws:acm:us-east-1:123:certificate/abc"
 	out, err := GenerateAwsEnvironment(
 		"prod", "us-east-1", "10.0.0.0/16", 2, true, &cert, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -131,7 +131,7 @@ func TestEnvironmentGenerators_WriteReadableFile(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -164,7 +164,7 @@ func TestGenerateAwsEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -230,7 +230,7 @@ func TestGenerateAwsEnvironment_CustomAzCount(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 3, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -256,7 +256,7 @@ func TestGenerateAwsEnvironment_CustomVpcCidr(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "172.16.0.0/16", 2, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -278,7 +278,7 @@ func TestGenerateAwsEnvironment_HyphenatedName(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"my-prod-env", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -305,7 +305,7 @@ func TestGenerateAwsEnvironment_RetainDataFalse(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, false,
+		nil, false, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -326,7 +326,7 @@ func TestGenerateAwsEnvironment_OutputsIncludeAllRequiredFields(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -357,7 +357,7 @@ func TestGenerateAwsEnvironment_NoAlbExcludesAlbOutputFields(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, false, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -380,7 +380,7 @@ func TestGenerateAwsEnvironment_HttpListenerWhenNoCertificate(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -409,7 +409,7 @@ func TestGenerateAwsEnvironment_AwsEndpointFlowsIntoProvider(t *testing.T) {
 	endpoint := "http://localhost:4566"
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, &endpoint,
-		nil, true,
+		nil, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)

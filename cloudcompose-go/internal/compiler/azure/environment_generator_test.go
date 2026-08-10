@@ -11,7 +11,7 @@ func TestGenerateAzureEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAzureEnvironment(
 		"prod", "eastus", "10.0.0.0/16",
-		map[string]string{"Team": "platform"}, true,
+		map[string]string{"Team": "platform"}, true, false, 7,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
@@ -45,7 +45,7 @@ func keysOfAny(m map[string]any) []string {
 // test_target_is_azure.
 func TestGenerateAzureEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true)
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
 	}

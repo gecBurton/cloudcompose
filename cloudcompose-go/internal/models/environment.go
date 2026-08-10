@@ -9,12 +9,14 @@ import "fmt"
 // this phase only needs the AWS shape. Azure/GCP environments have their
 // own types alongside their own inference.
 type AwsEnvironment struct {
-	Target              string            `json:"target"`
-	Name                string            `json:"name"`
-	Region              string            `json:"region"`
-	LogRetentionDays    int               `json:"log_retention_days"`
-	RetainDataOnDestroy bool              `json:"retain_data_on_destroy"`
-	Tags                map[string]string `json:"tags,omitempty"`
+	Target                  string            `json:"target"`
+	Name                    string            `json:"name"`
+	Region                  string            `json:"region"`
+	LogRetentionDays        int               `json:"log_retention_days"`
+	RetainDataOnDestroy     bool              `json:"retain_data_on_destroy"`
+	HighAvailabilityEnabled bool              `json:"high_availability_enabled"`
+	BackupRetentionDays     int               `json:"backup_retention_days"`
+	Tags                    map[string]string `json:"tags,omitempty"`
 
 	VpcID              string   `json:"vpc_id"`
 	PublicSubnets      []string `json:"public_subnets"`
@@ -28,13 +30,25 @@ type AwsEnvironment struct {
 
 // NewAwsEnvironment returns an AwsEnvironment with default values
 // (target="aws", region="us-east-1", log_retention_days=7,
-// retain_data_on_destroy=true).
+// retain_data_on_destroy=true, high_availability_enabled=false,
+// backup_retention_days=7).
+//
+// high_availability_enabled defaults off: RDS Multi-AZ roughly doubles
+// compute cost for the standby, so it's an authored decision, not a
+// silent default -- the same reasoning autoscaling's own default policy
+// uses for opting a service INTO scaling only once max_scale>1 is
+// declared, applied here to a cost-doubling decision instead. 7-day
+// backup retention is RDS's own long-standing default (and the minimum
+// Azure Flexible Server's backup_retention_days accepts), kept as the
+// baseline here for both clouds rather than picking two different
+// numbers with no reason to differ.
 func NewAwsEnvironment() AwsEnvironment {
 	return AwsEnvironment{
 		Target:              "aws",
 		Region:              "us-east-1",
 		LogRetentionDays:    7,
 		RetainDataOnDestroy: true,
+		BackupRetentionDays: 7,
 	}
 }
 
@@ -61,12 +75,14 @@ func (e *AwsEnvironment) Validate() error {
 // is no separate resource-group field, unlike AWS's VpcID/subnets, which
 // are their own fields because a VPC isn't named after the environment.
 type AzureEnvironment struct {
-	Target              string            `json:"target"`
-	Name                string            `json:"name"`
-	Region              string            `json:"region"`
-	LogRetentionDays    int               `json:"log_retention_days"`
-	RetainDataOnDestroy bool              `json:"retain_data_on_destroy"`
-	Tags                map[string]string `json:"tags,omitempty"`
+	Target                  string            `json:"target"`
+	Name                    string            `json:"name"`
+	Region                  string            `json:"region"`
+	LogRetentionDays        int               `json:"log_retention_days"`
+	RetainDataOnDestroy     bool              `json:"retain_data_on_destroy"`
+	HighAvailabilityEnabled bool              `json:"high_availability_enabled"`
+	BackupRetentionDays     int               `json:"backup_retention_days"`
+	Tags                    map[string]string `json:"tags,omitempty"`
 
 	ContainerAppsEnvironmentName string `json:"container_apps_environment_name"`
 	LogAnalyticsWorkspaceID      string `json:"log_analytics_workspace_id"`
@@ -104,13 +120,16 @@ type AzureEnvironment struct {
 
 // NewAzureEnvironment returns an AzureEnvironment with default values
 // (target="azure", region="eastus", log_retention_days=7,
-// retain_data_on_destroy=true).
+// retain_data_on_destroy=true, high_availability_enabled=false,
+// backup_retention_days=7). See NewAwsEnvironment's own doc comment for
+// why HA defaults off and why 7 is the shared baseline retention.
 func NewAzureEnvironment() AzureEnvironment {
 	return AzureEnvironment{
 		Target:              "azure",
 		Region:              "eastus",
 		LogRetentionDays:    7,
 		RetainDataOnDestroy: true,
+		BackupRetentionDays: 7,
 	}
 }
 

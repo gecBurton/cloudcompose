@@ -25,6 +25,19 @@ type InitConfig struct {
 	Tags                map[string]string `yaml:"tags,omitempty"`
 	RetainDataOnDestroy *bool             `yaml:"retain_data_on_destroy,omitempty"`
 
+	// HighAvailabilityEnabled/BackupRetentionDays are common-envelope,
+	// not per-provider, the same as RetainDataOnDestroy above: applied
+	// uniformly to every database this environment's apps create,
+	// regardless of which cloud they target (AWS's aws_db_instance.multi_az/
+	// backup_retention_period, Azure's azurerm_*_flexible_server's
+	// high_availability/backup_retention_days) -- see
+	// docs/azure-aws-parity-todo.md's Priority 4 backup/HA item. Not yet
+	// wired for GCP (Cloud SQL has its own equivalent settings), left
+	// for a follow-up rather than blocking this on all three clouds at
+	// once.
+	HighAvailabilityEnabled *bool `yaml:"high_availability_enabled,omitempty"`
+	BackupRetentionDays     *int  `yaml:"backup_retention_days,omitempty"`
+
 	// Domain is the custom domain a CDN-enabled service
 	// (`x-cloud.cdn: true` in docker-compose.yml) is served under.
 	// Common-envelope, not per-cloud: a domain is owned once, by the

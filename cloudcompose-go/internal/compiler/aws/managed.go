@@ -126,6 +126,8 @@ func inferDatabase(
 		dbInstance.FinalSnapshotIdentifier = &finalSnapshot
 	}
 	dbInstance.PubliclyAccessible = false
+	dbInstance.MultiAz = env.HighAvailabilityEnabled
+	dbInstance.BackupRetentionPeriod = env.BackupRetentionDays
 	dbInstance.Username = &dbUsername
 	passwordRef := fmt.Sprintf("${random_password.%s.result}", passwordKey)
 	dbInstance.Password = &passwordRef

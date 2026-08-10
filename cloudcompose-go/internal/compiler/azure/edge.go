@@ -55,6 +55,7 @@ func inferCdnAzure(
 			Name:                  service.Name,
 			CdnFrontdoorProfileID: profileID,
 			LoadBalancing:         map[string]any{},
+			HealthProbe:           frontDoorHealthProbeFor(service),
 		}
 		originGroupID := fmt.Sprintf("${azurerm_cdn_frontdoor_origin_group.%s.id}", key)
 
@@ -78,5 +79,39 @@ func inferCdnAzure(
 		route.CdnFrontdoorOriginGroupID = originGroupID
 		route.CdnFrontdoorOriginIds = []string{originID}
 		resources.CdnFrontdoorRoute[key] = route
+	}
+}
+
+// frontDoorHealthProbeAzureIntervalSeconds is Front Door's own
+// documented default probe interval (learn.microsoft.com/azure/frontdoor/health-probes:
+// "roughly estimate the health probe volume per minute... using the
+// default probe frequency of 30 seconds") -- used explicitly here
+// rather than left to the schema's own default so the value is visible
+// in generated Terraform, not implicit.
+const frontDoorHealthProbeAzureIntervalSeconds = 30
+
+// frontDoorHealthProbeFor builds a Front Door origin group's
+// health_probe from the same service.Ingress.HealthCheck.Path already
+// collected for the service's Container App liveness_probe -- see
+// FrontDoorHealthProbe's own doc comment for why this is a genuine
+// capability addition, not an AWS-parity item.
+//
+// Protocol is always "Https", not derived from
+// service.Ingress.HealthCheck.Type: Front Door's own route always
+// forwards to the origin over HTTPS regardless
+// (models.NewFrontDoorRoute's ForwardingProtocol is unconditionally
+// "HttpsOnly"), so a probe checking any other protocol would be
+// checking something real traffic never actually uses -- confirmed via
+// a real `terraform validate` against the exact values used here, not
+// assumed from the naming symmetry with Container Apps' HTTP/TCP
+// transport choice. RequestType is always "HEAD" (the schema's own
+// default, and Microsoft's own guidance: "To lower the load and cost to
+// your origins, use HEAD requests for health probes").
+func frontDoorHealthProbeFor(service *models.Service) *models.FrontDoorHealthProbe {
+	return &models.FrontDoorHealthProbe{
+		Protocol:          "Https",
+		IntervalInSeconds: frontDoorHealthProbeAzureIntervalSeconds,
+		Path:              service.Ingress.HealthCheck.Path,
+		RequestType:       "HEAD",
 	}
 }

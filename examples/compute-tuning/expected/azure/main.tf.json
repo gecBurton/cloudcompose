@@ -49,6 +49,13 @@
               "cpu": 1,
               "env": [],
               "image": "my-api:latest",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 8080,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "2048Mi",
               "name": "api"
             }

@@ -113,8 +113,24 @@
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 80,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "0.5Gi",
-              "name": "doctor"
+              "name": "doctor",
+              "startup_probe": [
+                {
+                  "failure_count_threshold": 12,
+                  "interval_seconds": 10,
+                  "path": "/",
+                  "port": 80,
+                  "transport": "HTTP"
+                }
+              ]
             }
           ],
           "http_scale_rule": [

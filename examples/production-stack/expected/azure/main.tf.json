@@ -131,6 +131,13 @@
                 }
               ],
               "image": "nginx:latest",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 80,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "2Gi",
               "name": "web"
             }

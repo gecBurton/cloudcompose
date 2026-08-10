@@ -500,12 +500,66 @@ been latent and untested since MySQL support was first ported.
   AWS keeps whatever value a user actually asked for; only Azure's
   generator clamps, and only because Azure's constraint is a hard floor,
   not a preference.
-- [ ] **Add health-check/probe configuration for Azure Container Apps.**
+- [x] **Add health-check/probe configuration for Azure Container Apps.**
   No liveness/readiness/startup probe is ever populated, and
   `StartupGracePeriod` is read nowhere in `azure/*.go`. Container Apps'
   schema supports probes; AWS's ALB target-group health check
   (`aws/compute.go:456-474`) and `HealthCheckGracePeriodSecs`
   (compute.go:419) have no Azure counterpart at all.
+
+  **Done (2026-08-10).** `healthProbesAzure` (`azure/compute.go`) builds
+  `liveness_probe` from `service.Ingress.HealthCheck` (Type maps to
+  Transport HTTP/TCP, Path/Port resolved the same way AWS's own
+  `handleIngress` does) for every ingress-bearing service, matching AWS's
+  ALB target-group check one-for-one. `readiness_probe` deliberately not
+  built: AWS's own health check has no "ready but not yet healthy"
+  concept distinct from "healthy" for this to mirror — building it would
+  be a genuinely new capability beyond parity, not a gap to close.
+
+  `StartupGracePeriod` has no direct Container Apps equivalent (no
+  load-balancer-level "ignore failures for N seconds" concept) — expressed
+  instead as a `startup_probe` whose failure budget covers the same
+  window (10s interval, `failure_count_threshold` = `ceil(grace_period /
+  10)`), rejecting outright rather than silently truncating if the
+  window exceeds what the budget can express (2400s/40min, the schema's
+  own 240-failure ceiling at that interval). This is the exact mapping
+  `docs/spikes/azure/README.md`'s finding #4 and `docs/spikes/azure/doctor.tf`'s
+  own prototype had already found and documented as "approximate, not
+  equivalent" before any of this was wired up — confirmed the prototype's
+  own numbers (120s → 12 failures at 10s) still hold, not re-derived from
+  scratch.
+
+  Found and fixed a real cardinality bug while doing this: initially
+  modeled `LivenessProbe`/`ReadinessProbe`/`StartupProbe` as bare
+  `*ContainerAppProbe` pointers, which `go run ./cmd/schema-check`
+  correctly flagged — all three are `nesting_mode: list` with no
+  `max_items` cap in the real schema (Azure genuinely allows multiple of
+  each per container), the exact class of bug this tool exists to catch
+  (see its own `ContainerAppIngress.TrafficWeight` precedent). Fixed as
+  `[]ContainerAppProbe`; `cmd/schema-check` now reports zero mismatches.
+
+  All 11 examples with an ingress-bearing service now have a
+  `liveness_probe` in their Azure golden fixture; `doctor` (the only
+  example using `startup_grace_period`) additionally has a
+  `startup_probe`. Regenerated fresh rather than hand-patched, given the
+  scale (11 fixtures, a new nested block rather than a flat field) —
+  `terraform validate`d against the real `azurerm` provider afterward,
+  not just trusted structurally.
+
+- [ ] **`FrontDoorOriginGroup.HealthProbe` is a second, unrelated dead
+  field** — found while doing the Container Apps probe item above, not
+  the same gap: `models.FrontDoorOriginGroup.HealthProbe`
+  (`azure.go:505`) is Front Door's own health probe (whether an *origin*
+  behind the load balancer is healthy), never set by any inference code.
+  Distinct from the Container Apps liveness/readiness/startup probes
+  fixed above (a container's own health, checked by the platform running
+  it) — this is the load-balancer-checking-its-backend concept, closer
+  in spirit to AWS's ALB target-group health check than to
+  `service.Ingress.HealthCheck` on its own. AWS has no direct equivalent
+  either (CloudFront has no analogous "is my origin healthy" probe
+  concept — it retries failed requests instead). Not scoped or
+  implemented here; flagged as its own item since it's a different
+  resource and a different kind of "health" than what this item closed.
 
 ## Testing debt (a consequence of the gaps above, not independent)
 

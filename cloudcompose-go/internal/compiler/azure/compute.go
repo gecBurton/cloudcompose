@@ -150,6 +150,19 @@ func containerSpecAzure(
 		Args:   service.Command,
 	}
 
+	if service.Ingress != nil {
+		liveness, startup, err := healthProbesAzure(service)
+		if err != nil {
+			return models.ContainerAppContainer{}, nil, err
+		}
+		if liveness != nil {
+			container.LivenessProbe = []models.ContainerAppProbe{*liveness}
+		}
+		if startup != nil {
+			container.StartupProbe = []models.ContainerAppProbe{*startup}
+		}
+	}
+
 	envVars := make([]models.ContainerAppEnvVar, 0, len(service.Env))
 	for _, k := range shared.SortedKeys(service.Env) {
 		envVars = append(envVars, models.ContainerAppEnvVar{Name: k, Value: service.Env[k]})
@@ -487,6 +500,100 @@ func resolveContainerResourcesAzure(service *models.Service) (float64, string, e
 		return 0, "", err
 	}
 	return cpu, memory, nil
+}
+
+// azureProbeIntervalSeconds and azureProbeMaxFailureCount are the
+// interval/threshold this codebase always uses when expressing
+// StartupGracePeriod as a startup_probe budget (see healthProbesAzure).
+// Not the schema's own ceiling (interval_seconds and
+// failure_count_threshold both individually allow up to 240) -- picked
+// so the interval matches the already-prototyped, documented approach
+// (docs/spikes/azure/README.md's finding #4, docs/spikes/azure/doctor.tf's
+// startup_probe) rather than inventing a new one, and so
+// azureProbeMaxFailureCount's own product with the interval defines the
+// largest StartupGracePeriod this mapping can express at all (240*10 =
+// 2400s = 40 minutes) before rejecting outright rather than silently
+// truncating to a shorter window than the user actually asked for.
+const (
+	azureProbeIntervalSeconds = 10
+	azureProbeMaxFailureCount = 240
+)
+
+// healthProbesAzure builds Container Apps' liveness_probe/startup_probe
+// values from a service's ingress health check and StartupGracePeriod.
+// Returns single pointers, not the []ContainerAppProbe slices the
+// schema's own cardinality requires (see ContainerAppProbe's own doc
+// comment for why the model field is a slice) -- the caller wraps each
+// into a one-element slice, since this codebase never has a reason to
+// set more than one of each and a single pointer is simpler to build
+// and test here.
+//
+// Only liveness_probe and startup_probe are built, not readiness_probe:
+// AWS's own equivalent (the ALB target-group health check,
+// aws/compute.go's handleIngress) has no concept of "ready to receive
+// traffic but not yet considered healthy" distinct from "healthy" --
+// one check serves both roles there, which liveness_probe alone mirrors
+// here. readiness_probe would be a genuinely new capability beyond
+// parity, not a gap to close.
+//
+// Container Apps has no direct equivalent of ECS's HealthCheckGracePeriodSecs
+// (a load-balancer-level "ignore failures for N seconds after start");
+// its nearest expression is a startup_probe whose failure budget covers
+// the same window -- approximate, not equivalent, exactly as
+// docs/spikes/azure/README.md's finding #4 and doctor.tf's own prototype
+// already found and documented before any of this was wired up. 120s
+// becomes 12 failures at a 10s interval; StartupGracePeriod=0 (or nil)
+// omits startup_probe entirely, since a zero-failure-budget probe would
+// be meaningless.
+//
+// service.Ingress.HealthCheck's Type (http/tcp) maps directly to
+// Transport (HTTP/TCP, confirmed against the real provider schema and
+// docs/spikes/azure/doctor.tf's own casing) -- Path is only meaningful
+// for HTTP, so it's left empty for TCP rather than carried over
+// unused.
+func healthProbesAzure(service *models.Service) (liveness, startup *models.ContainerAppProbe, err error) {
+	ingress := service.Ingress
+	port := 80
+	if ingress.Port != nil {
+		port = *ingress.Port
+	} else if service.Port != nil {
+		port = *service.Port
+	}
+
+	transport := "HTTP"
+	path := ingress.HealthCheck.Path
+	if ingress.HealthCheck.Type == models.HealthCheckTypeTCP {
+		transport = "TCP"
+		path = ""
+	}
+
+	liveness = &models.ContainerAppProbe{
+		Transport: transport,
+		Port:      port,
+		Path:      path,
+	}
+
+	if service.StartupGracePeriod == nil || *service.StartupGracePeriod <= 0 {
+		return liveness, nil, nil
+	}
+
+	failureCount := (*service.StartupGracePeriod + azureProbeIntervalSeconds - 1) / azureProbeIntervalSeconds
+	if failureCount > azureProbeMaxFailureCount {
+		return nil, nil, fmt.Errorf(
+			"service %q has startup_grace_period=%ds, which needs %d failures at a %ds interval to express as a Container Apps startup_probe budget -- exceeding the %ds (%d failures) this mapping supports; reduce startup_grace_period or split the slow-starting work out of the container's own startup path",
+			service.Name, *service.StartupGracePeriod, failureCount, azureProbeIntervalSeconds,
+			azureProbeMaxFailureCount*azureProbeIntervalSeconds, azureProbeMaxFailureCount,
+		)
+	}
+
+	startup = &models.ContainerAppProbe{
+		Transport:             transport,
+		Port:                  port,
+		Path:                  path,
+		IntervalSeconds:       azureProbeIntervalSeconds,
+		FailureCountThreshold: failureCount,
+	}
+	return liveness, startup, nil
 }
 
 // inferScheduledJobs creates a Container Apps Job for each scheduled

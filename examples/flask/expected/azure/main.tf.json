@@ -118,6 +118,13 @@
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/backend@${docker_registry_image.backend_push.sha256_digest}",
+              "liveness_probe": [
+                {
+                  "path": "/",
+                  "port": 80,
+                  "transport": "HTTP"
+                }
+              ],
               "memory": "0.5Gi",
               "name": "backend"
             }

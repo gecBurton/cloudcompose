@@ -106,6 +106,33 @@ func TestKeyVaultName_StableAcrossCalls(t *testing.T) {
 	}
 }
 
+// TestFrontDoorFirewallPolicyName_ObeysAzureRules checks the real
+// constraint found via a terraform validate failure while adding this
+// item (docs/azure-aws-parity-todo.md's WAF/security-policy item):
+// azurerm_cdn_frontdoor_firewall_policy.name is alphanumeric only, no
+// dashes at all -- genuinely stricter than FrontDoorProfileName's own
+// dash-permitting shape a few lines above, not the same rule applied
+// twice.
+func TestFrontDoorFirewallPolicyName_ObeysAzureRules(t *testing.T) {
+	t.Parallel()
+	for _, app := range []string{"flask", azureLongAppName, "a"} {
+		name := FrontDoorFirewallPolicyName("prod", app, "web")
+		if !alphanumericOnly.MatchString(name) {
+			t.Errorf("FrontDoorFirewallPolicyName(prod, %q, web) = %q, want alphanumeric only", app, name)
+		}
+		if len(name) < 1 || len(name) > 128 {
+			t.Errorf("FrontDoorFirewallPolicyName(prod, %q, web) = %q, want length in [1,128], got %d", app, name, len(name))
+		}
+	}
+}
+
+func TestFrontDoorFirewallPolicyName_KeepsShortNamesReadable(t *testing.T) {
+	t.Parallel()
+	if got := FrontDoorFirewallPolicyName("prod", "hello", "web"); got != "prodhellowebwaf" {
+		t.Errorf("got %q, want prodhellowebwaf", got)
+	}
+}
+
 // TestAzureNaming pins every naming function's output against known-good
 // values, not just this implementation's own idea of what the
 // transliteration should produce -- the AWS port's own review discipline
@@ -137,6 +164,7 @@ func TestAzureNaming(t *testing.T) {
 			"this-is-a-very-lo-ee9b9a",
 		},
 		{"frontdoor_profile_name(prod, hello)", FrontDoorProfileName("prod", "hello"), "prod-hello-fd"},
+		{"frontdoor_firewall_policy_name(prod, hello, web)", FrontDoorFirewallPolicyName("prod", "hello", "web"), "prodhellowebwaf"},
 	}
 
 	for _, tc := range cases {

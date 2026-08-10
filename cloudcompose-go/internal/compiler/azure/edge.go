@@ -79,6 +79,23 @@ func inferCdnAzure(
 		route.CdnFrontdoorOriginGroupID = originGroupID
 		route.CdnFrontdoorOriginIds = []string{originID}
 		resources.CdnFrontdoorRoute[key] = route
+
+		// One Firewall Policy + Security Policy per CDN-enabled service,
+		// matching aws/edge.go's own granularity (one WAF Web ACL per
+		// service, wafKey := service.Name + "_waf") rather than one
+		// shared policy per profile -- a per-service rate-limit threshold
+		// is the right default even before per-service overrides exist,
+		// since two services behind the same profile can have wildly
+		// different legitimate traffic volumes.
+		waf := models.NewFrontDoorFirewallPolicy()
+		waf.Name = FrontDoorFirewallPolicyName(env.Name, app.Name, service.Name)
+		waf.ResourceGroupName = env.Name
+		waf.SkuName = profile.SkuName
+		waf.Tags = tags
+		resources.CdnFrontdoorFirewallPolicy[key] = waf
+		firewallPolicyID := fmt.Sprintf("${azurerm_cdn_frontdoor_firewall_policy.%s.id}", key)
+
+		resources.CdnFrontdoorSecurityPolicy[key] = models.NewFrontDoorSecurityPolicy(getName(service.Name+"-secpolicy"), profileID, firewallPolicyID, endpointID)
 	}
 }
 

@@ -66,11 +66,15 @@ var azureGoldenExamples = []string{
 	// dedicated test covering this, since there's no valid Azure output
 	// for this example to golden-test against.
 	"platform-config",
-	// compute-tuning was never actually blocked by any Priority 2 gap
-	// (container-level cpu/memory overrides already worked correctly) --
-	// added the same day anyway, once actually checked, since nothing
-	// else was stopping it from having Azure coverage either.
-	"compute-tuning",
+	// "compute-tuning" was added the same day (its container-level
+	// cpu/memory overrides worked correctly at the time), then removed
+	// again once the exact-CPU/memory-pair validation below was added:
+	// its worker service (size: medium + an explicit memory: 4096
+	// override) resolves to 1.0 vCPU + 4Gi, which is not one of
+	// Consumption's fixed pairs (1.0 vCPU pairs only with 2.0Gi) -- a
+	// real, intentional rejection, not a bug, so there's no valid Azure
+	// output for this example either. See
+	// TestResolveContainerResourcesAzure_RejectsMismatchedCpuMemoryPair.
 }
 
 // TestInferAzure_GoldenExamplesByteIdentical mirrors

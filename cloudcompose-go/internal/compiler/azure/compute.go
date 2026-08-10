@@ -2,6 +2,7 @@ package azure
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -136,11 +137,7 @@ func containerSpecAzure(
 	tags map[string]string,
 	managedServiceIdentityID string,
 ) (models.ContainerAppContainer, []models.ContainerAppSecret, error) {
-	cpu, err := getCPUCoresAzure(service)
-	if err != nil {
-		return models.ContainerAppContainer{}, nil, err
-	}
-	memory, err := getMemoryGBAzure(service)
+	cpu, memory, err := resolveContainerResourcesAzure(service)
 	if err != nil {
 		return models.ContainerAppContainer{}, nil, err
 	}
@@ -326,6 +323,50 @@ const (
 	azureConsumptionMaxMemoryGB = 4.0
 )
 
+// azureConsumptionCPUStep is the granularity Consumption-plan CPU/memory
+// allocations must land on -- confirmed against the same Microsoft
+// documentation as azureConsumptionMaxCPU: the vCPU/memory table there
+// lists every valid combination in steps of exactly 0.25 vCPU (0.25,
+// 0.5, 0.75, ... 4.0), each paired with exactly 2x that many GiB of
+// memory (0.5Gi, 1.0Gi, 1.5Gi, ... 8.0Gi). This is the constraint
+// azureCPUMemoryPairAzure enforces: not just "under the cap" (checked
+// independently below) but "on the step and at the paired memory value",
+// which the cap check alone cannot catch.
+const azureConsumptionCPUStep = 0.25
+
+// azureCPUMemoryPairAzure validates that a resolved (cpu, memoryGB) pair
+// is one Container Apps' Consumption plan actually accepts.
+//
+// This is a real, separate constraint from either value's own ceiling
+// check: Consumption requires CPU and memory to land on one exact
+// matched pair from a fixed table (0.25vCPU/0.5Gi, 0.5/1.0Gi, ...,
+// 2.0/4.0Gi) -- not just independently under the 2vCPU/4GiB cap.
+// Terraform's schema does not enforce this (a plain number/string with
+// no validation), so `terraform validate` passes regardless; only
+// Azure's own API rejects an unpaired combination, at `apply` time.
+// Confirmed via the compute-tuning example's own worker service
+// (size: medium = 1.0 vCPU + an explicit memory: 4096 override = 4Gi):
+// terraform validate accepts cpu=1, memory="4096Mi" even though 1.0vCPU
+// only pairs validly with 2.0Gi -- this function is what closes that gap
+// (docs/azure-aws-parity-todo.md's Priority 4 "New gap found" item).
+func azureCPUMemoryPairAzure(serviceName string, cpu, memoryGB float64) error {
+	steps := cpu / azureConsumptionCPUStep
+	if steps != math.Round(steps) {
+		return fmt.Errorf(
+			"service %q resolves to %g vCPU, which is not a multiple of %g vCPU; Azure Container Apps' Consumption plan only accepts CPU in %g vCPU increments",
+			serviceName, cpu, azureConsumptionCPUStep, azureConsumptionCPUStep,
+		)
+	}
+	wantMemoryGB := 2 * cpu
+	if memoryGB != wantMemoryGB {
+		return fmt.Errorf(
+			"service %q resolves to %g vCPU + %gGi memory, which Azure Container Apps' Consumption plan does not accept; %g vCPU must be paired with exactly %gGi memory (CPU and memory must come from one of the plan's fixed pairs, not be set independently) -- see learn.microsoft.com/azure/container-apps/containers#vcpu-and-memory-allocation-requirements",
+			serviceName, cpu, memoryGB, cpu, wantMemoryGB,
+		)
+	}
+	return nil
+}
+
 // getCPUCoresAzure converts service size or explicit CPU to cores.
 // Size-derived values come from
 // shared.SizeMappings (the same table AWS uses, converted from ECS CPU
@@ -341,6 +382,12 @@ const (
 // deriving from AWS's table directly reaches 4.0 vCPU for "large",
 // which is over it) and needed the rejection added at the same time as
 // the table consolidation, not as a separate step.
+//
+// This only checks CPU's own ceiling, not whether the returned value
+// pairs validly with whatever getMemoryGBAzure resolves separately --
+// see resolveContainerResourcesAzure, which is what callers should use
+// so both values are validated together as the pair Azure actually
+// requires.
 func getCPUCoresAzure(service *models.Service) (float64, error) {
 	if service.CPU != nil {
 		cores := float64(*service.CPU) / 1024.0
@@ -369,7 +416,8 @@ func getCPUCoresAzure(service *models.Service) (float64, error) {
 // getMemoryGBAzure converts service size or explicit memory to a GB
 // string. See getCPUCoresAzure's own doc
 // comment for the size-table consolidation and ceiling-rejection this
-// mirrors on the memory side.
+// mirrors on the memory side, and resolveContainerResourcesAzure for why
+// this alone doesn't guarantee a valid Consumption-plan pairing.
 func getMemoryGBAzure(service *models.Service) (string, error) {
 	if service.Memory != nil {
 		gb := float64(*service.Memory) / 1024.0
@@ -393,6 +441,52 @@ func getMemoryGBAzure(service *models.Service) (string, error) {
 		)
 	}
 	return fmt.Sprintf("%gGi", gb), nil
+}
+
+// memoryGBFromContainerAppsString parses back the "<N>Mi"/"<N>Gi" shape
+// getMemoryGBAzure returns into GiB, so resolveContainerResourcesAzure
+// can validate it against azureCPUMemoryPairAzure without either
+// function needing to know the other's string format.
+func memoryGBFromContainerAppsString(memory string) (float64, error) {
+	switch {
+	case strings.HasSuffix(memory, "Mi"):
+		mi, err := strconv.ParseFloat(strings.TrimSuffix(memory, "Mi"), 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid memory string %q: %w", memory, err)
+		}
+		return mi / 1024.0, nil
+	case strings.HasSuffix(memory, "Gi"):
+		gi, err := strconv.ParseFloat(strings.TrimSuffix(memory, "Gi"), 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid memory string %q: %w", memory, err)
+		}
+		return gi, nil
+	default:
+		return 0, fmt.Errorf("memory string %q has neither an Mi nor Gi suffix", memory)
+	}
+}
+
+// resolveContainerResourcesAzure resolves a service's CPU/memory and
+// validates them as the single pair Consumption plan requires, not as
+// two independently-under-the-cap values -- see azureCPUMemoryPairAzure
+// for why that distinction is real, not pedantic.
+func resolveContainerResourcesAzure(service *models.Service) (float64, string, error) {
+	cpu, err := getCPUCoresAzure(service)
+	if err != nil {
+		return 0, "", err
+	}
+	memory, err := getMemoryGBAzure(service)
+	if err != nil {
+		return 0, "", err
+	}
+	memoryGB, err := memoryGBFromContainerAppsString(memory)
+	if err != nil {
+		return 0, "", err
+	}
+	if err := azureCPUMemoryPairAzure(service.Name, cpu, memoryGB); err != nil {
+		return 0, "", err
+	}
+	return cpu, memory, nil
 }
 
 // inferScheduledJobs creates a Container Apps Job for each scheduled

@@ -69,6 +69,16 @@
           },
           {
             "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.doctor_database_url_url.versionless_id}",
+            "name": "doctor-database-url-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.doctor_redis_url_url.versionless_id}",
+            "name": "doctor-redis-url-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
             "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
             "name": "db-url"
           },
@@ -85,19 +95,19 @@
               "env": [
                 {
                   "name": "BUCKET_NAME",
-                  "value": "blobs"
+                  "value": "${azurerm_storage_account.blobs_storage.name}"
                 },
                 {
                   "name": "DATABASE_URL",
-                  "value": "postgres://user@db:5432/app"
+                  "secret_name": "doctor-database-url-url"
                 },
                 {
                   "name": "DB_HOST",
-                  "value": "db"
+                  "value": "${azurerm_postgresql_flexible_server.main.fqdn}"
                 },
                 {
                   "name": "REDIS_URL",
-                  "value": "redis://cache:6379"
+                  "secret_name": "doctor-redis-url-url"
                 },
                 {
                   "name": "DB_URL",
@@ -185,6 +195,26 @@
         },
         "name": "prod-doctor-db-password",
         "value": "${random_password.postgres_admin.result}"
+      },
+      "doctor_database_url_url": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-doctor-doctor-database-url",
+        "value": "postgres://cloudcompose:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/doctor_db"
+      },
+      "doctor_redis_url_url": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-doctor-doctor-redis-url",
+        "value": "redis://${azurerm_managed_redis.cache_redis.hostname}:10000"
       }
     },
     "azurerm_managed_redis": {

@@ -292,20 +292,72 @@ been latent and untested since MySQL support was first ported.
   Azure/GCP — see `docs/spikes/azure/README.md`'s finding #1 and
   `docs/spikes/gcp/README.md`'s reversal of it for the original design
   reasoning, both still open in code.
-- [ ] **Generalize Azure's connection-string rendering** to use something
+- [x] **Generalize Azure's connection-string rendering** to use something
   closer to AWS's `ResolveValue`/`shared.URLPattern` general substitution
   (`aws/connections.go:57-125`) instead of the hardcoded Postgres-shaped
   template — this is the durable fix behind the Priority 1 URL-injection
   bug item above, not just a one-off patch for that bug.
-- [x] **Add private networking + RBAC for Azure Redis and Blob Storage.**
-  No delegated subnet/private endpoint for Managed Redis at all (unlike
-  databases, which do get `privateNetworkingAzure`,
-  `azure/managed.go:22-69`, when the environment has the subnet IDs set).
-  No `Storage Blob Data Contributor`-equivalent role assignment for blob
-  access either — this was the spike's own explicitly recommended design
-  ("Azure ships the named access tiers" in `docs/spikes/azure/README.md`)
-  and was never built.
-  Naturally combines with the Priority 1 RBAC work.
+
+  **Done (2026-08-10) — turned out to be a real bug fix, not just a
+  refactor.** `connectionURLAzure`'s hardcoded template was never the
+  actual gap: it only renders `containerSpecAzure`'s own
+  `Relationships`-driven `<SERVER>_URL` synthesis (a real, working
+  mechanism — Azure's equivalent of AWS's always-emitted
+  `DB_PASSWORD`/`DB_USERNAME` convenience vars, `grantDatabasePermissions`
+  — not a bug in itself, and deliberately left alone here). The actual
+  gap: Azure had **no substitution into a service's own authored
+  `environment:` values at all** — `DATABASE_URL: postgres://db:5432/app`
+  and `DATABASE_HOST: db` shipped to Azure completely unchanged, pointing
+  at local container hostnames unreachable once `db` becomes a managed
+  Flexible Server. Confirmed as a real, currently-shipping bug, not
+  theoretical: the `doctor` example's own `app.py` reads
+  `DATABASE_URL`/`REDIS_URL` directly, and its Azure golden fixture had
+  both the broken literal value *and* a separate `DB_URL`/`CACHE_URL`
+  the app never reads sitting unused next to it. `minio-s3`/`flask-s3`
+  (`BUCKET_NAME`/`S3_ENDPOINT`) and `flask`/`nginx-flask-mysql`
+  (`DATABASE_HOST`) had the identical bug in two different authored
+  shapes (full URL, and bare hostname).
+
+  Moved `Resolution`/`ResolveValue`/`rebuildURL`/`userinfo`/
+  `connectionPath` from `aws/connections.go` to
+  `shared/connections.go` — confirmed genuinely cloud-agnostic (the
+  scheme in a rebuilt URL always comes from what the value itself
+  declared, never guessed from a target's capability, so neither cloud
+  needs its own scheme table) — and added `resolveEnvVarAzure`
+  (`azure/compute.go`) as the Azure-side caller, wired into
+  `containerSpecAzure`'s own `service.Env` loop. Confidential
+  resolutions (a real password now in the value) are stored one Key
+  Vault secret per `(service, env-var-name)`, mirroring
+  `aws/permissions.go`'s `storeConfidentialValue` exactly, including its
+  naming pattern — confirmed via a real same-app-name example
+  (`doctor`/`doctor`) that AWS's own secret name already doubles the
+  service name the identical way (`prod-doctor-doctor-database_url`),
+  not a new bug introduced here.
+
+  Found and fixed a real `terraform validate` failure while doing this:
+  `azurerm_key_vault_secret.name` only allows alphanumeric characters and
+  dashes, and an env var name like `DATABASE_URL` lowercased straight to
+  `database_url` still has the underscore. Fixed by slugifying
+  (underscore → dash) only the secret's own `Name` field and the
+  Container App secret block's matching name — the Terraform resource
+  identifier (a Go map key, `secretKey`) correctly keeps underscores,
+  same as every other identifier in this file.
+
+  Deliberately **not** changed: Azure's RBAC/identity-granting model
+  (`inferManagedServiceIdentity`, `grantManagedServicePermissions`,
+  `containerAppIdentityFor`) is currently `depends_on:`
+  (`app.Relationships`)-driven, where AWS's is usage-driven (only grants
+  access to what a resolved env var actually references) — a real,
+  separate architectural difference found while investigating this item,
+  but out of scope here; flagging for a future item rather than folding
+  it into this one.
+
+  All 7 affected golden fixtures (`doctor`, `flask`, `flask-s3`,
+  `flask-redis`, `minio-s3`, `nginx-flask-mysql`, `production-stack`)
+  regenerated and `terraform validate`d against the real `azurerm`
+  provider — including the confidential/Key-Vault path specifically,
+  not just the plain-substitution cases every other fixture exercises.
+
 
   **RBAC half was already done in the Priority 1 PR** (`grantManagedServicePermissions`
   grants `Storage Blob Data Contributor` per storage relationship) —
@@ -329,6 +381,26 @@ been latent and untested since MySQL support was first ported.
   Postgres/MySQL/Container-Apps subnet pattern. Verified end-to-end with
   `terraform validate` against both the environment-bootstrap output and
   a manually-generated app output with the subnet set.
+
+- [ ] **Azure's RBAC/identity-granting model is `depends_on:`-driven,
+  where AWS's is usage-driven.** Found while generalizing Azure's
+  connection-string rendering (above), not the same gap. AWS only grants
+  a service IAM permissions on a managed service if a *resolved env var
+  actually references it* (`aws/permissions.go`'s `referencedNames`,
+  built from `ResolveValue`'s own report of what a value resolved
+  against). Azure's `inferManagedServiceIdentity`/
+  `grantManagedServicePermissions`/`containerAppIdentityFor` instead grant
+  based purely on `app.Relationships` (i.e. compose `depends_on:`),
+  regardless of whether any env var actually references the target — a
+  service could `depends_on: db` for pure startup-ordering reasons,
+  never reference it in an env var at all, and still get an identity +
+  Key Vault role grant on Azure that AWS would correctly withhold.
+  Not fixed here — deliberately scoped out of the connection-string item
+  above to keep that change bounded to the actual reported bug (broken
+  connection strings), not a rewrite of Azure's whole permission model
+  at the same time. Worth deciding: tighten Azure to match AWS's
+  usage-driven model, or is the current over-grant an acceptable,
+  simpler default worth keeping and just documenting as intentional?
 
 ## Priority 4 — Smaller robustness/consistency gaps
 

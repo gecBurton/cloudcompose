@@ -105,6 +105,11 @@
         "secret": [
           {
             "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.web_redis_url_url.versionless_id}",
+            "name": "web-redis-url-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
             "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
             "name": "db-url"
           },
@@ -121,11 +126,11 @@
               "env": [
                 {
                   "name": "DB_HOST",
-                  "value": "db"
+                  "value": "${azurerm_postgresql_flexible_server.main.fqdn}"
                 },
                 {
                   "name": "REDIS_URL",
-                  "value": "redis://cache"
+                  "secret_name": "web-redis-url-url"
                 },
                 {
                   "name": "DB_URL",
@@ -244,6 +249,16 @@
         },
         "name": "prod-production-stack-db-password",
         "value": "${random_password.postgres_admin.result}"
+      },
+      "web_redis_url_url": {
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-production-stack-web-redis-url",
+        "value": "redis://${azurerm_managed_redis.cache_redis.hostname}:10000"
       }
     },
     "azurerm_managed_redis": {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -57,7 +58,7 @@ func InferPermissionsAndWiring(
 			name, _ := entry["name"].(string)
 			value, _ := entry["value"].(string)
 
-			resolved := ResolveValue(value, connections, connectionOrder)
+			resolved := shared.ResolveValue(value, connections, connectionOrder)
 			if resolved.Service != nil {
 				referenced[*resolved.Service] = struct{}{}
 			}

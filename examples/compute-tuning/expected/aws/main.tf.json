@@ -78,7 +78,7 @@
       },
       "worker_td": {
         "container_definitions": "[{\"name\": \"worker\", \"image\": \"my-worker:latest\", \"essential\": true, \"portMappings\": [], \"environment\": [], \"secrets\": [], \"logConfiguration\": {\"logDriver\": \"awslogs\", \"options\": {\"awslogs-group\": \"${aws_cloudwatch_log_group.worker_lg.name}\", \"awslogs-region\": \"us-east-1\", \"awslogs-stream-prefix\": \"ecs\"}}}]",
-        "cpu": "1024",
+        "cpu": "2048",
         "execution_role_arn": "${aws_iam_role.worker_exec_role.arn}",
         "family": "prod-compute-tuning-worker",
         "memory": "4096",

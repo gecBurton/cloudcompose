@@ -400,6 +400,23 @@ been latent and untested since MySQL support was first ported.
   and the rest of `compute_resources_test.go` for dedicated coverage
   instead.
 
+  **`compute-tuning` restored to cross-cloud coverage (2026-08-10).**
+  Rather than leave the example AWS-only, its `worker` override was
+  changed from `memory: 4096` alone (against a `size: medium` default of
+  1.0 vCPU — an unpaired combination on Azure, though valid on Fargate's
+  own, more permissive 1024-CPU-unit range of 2–8GB) to an explicit
+  `cpu: 2048` + `memory: 4096` pair (2.0 vCPU/4Gi) — a value inside both
+  clouds' valid ranges: Azure's exact-pair table accepts it directly,
+  and Fargate's 2048-CPU-unit tier accepts anywhere from 4–16GB. Re-added
+  to `azureGoldenExamples` with a real `expected/azure/main.tf.json`,
+  `terraform validate`d against the actual `azurerm` provider schema.
+  `expected/aws/main.tf.json` updated to match (`worker_td.cpu`:
+  `"1024"` → `"2048"`). This demonstrates the *fixable* shape of the
+  gap — the values were arbitrary in the first place, and choosing a
+  matched pair costs nothing the example was trying to show (an
+  independent-of-`size:` compute override) since `cpu:`/`memory:` are
+  now overridden together rather than one alone.
+
 - [ ] **Wire backup/HA settings for Azure databases.** `HighAvailability
   map[string]string` exists on the model (`azure.go:185`) but is never
   set by `inferDatabasesAzure` — dead field, same category as
@@ -440,7 +457,10 @@ been latent and untested since MySQL support was first ported.
 > `compute-tuning` specifically: checked before assuming it was blocked
 > by the sizing gap, and it wasn't — container-level `cpu`/`memory`
 > overrides already worked correctly on Azure; added anyway once
-> confirmed nothing else was stopping it.
+> confirmed nothing else was stopping it. (`compute-tuning` was later
+> removed and re-added again too, for an unrelated reason found
+> afterward — see the Priority 4 "New gap found"/"restored to
+> cross-cloud coverage" items above for that history.)
 
 - [x] **Add `examples/compute-tuning/expected/azure/`** once Azure sizing
   is fixed (Priority 2/4) — currently untestable since the feature isn't

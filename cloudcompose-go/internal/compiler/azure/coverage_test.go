@@ -10,10 +10,12 @@ import (
 func azureTestEnv() models.AzureEnvironment {
 	env := models.NewAzureEnvironment()
 	env.Name = "prod"
-	env.ContainerAppsEnvironmentName = "prod-env"
+	env.ResourceGroupName = "prod"
 	env.LogAnalyticsWorkspaceID = "/subscriptions/123/workspaces/prod"
 	env.VnetID = "/subscriptions/123/vnets/prod"
-	env.InfrastructureSubnetID = "/subscriptions/123/subnets/prod"
+	env.VnetName = "prod-vnet"
+	env.AppsCIDR = "10.0.128.0/17"
+	env.SubnetIndex = 0
 	return env
 }
 

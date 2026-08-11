@@ -1,12 +1,16 @@
 # Design: Per-app isolation on Azure (Cloud Compose Environment vs. Cloud Compose App)
 
-> **Status: decided, not yet implemented.** No live deployments exist
-> anywhere using this project — there is nothing to migrate and no
-> backward-compatibility constraint on any decision below. This doc
-> exists to record the decision before writing the (substantial) amount
-> of code it implies, not to hedge on it. See
-> `docs/azure-aws-parity-todo.md`'s "network-isolation enforcement for
-> Azure" item for how this started.
+> **Status: implemented (2026-08-11).** Landed exactly as decided below,
+> in one pass, not staged. `cloudcompose init` no longer creates a
+> Container Apps Environment or subnets; `cloudcompose main` creates its
+> own per app, carved from the environment's `apps_cidr` at
+> `--subnet-index`. All 12 Azure golden fixtures regenerated and
+> `terraform validate`d against the real `azurerm` provider. Found and
+> fixed a real bug in `shared.Cidrsubnet` along the way: it had no
+> bounds checking on `netnum`, so an out-of-range `--subnet-index` would
+> have silently computed a CIDR outside the intended range rather than
+> erroring -- confirmed against Terraform's own `cidrsubnet` semantics
+> and fixed to match.
 
 ## The problem
 

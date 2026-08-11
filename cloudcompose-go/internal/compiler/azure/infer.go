@@ -18,9 +18,18 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 		tags = env.Tags
 	}
 
-	// The Container Apps Environment is deliberately not inferred: it is
-	// platform-owned and referenced through a data source. See
-	// generator_azure.go.
+	// Step 0: create this app's own Container Apps Environment and its
+	// four delegated subnets, carved out of the environment's shared
+	// AppsCIDR at this app's own --subnet-index. Must run before
+	// anything below that reads env.InfrastructureSubnetID/
+	// PostgresqlSubnetID/MysqlSubnetID/RedisSubnetID (databases, caches,
+	// the Container App/Job resources themselves) -- see
+	// docs/azure-app-isolation-design.md for why this moved here from
+	// cloudcompose init, and appSubnetsAzure's own doc comment for the
+	// CIDR math.
+	if err := appSubnetsAzure(resources, app, env, getName, tags); err != nil {
+		return nil, err
+	}
 
 	// Step 1: Create managed identity (or use existing).
 	identityID := inferManagedIdentity(env)

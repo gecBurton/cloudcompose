@@ -35,6 +35,7 @@ func runMain(cmd *cobra.Command, args []string) {
 	projectName, _ := cmd.Flags().GetString("project")
 	outputDir, _ := cmd.Flags().GetString("out")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
+	subnetIndex, _ := cmd.Flags().GetInt("subnet-index")
 
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
@@ -83,6 +84,16 @@ func runMain(cmd *cobra.Command, args []string) {
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
+	}
+
+	// --subnet-index only means something on Azure -- see
+	// AzureEnvironment.SubnetIndex's own doc comment for why it's a
+	// flag (a per-app decision) rather than an environment.yaml field
+	// (a per-environment one), and docs/azure-app-isolation-design.md
+	// for the full design. Ignored on AWS/GCP, which need no per-app
+	// subnet: their own isolation model doesn't have this gap.
+	if azureEnv, ok := env.(*models.AzureEnvironment); ok {
+		azureEnv.SubnetIndex = subnetIndex
 	}
 
 	// 2. Compile.
@@ -285,6 +296,7 @@ func init() {
 	mainCmd.Flags().StringP("out", "o", "terraform", "Directory to write the generated Terraform JSON")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
 	mainCmd.Flags().BoolP("version", "v", false, "Show the version and exit")
+	mainCmd.Flags().Int("subnet-index", 0, "Azure only: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
 }
 
 // cloudcomposeVersion returns a short identifying string for the CLI.

@@ -2,12 +2,6 @@
   "data": {
     "azurerm_client_config": {
       "current": {}
-    },
-    "azurerm_container_app_environment": {
-      "main": {
-        "name": "prod-env",
-        "resource_group_name": "prod"
-      }
     }
   },
   "output": {
@@ -35,7 +29,7 @@
   "resource": {
     "azurerm_container_app": {
       "doctor": {
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
         "identity": {
           "identity_ids": [
             "${azurerm_user_assigned_identity.main.id}"
@@ -155,6 +149,16 @@
         }
       }
     },
+    "azurerm_container_app_environment": {
+      "main": {
+        "infrastructure_subnet_id": "${azurerm_subnet.infrastructure.id}",
+        "internal_load_balancer_enabled": false,
+        "location": "eastus",
+        "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
+        "name": "prod-doctor-env",
+        "resource_group_name": "prod"
+      }
+    },
     "azurerm_container_registry": {
       "main": {
         "admin_enabled": true,
@@ -242,6 +246,7 @@
         "high_availability_enabled": false,
         "location": "eastus",
         "name": "prod-doctor-cache",
+        "public_network_access": "Disabled",
         "resource_group_name": "prod",
         "sku_name": "Balanced_B0"
       }
@@ -251,6 +256,10 @@
         "administrator_login": "cloudcompose",
         "administrator_password": "${random_password.postgres_admin.result}",
         "backup_retention_days": 7,
+        "delegated_subnet_id": "${azurerm_subnet.postgresql.id}",
+        "depends_on": [
+          "azurerm_private_dns_zone_virtual_network_link.postgresql"
+        ],
         "lifecycle": {
           "ignore_changes": [
             "zone"
@@ -258,7 +267,8 @@
         },
         "location": "eastus",
         "name": "prod-doctor-pg",
-        "public_network_access_enabled": true,
+        "private_dns_zone_id": "${azurerm_private_dns_zone.postgresql.id}",
+        "public_network_access_enabled": false,
         "resource_group_name": "prod",
         "sku_name": "B_Standard_B1ms",
         "storage_mb": 32768,
@@ -271,6 +281,56 @@
         "collation": "en_US.utf8",
         "name": "doctor_db",
         "server_id": "${azurerm_postgresql_flexible_server.main.id}"
+      }
+    },
+    "azurerm_private_dns_zone": {
+      "postgresql": {
+        "name": "doctor-postgresql.postgres.database.azure.com",
+        "resource_group_name": "prod"
+      },
+      "redis": {
+        "name": "privatelink.redis.azure.net",
+        "resource_group_name": "prod"
+      }
+    },
+    "azurerm_private_dns_zone_virtual_network_link": {
+      "postgresql": {
+        "name": "doctor-postgresql-link",
+        "private_dns_zone_name": "${azurerm_private_dns_zone.postgresql.name}",
+        "registration_enabled": false,
+        "resource_group_name": "prod",
+        "virtual_network_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet"
+      },
+      "redis": {
+        "name": "doctor-redis-link",
+        "private_dns_zone_name": "${azurerm_private_dns_zone.redis.name}",
+        "registration_enabled": false,
+        "resource_group_name": "prod",
+        "virtual_network_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet"
+      }
+    },
+    "azurerm_private_endpoint": {
+      "cache_redis_pe": {
+        "location": "eastus",
+        "name": "prod-doctor-cache-redis-pe",
+        "private_dns_zone_group": {
+          "name": "default",
+          "private_dns_zone_ids": [
+            "${azurerm_private_dns_zone.redis.id}"
+          ]
+        },
+        "private_service_connection": [
+          {
+            "is_manual_connection": false,
+            "name": "prod-doctor-cache-redis-psc",
+            "private_connection_resource_id": "${azurerm_managed_redis.cache_redis.id}",
+            "subresource_names": [
+              "redisEnterprise"
+            ]
+          }
+        ],
+        "resource_group_name": "prod",
+        "subnet_id": "${azurerm_subnet.redis.id}"
       }
     },
     "azurerm_role_assignment": {
@@ -302,6 +362,79 @@
         "container_access_type": "private",
         "name": "blobs",
         "storage_account_name": "${azurerm_storage_account.blobs_storage.name}"
+      }
+    },
+    "azurerm_subnet": {
+      "infrastructure": {
+        "address_prefixes": [
+          "10.0.128.0/26"
+        ],
+        "delegation": [
+          {
+            "name": "container-apps",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.App/environments"
+              }
+            ]
+          }
+        ],
+        "name": "prod-doctor-infrastructure",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "mysql": {
+        "address_prefixes": [
+          "10.0.128.128/26"
+        ],
+        "delegation": [
+          {
+            "name": "mysql-flexible-server",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.DBforMySQL/flexibleServers"
+              }
+            ]
+          }
+        ],
+        "name": "prod-doctor-mysql",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "postgresql": {
+        "address_prefixes": [
+          "10.0.128.64/26"
+        ],
+        "delegation": [
+          {
+            "name": "postgresql-flexible-server",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.DBforPostgreSQL/flexibleServers"
+              }
+            ]
+          }
+        ],
+        "name": "prod-doctor-postgresql",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "redis": {
+        "address_prefixes": [
+          "10.0.128.192/26"
+        ],
+        "name": "prod-doctor-redis",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
       }
     },
     "azurerm_user_assigned_identity": {

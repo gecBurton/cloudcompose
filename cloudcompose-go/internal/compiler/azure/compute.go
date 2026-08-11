@@ -806,7 +806,7 @@ func inferScheduledJobs(
 		job.Name = getName(service.Name)
 		job.ResourceGroupName = env.Name
 		job.Location = env.Region
-		job.ContainerAppEnvironmentID = "${data.azurerm_container_app_environment.main.id}"
+		job.ContainerAppEnvironmentID = "${azurerm_container_app_environment.main.id}"
 		job.ScheduleTriggerConfig = []models.ContainerAppJobScheduleTrigger{{CronExpression: cronExpr}}
 		job.Template = []models.ContainerAppJobTemplate{
 			{Container: []models.ContainerAppContainer{containerSpec}},
@@ -948,7 +948,7 @@ func inferContainerApps(
 		containerApp := models.NewContainerApp()
 		containerApp.Name = getName(service.Name)
 		containerApp.ResourceGroupName = env.Name
-		containerApp.ContainerAppEnvironmentID = "${data.azurerm_container_app_environment.main.id}"
+		containerApp.ContainerAppEnvironmentID = "${azurerm_container_app_environment.main.id}"
 		containerApp.Template = template
 		containerApp.Ingress = ingressConfig
 		containerApp.Identity = managedIdentityAzure(identityForService(app, service, identityID, managedServiceIdentityID, connections))

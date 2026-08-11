@@ -84,33 +84,51 @@ type AzureEnvironment struct {
 	BackupRetentionDays     int               `json:"backup_retention_days"`
 	Tags                    map[string]string `json:"tags,omitempty"`
 
-	ContainerAppsEnvironmentName string `json:"container_apps_environment_name"`
-	LogAnalyticsWorkspaceID      string `json:"log_analytics_workspace_id"`
-	VnetID                       string `json:"vnet_id"`
-	InfrastructureSubnetID       string `json:"infrastructure_subnet_id"`
+	LogAnalyticsWorkspaceID string `json:"log_analytics_workspace_id"`
+	ResourceGroupName       string `json:"resource_group_name"`
+	VnetID                  string `json:"vnet_id"`
+	VnetName                string `json:"vnet_name"`
 
-	// A Flexible Server needs a subnet delegated to its own engine, so
-	// neither database can reuse the Container Apps subnet and the two
-	// engines cannot share one either. Optional so environment files
-	// written before cloudcompose created these subnets stay loadable; a
-	// database then falls back to public network access instead of
-	// failing to compile.
-	PostgresqlSubnetID *string `json:"postgresql_subnet_id,omitempty"`
-	MysqlSubnetID      *string `json:"mysql_subnet_id,omitempty"`
+	// AppsCIDR is the upper half of the environment's VNet, reserved
+	// for apps -- see docs/azure-app-isolation-design.md's "Decided:
+	// CIDR math" section. cloudcompose main carves its own /24 out of
+	// this range (keyed by --subnet-index) for its own Container Apps
+	// Environment's four subnets, rather than reading a
+	// pre-created Container Apps Environment/subnet set the way
+	// earlier revisions of this codebase did: a Container Apps
+	// Environment is Azure's actual isolation boundary (confirmed
+	// against the real azurerm_container_app schema, which has no
+	// networking fields at all), so a shared one across apps would
+	// defeat the isolation this design exists to provide.
+	AppsCIDR string `json:"apps_cidr"`
 
-	// RedisSubnetID is where a Managed Redis instance's
-	// azurerm_private_endpoint is placed, added 2026-08-08 (see
-	// docs/azure-aws-parity-todo.md's Priority 3 Redis/Blob private
-	// networking item). Unlike Postgresql/MysqlSubnetID above, this
-	// doesn't need to be a *delegated* subnet the way Flexible Server's
-	// requires -- a private endpoint attaches to any plain subnet -- but
-	// it's kept as its own field rather than reusing
-	// InfrastructureSubnetID (the Container Apps subnet) since Azure
-	// does not allow a private endpoint and delegated Container Apps
-	// workloads to share one subnet either. Same optional/fallback
-	// convention as the two fields above: nil means fall back to public
-	// network access rather than failing to compile.
-	RedisSubnetID *string `json:"redis_subnet_id,omitempty"`
+	// SubnetIndex identifies this app's own /24 slice of AppsCIDR --
+	// supplied fresh on every `cloudcompose main` invocation via the
+	// --subnet-index flag, not decoded from the environment's own
+	// Terraform outputs the way every other field above is (`json:"-"`
+	// reflects that: LoadAzureEnvironment never sets this, and nothing
+	// should expect GenerateAzureEnvironment's output block to carry
+	// it either). Two apps sharing an index collide on the same subnet
+	// range -- the same class of user error as two apps sharing a
+	// --project name, not a new failure mode this field introduces.
+	// See docs/azure-app-isolation-design.md's "Decided: per-app subnet
+	// allocation" section for why this couldn't be automatic.
+	SubnetIndex int `json:"-"`
+
+	// InfrastructureSubnetID/PostgresqlSubnetID/MysqlSubnetID/
+	// RedisSubnetID are likewise `json:"-"`: computed and set onto this
+	// struct by InferAzure itself (azure/infer.go's appSubnetCIDRs),
+	// from AppsCIDR + SubnetIndex, not decoded from
+	// GenerateAzureEnvironment's output the way they were before
+	// docs/azure-app-isolation-design.md's redesign moved subnet
+	// creation from cloudcompose init to cloudcompose main. Every
+	// consumer of these four fields (managed.go's
+	// privateNetworkingAzure/privateEndpointRedisAzure) is unchanged --
+	// only where the values come from moved.
+	InfrastructureSubnetID string  `json:"-"`
+	PostgresqlSubnetID     *string `json:"-"`
+	MysqlSubnetID          *string `json:"-"`
+	RedisSubnetID          *string `json:"-"`
 
 	ContainerRegistryName  *string `json:"container_registry_name,omitempty"`
 	PostgresqlServerID     *string `json:"postgresql_server_id,omitempty"`

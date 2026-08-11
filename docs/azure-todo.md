@@ -15,6 +15,17 @@ full runs in `francecentral`).
 Each of these deployed, served the expected response, and tore down cleanly
 with nothing left in the subscription.
 
+> These runs predate `docs/azure-app-isolation-design.md`'s redesign
+> (2026-08-11): at the time, `cloudcompose init` created a single shared
+> Container Apps Environment and subnets, and `cloudcompose main` referenced
+> them via a data source. That architecture no longer exists —
+> `cloudcompose main` now creates its own Container Apps Environment and
+> subnets per app. The facts below (Container App/ingress/Postgres/Redis/Key
+> Vault/Jobs/Front Door/build-and-push all working) still hold; the shared
+> Container Apps Environment/data-source detail specifically does not. None
+> of these examples have been re-verified against a real deployment since —
+> flagged, not assumed to still be exactly as described.
+
 | Example | Proves |
 | --- | --- |
 | `hello` | Container App, ingress, the environment stack |
@@ -217,7 +228,11 @@ two Azure services that have been retired. A valid schema says nothing about
 whether the service still exists or whether two stacks will collide. Every
 one of those cost an hour to find. Assume a live run is required for anything
 touching resource identity, networking, or a service you have not deployed
-before.
+before. (The "two stacks both declaring ownership of the Container Apps
+Environment" class of bug is now structurally impossible, not just harder to
+hit: `docs/azure-app-isolation-design.md`'s redesign gives each app its own
+Container Apps Environment, created by `cloudcompose main` itself, rather
+than a shared one two different Terraform stacks could both think they own.)
 
 **Azure retires things and the provider does not.** Two retired services turned
 up in a single example (classic CDN, Azure Cache for Redis). The Azure

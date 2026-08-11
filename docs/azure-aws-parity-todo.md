@@ -314,22 +314,56 @@ been latent and untested since MySQL support was first ported.
   path as a genuinely separate option, not just a flag flip — a
   follow-up, not folded into this pass).
 
-- [ ] **Design network-isolation enforcement for Azure (or explicitly
+- [x] **Design network-isolation enforcement for Azure (or explicitly
   document its absence as intentional).** `NetworkIsolationSegments`
   drives real per-segment security groups on AWS
   (`InferNetworking`, `aws/connectivity.go:45-100`); Azure has no
   equivalent file/mechanism at all — compose `networks:` isolation
-  intent is silently dropped. Related: `models.Relationship`
-  (`semantic.go:142-146`) claims to be "the single source of truth for
-  network security" in its own docstring, but is enforced on none of the
-  three clouds consistently (AWS via security groups; Azure not at all;
-  GCP doesn't emit a `roles/run.invoker` binding either — confirmed
-  directly in `gcp/infer.go`, not via a stale doc annotation). Worth
-  deciding, across all three clouds at once, whether this docstring claim
-  should be qualified (best-effort per target) or actually built out for
-  Azure/GCP — see `docs/spikes/azure/README.md`'s finding #1 and
-  `docs/spikes/gcp/README.md`'s reversal of it for the original design
-  reasoning, both still open in code.
+  intent is silently dropped.
+
+  **Done (2026-08-11) — turned into something bigger than a wiring
+  gap.** Investigating this surfaced that this codebase's own
+  "environment" concept was unintentionally AWS-shaped: AWS's real
+  isolation primitive (the security group) lives *below* the shared ECS
+  cluster, so sharing that cluster across apps is fine; Azure has no
+  equivalent lower layer — confirmed directly (not assumed) that
+  `azurerm_container_app`'s schema has zero networking fields at all,
+  and that Microsoft's own docs say the Container Apps Environment
+  itself is the only isolation boundary that exists ("Use more than one
+  environment when you want two or more applications to... never share
+  the same compute resources"). See `docs/azure-app-isolation-design.md`
+  for the full decision record: `cloudcompose init` no longer creates a
+  Container Apps Environment or subnets at all; `cloudcompose main`
+  creates its own per app, via a new `--subnet-index` flag, carved from
+  the environment's own reserved `apps_cidr`. All 12 Azure golden
+  fixtures regenerated and `terraform validate`d. Found and fixed a real
+  bug in `shared.Cidrsubnet` along the way (no bounds checking on
+  `netnum` — a real, if narrow, cross-cloud risk, not Azure-specific,
+  simply never exercised by any caller before this one).
+
+  One correction to this item's own original framing, made while
+  writing it up properly: `models.Relationship`'s docstring does not
+  currently (and per git history, never did) claim to be "the single
+  source of truth for network security" — that specific quote could not
+  be found anywhere in `semantic.go`'s history. Dropping the claim that
+  this needed reconciling across three clouds' docstrings; the real,
+  confirmed asymmetry (AWS enforces via security groups, Azure via
+  Container Apps Environments as of this item, GCP not investigated) is
+  now Azure's own resolved gap plus a real, separate, still-open
+  question for GCP — see "Deferred, not part of this decision" in
+  `docs/azure-app-isolation-design.md`.
+- [ ] **GCP's own network-isolation model has not been investigated
+  against the same lens as Azure's item above.** Deliberately deferred,
+  not assumed to share Azure's gap just because it's a third cloud — see
+  `docs/azure-app-isolation-design.md`'s "Deferred, not part of this
+  decision" section. Cloud Run's own isolation primitives (VPC connector
+  scoping, ingress settings, per-service IAM) haven't been checked
+  against AWS's per-`networks:`-segment security-group model the way
+  Azure's Container Apps Environment now has been. GCP already has
+  deliberately lighter verification than AWS/Azure (never tested against
+  a real deployment); a lighter-weight network-isolation investigation
+  is consistent with that existing, documented scope decision, not a gap
+  that crept in unnoticed.
 - [x] **Generalize Azure's connection-string rendering** to use something
   closer to AWS's `ResolveValue`/`shared.URLPattern` general substitution
   (`aws/connections.go:57-125`) instead of the hardcoded Postgres-shaped

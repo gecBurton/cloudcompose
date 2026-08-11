@@ -95,14 +95,43 @@ Similar setup for the **Azure Acceptance** workflow (`.github/workflows/azure-ac
 ## Create Azure Service Principal for OIDC
 
 ```bash
-# Create a resource group for CI resources
+# Create a resource group for CI resources (the Terraform state
+# storage account lives here -- see "Create the Terraform state
+# backend" below; not where acceptance runs deploy their own
+# infrastructure).
 az group create --name cloudcompose-acceptance --location eastus
 
-# Create a service principal for GitHub Actions
+# Create a service principal for GitHub Actions. Scoped to the whole
+# subscription, not the resource group above: each acceptance run
+# creates its own resource group (ci<run-number>), a name that doesn't
+# exist until the run itself creates it, so a resource-group-scoped
+# role assignment created ahead of time could never cover it.
 az ad sp create-for-rbac \
   --name "cloudcompose-acceptance-ci" \
   --role "Contributor" \
-  --scopes /subscriptions/{subscription-id}/resourceGroups/cloudcompose-acceptance
+  --scopes /subscriptions/{subscription-id}
+
+# Contributor explicitly excludes Microsoft.Authorization/*/Write
+# (confirmed against Microsoft's own built-in role definition, "Grants
+# full access to manage all resources, but does not allow you to assign
+# roles in Azure RBAC") -- cloudcompose's own generated Terraform creates
+# an azurerm_role_assignment (Key Vault Secrets User, granting an app's
+# managed identity read access to its own secrets) inside every
+# deployed app's resource group, which Contributor alone can never
+# create, at any scope, no matter how long you wait. This is the actual
+# root cause behind docs/azure-todo.md's "Key Vault role-assignment RBAC
+# propagation" item -- misdiagnosed as pure propagation delay at first
+# because a separate, real propagation-delay bug (fixed with a
+# time_sleep) happened to reduce the symptom's visibility without
+# addressing this underlying permission gap.
+# "Role Based Access Control Administrator" grants exactly
+# Microsoft.Authorization/roleAssignments/{write,delete} + */read --
+# precisely what's needed, not the broader Microsoft.Authorization/*
+# "User Access Administrator" also grants (which additionally covers
+# managing custom role definitions, unneeded here).
+az role assignment create --assignee <service-principal-object-id> \
+  --role "Role Based Access Control Administrator" \
+  --scope /subscriptions/{subscription-id}
 ```
 
 ## Create the Terraform state backend

@@ -164,6 +164,42 @@ exact role assignment *has* succeeded before — the third run confirms
 this is genuine intermittency, not a 100%-reproducible permissions gap:
 still unresolved, but no longer just a hypothesis with one data point.
 
+**Root cause found and fixed (2026-08-11) — not intermittency at all.**
+Checked the CI service principal's own live role assignments directly
+(`az role assignment list --assignee <object-id>`): `Contributor` at the
+subscription scope, nothing else. Confirmed against Microsoft's own
+built-in role definition that `Contributor`'s own description says
+"does not allow you to assign roles in Azure RBAC" and its `notActions`
+explicitly excludes `Microsoft.Authorization/*/Write` — this covers
+`Microsoft.Authorization/roleAssignments/write` exactly, the action the
+real error names. This is a deterministic permission gap, not
+propagation delay or randomness: the CI service principal could
+*never* create `kv_role`, at any scope, no matter how long a
+`time_sleep` waited. The "intermittency" across the three post-fix runs
+was real (this exact role assignment has genuinely succeeded before,
+per the "Verified against real Azure" table predating all of them), but
+not evidence *for* propagation delay -- more likely, the CI service
+principal's own permissions were broadened at some point after the
+table's 2026-08-05 entries and then never re-confirmed, or the earlier
+successes happened before the `kv_role` resource existed in generated
+Terraform at all.
+
+Fixed by granting the existing CI service principal "Role Based Access
+Control Administrator" at the subscription scope (`ci/README.md`'s
+Azure setup section now documents this, and the scope itself was
+corrected at the same time -- the doc previously said to scope the
+service principal to a single fixed resource group, which was already
+stale relative to what live acceptance runs actually need: each run
+creates its own dynamically-named resource group, so subscription-level
+scope was already implicitly required and, it turned out, already
+granted for `Contributor` -- just never for this role). Chose "Role
+Based Access Control Administrator" over the broader "User Access
+Administrator": the former grants exactly
+`Microsoft.Authorization/roleAssignments/{write,delete}` + `*/read`,
+the latter the wider `Microsoft.Authorization/*` (also covers managing
+custom role definitions, not needed here) -- confirmed against
+Microsoft's own role definitions, not assumed from the names alone.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

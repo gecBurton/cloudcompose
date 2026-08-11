@@ -62,6 +62,16 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 		}
 	}
 
+	// Only wire up the time provider if grantKeyVaultAccessOnce actually
+	// created the RBAC-propagation time_sleep (see TimeSleep's own doc
+	// comment) -- apps with no managed-service credentials never create
+	// a Key Vault at all, and shouldn't declare a provider they have no
+	// resource of.
+	if len(resources.TimeSleep) > 0 {
+		requiredProviders["time"] = map[string]any{"source": "hashicorp/time", "version": "~> 0.13"}
+		provider["time"] = map[string]any{}
+	}
+
 	data := map[string]any{
 		"azurerm_client_config": map[string]any{"current": map[string]any{}},
 		// The Container Apps Environment belongs to the platform stack,

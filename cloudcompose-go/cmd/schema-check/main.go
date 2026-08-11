@@ -62,6 +62,7 @@ func main() {
 		{"google", "hashicorp/google", "~> 5.0"},
 		{"docker", "kreuzwerker/docker", "~> 3.0"},
 		{"random", "hashicorp/random", "~> 3.6"},
+		{"time", "hashicorp/time", "~> 0.13"},
 	}
 
 	schemaDir, err := os.MkdirTemp("", "cloudcompose-schema-check-*")
@@ -79,7 +80,7 @@ func main() {
 
 	sets := []resourceSet{
 		{"AWSResources", []string{"registry.terraform.io/hashicorp/aws", "registry.terraform.io/kreuzwerker/docker", "registry.terraform.io/hashicorp/random"}, models.AWSResources{}},
-		{"AzureResources", []string{"registry.terraform.io/hashicorp/azurerm", "registry.terraform.io/kreuzwerker/docker", "registry.terraform.io/hashicorp/random"}, models.AzureResources{}},
+		{"AzureResources", []string{"registry.terraform.io/hashicorp/azurerm", "registry.terraform.io/kreuzwerker/docker", "registry.terraform.io/hashicorp/random", "registry.terraform.io/hashicorp/time"}, models.AzureResources{}},
 		{"GcpResources", []string{"registry.terraform.io/hashicorp/google", "registry.terraform.io/kreuzwerker/docker", "registry.terraform.io/hashicorp/random"}, models.GcpResources{}},
 	}
 

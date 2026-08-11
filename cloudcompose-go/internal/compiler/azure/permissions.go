@@ -177,6 +177,12 @@ func grantManagedServicePermissions(
 // is a no-op on every subsequent call -- see grantManagedServicePermissions's
 // own doc comment for why a second identical grant would be a duplicate
 // Azure rejects, not just redundant Terraform config.
+//
+// Also creates the RBAC-propagation time_sleep (see TimeSleep's own doc
+// comment) alongside the role assignment itself, once per app for the
+// same reason the role assignment is granted at most once: every secret
+// this app stores waits on the same grant, so one shared sleep is
+// correct, not one per secret.
 func grantKeyVaultAccessOnce(resources *models.AzureResources, granted *bool, principalIDRef string) {
 	if *granted {
 		return
@@ -186,6 +192,10 @@ func grantKeyVaultAccessOnce(resources *models.AzureResources, granted *bool, pr
 		Scope:              "${azurerm_key_vault.main.id}",
 		RoleDefinitionName: keyVaultSecretsUserRole,
 		PrincipalID:        principalIDRef,
+	}
+	resources.TimeSleep["kv_role_propagation"] = models.TimeSleep{
+		CreateDuration: models.KeyVaultRoleAssignmentPropagationDelay,
+		DependsOn:      []string{"azurerm_role_assignment.kv_role"},
 	}
 }
 

@@ -11,6 +11,15 @@
 > have silently computed a CIDR outside the intended range rather than
 > erroring -- confirmed against Terraform's own `cidrsubnet` semantics
 > and fixed to match.
+>
+> Real Azure deployment run (`production-stack`, 2026-08-11): the new
+> Container Apps Environment and all four delegated subnets created
+> successfully (app-specific names, e.g. `ci53-prodstack-infrastructure`)
+> and destroyed cleanly during teardown. The run's overall failure was
+> the already-tracked, unrelated `azurerm_role_assignment.kv_role`
+> `AuthorizationFailed` issue (`docs/azure-todo.md`'s Key Vault RBAC item)
+> — confirmed isolated to that pre-existing path, not caused by or
+> related to this redesign.
 
 ## The problem
 

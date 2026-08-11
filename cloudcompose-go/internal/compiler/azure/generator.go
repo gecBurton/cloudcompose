@@ -74,17 +74,6 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 
 	data := map[string]any{
 		"azurerm_client_config": map[string]any{"current": map[string]any{}},
-		// The Container Apps Environment belongs to the platform stack,
-		// not to the application. Looked up rather than declared: two
-		// stacks that both manage it fight over the same resource, and
-		// the app stack loses with "already exists - to be managed via
-		// Terraform this resource needs to be imported into the State".
-		"azurerm_container_app_environment": map[string]any{
-			"main": map[string]any{
-				"name":                env.ContainerAppsEnvironmentName,
-				"resource_group_name": env.Name,
-			},
-		},
 	}
 
 	resourceBlocksMap, err := shared.StructResourceBlocks(resources)

@@ -18,13 +18,22 @@ import (
 // hash-based naming would be used instead, which is a different (and
 // also correct) value, but not the one the golden files were generated
 // against.
+//
+// InfrastructureSubnetID/PostgresqlSubnetID/MysqlSubnetID/RedisSubnetID
+// are deliberately NOT set here: InferAzure computes them itself now
+// (appSubnetsAzure, from AppsCIDR + SubnetIndex), matching what a real
+// `cloudcompose main` run does -- see
+// docs/azure-app-isolation-design.md. SubnetIndex=0 here matches every
+// golden fixture, which all assume a single app per environment.
 func mockAzureProdEnv() models.AzureEnvironment {
 	env := models.NewAzureEnvironment()
 	env.Name = "prod"
-	env.ContainerAppsEnvironmentName = "prod-env"
+	env.ResourceGroupName = "prod"
 	env.LogAnalyticsWorkspaceID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs"
 	env.VnetID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet"
-	env.InfrastructureSubnetID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet/subnets/infrastructure"
+	env.VnetName = "prod-vnet"
+	env.AppsCIDR = "10.0.128.0/17"
+	env.SubnetIndex = 0
 	registryName := "prodacr"
 	env.ContainerRegistryName = &registryName
 	return env

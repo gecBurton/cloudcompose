@@ -15,6 +15,17 @@ full runs in `francecentral`).
 Each of these deployed, served the expected response, and tore down cleanly
 with nothing left in the subscription.
 
+> These runs predate `docs/azure-app-isolation-design.md`'s redesign
+> (2026-08-11): at the time, `cloudcompose init` created a single shared
+> Container Apps Environment and subnets, and `cloudcompose main` referenced
+> them via a data source. That architecture no longer exists —
+> `cloudcompose main` now creates its own Container Apps Environment and
+> subnets per app. The facts below (Container App/ingress/Postgres/Redis/Key
+> Vault/Jobs/Front Door/build-and-push all working) still hold; the shared
+> Container Apps Environment/data-source detail specifically does not. None
+> of these examples have been re-verified against a real deployment since —
+> flagged, not assumed to still be exactly as described.
+
 | Example | Proves |
 | --- | --- |
 | `hello` | Container App, ingress, the environment stack |
@@ -134,9 +145,11 @@ Re-run against real Azure twice after this fix (2026-08-11,
 targets is gone both times: no run since has seen the cascading
 downstream `GetSecret`/second-role-assignment `403`s the original bug
 report showed. But `azurerm_role_assignment.kv_role` itself has now
-failed to create at all in both post-fix runs, with
-`AuthorizationFailed` on the role assignment *write* (not a downstream
-read) — a different symptom from what this fix targets. Not
+failed to create at all in all three post-fix runs (the two on
+2026-08-11 testing the fix itself, plus one more the same day testing
+`docs/azure-app-isolation-design.md`'s unrelated per-app-CAE redesign),
+with `AuthorizationFailed` on the role assignment *write* (not a
+downstream read) — a different symptom from what this fix targets. Not
 investigated further yet: could be the same underlying Azure-side
 propagation/consistency class of issue showing up one step earlier
 (the CI service principal's own `Microsoft.Authorization/roleAssignments/write`
@@ -146,10 +159,10 @@ write time), or a genuinely separate, unrelated permissions gap — the
 *after* `kv_role` is created, and `kv_role` itself is what's failing to
 create now. Tracked as its own open item rather than assumed to be the
 same bug: `production-stack`'s own "Verified against real Azure" table
-entry above predates both of these failures (2026-08-05), so this
-exact role assignment *has* succeeded before — consistent with genuine
-intermittency, not a 100%-reproducible permissions gap, but not yet
-confirmed either way with a third run.
+entry above predates all three of these failures (2026-08-05), so this
+exact role assignment *has* succeeded before — the third run confirms
+this is genuine intermittency, not a 100%-reproducible permissions gap:
+still unresolved, but no longer just a hypothesis with one data point.
 
 ## Things worth knowing before touching this again
 
@@ -217,7 +230,11 @@ two Azure services that have been retired. A valid schema says nothing about
 whether the service still exists or whether two stacks will collide. Every
 one of those cost an hour to find. Assume a live run is required for anything
 touching resource identity, networking, or a service you have not deployed
-before.
+before. (The "two stacks both declaring ownership of the Container Apps
+Environment" class of bug is now structurally impossible, not just harder to
+hit: `docs/azure-app-isolation-design.md`'s redesign gives each app its own
+Container Apps Environment, created by `cloudcompose main` itself, rather
+than a shared one two different Terraform stacks could both think they own.)
 
 **Azure retires things and the provider does not.** Two retired services turned
 up in a single example (classic CDN, Azure Cache for Redis). The Azure

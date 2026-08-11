@@ -196,6 +196,7 @@ var compileAzureCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Environment error: %v\n", err)
 			os.Exit(1)
 		}
+		env.SubnetIndex, _ = cmd.Flags().GetInt("subnet-index")
 
 		composeApp, err := compiler.ParseCompose(filePath)
 		if err != nil {
@@ -300,6 +301,7 @@ func init() {
 	compileAWSCmd.Flags().StringP("env", "e", "", "Path to the AWS environment directory created by `cloudcompose init` (required)")
 	compileAzureCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
 	compileAzureCmd.Flags().StringP("env", "e", "", "Path to the Azure environment directory created by `cloudcompose init` (required)")
+	compileAzureCmd.Flags().Int("subnet-index", 0, "This app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md)")
 	compileGcpCmd.Flags().StringP("project", "p", "", "Project name for resource naming (default: compose file's parent directory name)")
 	compileGcpCmd.Flags().StringP("env", "e", "", "Path to the GCP environment directory created by `cloudcompose init` (required)")
 }

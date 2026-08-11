@@ -17,15 +17,24 @@ a shared environment once, then deploy one or more apps into it:
 ```bash
 cd cloudcompose-go
 
-# Step 1: bootstrap the shared platform infrastructure (VPC, ECS
-# cluster/Container Apps Environment, etc.) — run once per environment,
-# typically by whoever owns the cloud account, not by every developer.
+# Step 1: bootstrap the shared platform infrastructure -- VPC + ECS
+# cluster on AWS; resource group + Log Analytics workspace + VNet on
+# Azure (no Container Apps Environment: that's per-app now, created by
+# `main` below, not shared -- see docs/azure-app-isolation-design.md
+# for why Azure's isolation boundary doesn't work the same way AWS's
+# does). Run once per environment, typically by whoever owns the cloud
+# account, not by every developer.
 go run ./cmd/cloudcompose init -f ../examples/hello/environment.yaml -o /tmp/demo-infrastructure
 cd /tmp/demo-infrastructure && terraform init && terraform apply
 cd -
 
-# Step 2: deploy an app into that environment — run as often as you like,
-# by anyone, without touching the environment itself.
+# Step 2: deploy an app into that environment -- run as often as you
+# like, by anyone. On AWS this only adds the app's own resources inside
+# the shared cluster/VPC; on Azure this also creates the app's own
+# Container Apps Environment and delegated subnets (real, per-app
+# infrastructure, not just app-level resources) -- pass --subnet-index
+# to give it a distinct, non-overlapping slice of the environment's
+# reserved address space if more than one app shares this environment.
 go run ./cmd/cloudcompose main -f ../examples/hello/compose.yml -e /tmp/demo-infrastructure
 ```
 
@@ -73,12 +82,17 @@ different examples (`hello`, `minio-s3`, `build-webapp`, `doctor`,
 `web-api`, `production-stack`) against real AWS/Azure as part of this
 repo's CI acceptance workflows (`PROVIDER=aws` or `PROVIDER=azure`; see
 `ci/README.md` for the one-time CI
-identity/state-backend setup they depend on). All six share **one**
-environment per run, generated from `scripts/ci-environment.aws.yaml`/
-`ci-environment.azure.yaml` — not `examples/hello/environment.yaml` —
-since a CI run's environment isn't really "for" any one example; it's
-one platform environment several separate apps deploy into, the same
-multi-app-per-environment pattern the two-step flow above supports.
+identity/state-backend setup they depend on). Each run deploys exactly
+one of the six into its own fresh environment (`NAME=ci<run-number>`,
+generated from `scripts/ci-environment.aws.yaml`/
+`ci-environment.azure.yaml` — not `examples/hello/environment.yaml`,
+since a CI run's environment isn't really "for" any one example) —
+not six examples sharing one environment simultaneously; the
+multi-app-per-environment pattern the two-step flow above supports is
+never actually exercised by CI today, since only one app ever deploys
+per run (on Azure, this also means `--subnet-index` is never passed —
+see `scripts/smoke-test.sh`'s own comment at that call site for why
+defaulting to `0` is correct here).
 Each run substitutes a unique `name:` into a generated copy of that
 shared file before calling `cloudcompose init -f <generated file>` — see
 the comments in the smoke-test script for exactly how.

@@ -196,10 +196,52 @@ func NewContainerAppJob() ContainerAppJob {
 	return ContainerAppJob{ReplicaTimeoutInSeconds: 1800, ReplicaRetryLimit: 1}
 }
 
-// ContainerAppEnvironment mirrors ContainerAppEnvironment. Defined for
-// completeness, but never instantiated by inference: the environment is
-// platform-owned and referenced via a data source instead (see
-// AzureResources doc comment and generator_azure.go).
+// Subnet mirrors azurerm_subnet. Created per-app now, one set of four
+// per Container Apps Environment (infrastructure/postgresql/mysql/redis
+// -- the same four purposes cloudcompose init used to create once,
+// shared, before docs/azure-app-isolation-design.md's redesign), carved
+// out of the environment's own AppsCIDR at the app's own
+// --subnet-index. See azure/infer.go's appSubnetCIDRs for the actual
+// CIDR math.
+type Subnet struct {
+	Name               string             `json:"name"`
+	ResourceGroupName  string             `json:"resource_group_name"`
+	VirtualNetworkName string             `json:"virtual_network_name"`
+	AddressPrefixes    []string           `json:"address_prefixes"`
+	Delegation         []SubnetDelegation `json:"delegation,omitempty"`
+}
+
+// SubnetDelegation mirrors azurerm_subnet's delegation block --
+// confirmed against the real schema that it's a genuinely repeatable
+// list (no max_items cap), so []SubnetDelegation is correct here, not a
+// bare struct (see ContainerAppProbe's own doc comment for the class of
+// bug that distinction matters for). Not delegated at all (a nil slice)
+// for the redis subnet: azurerm_private_endpoint attaches to a plain
+// subnet, unlike the delegated subnets Flexible Server needs.
+type SubnetDelegation struct {
+	Name              string              `json:"name"`
+	ServiceDelegation []ServiceDelegation `json:"service_delegation"`
+}
+
+// ServiceDelegation mirrors delegation's own nested service_delegation
+// block -- confirmed capped at exactly one entry (max_items: 1), unlike
+// its parent.
+type ServiceDelegation struct {
+	Name    string   `json:"name"`
+	Actions []string `json:"actions"`
+}
+
+// ContainerAppEnvironment mirrors azurerm_container_app_environment.
+// Created per-app now (docs/azure-app-isolation-design.md): a Container
+// Apps Environment is Azure's actual isolation boundary (confirmed
+// against the real azurerm_container_app schema, which has no
+// networking fields at all, and Microsoft's own docs: "Use more than
+// one environment when you want two or more applications to... never
+// share the same compute resources"), so cloudcompose main creates its
+// own rather than referencing a shared one cloudcompose init created --
+// the reverse of this type's own history: it was defined here but
+// deliberately never instantiated by inference before this redesign,
+// with the environment referenced via a data source instead.
 type ContainerAppEnvironment struct {
 	Name                        string            `json:"name"`
 	ResourceGroupName           string            `json:"resource_group_name"`
@@ -806,6 +848,7 @@ type AzureResources struct {
 	ContainerApp                     map[string]ContainerApp                     `json:"azurerm_container_app,omitempty"`
 	ContainerAppJob                  map[string]ContainerAppJob                  `json:"azurerm_container_app_job,omitempty"`
 	ContainerAppEnvironment          map[string]ContainerAppEnvironment          `json:"azurerm_container_app_environment,omitempty"`
+	Subnet                           map[string]Subnet                           `json:"azurerm_subnet,omitempty"`
 	ContainerRegistry                map[string]ContainerRegistry                `json:"azurerm_container_registry,omitempty"`
 	PostgreSQLFlexibleServer         map[string]PostgreSQLFlexibleServer         `json:"azurerm_postgresql_flexible_server,omitempty"`
 	PostgreSQLFlexibleServerDatabase map[string]PostgreSQLFlexibleDatabase       `json:"azurerm_postgresql_flexible_server_database,omitempty"`
@@ -852,6 +895,7 @@ func NewAzureResources() *AzureResources {
 		ContainerApp:                     map[string]ContainerApp{},
 		ContainerAppJob:                  map[string]ContainerAppJob{},
 		ContainerAppEnvironment:          map[string]ContainerAppEnvironment{},
+		Subnet:                           map[string]Subnet{},
 		ContainerRegistry:                map[string]ContainerRegistry{},
 		PostgreSQLFlexibleServer:         map[string]PostgreSQLFlexibleServer{},
 		PostgreSQLFlexibleServerDatabase: map[string]PostgreSQLFlexibleDatabase{},

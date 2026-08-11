@@ -2,12 +2,6 @@
   "data": {
     "azurerm_client_config": {
       "current": {}
-    },
-    "azurerm_container_app_environment": {
-      "main": {
-        "name": "prod-env",
-        "resource_group_name": "prod"
-      }
     }
   },
   "output": {
@@ -26,7 +20,7 @@
   "resource": {
     "azurerm_container_app": {
       "backend": {
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
         "identity": {
           "identity_ids": [
             "${azurerm_user_assigned_identity.main.id}"
@@ -67,7 +61,7 @@
         }
       },
       "proxy": {
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
         "identity": {
           "type": "SystemAssigned"
         },
@@ -113,6 +107,16 @@
         }
       }
     },
+    "azurerm_container_app_environment": {
+      "main": {
+        "infrastructure_subnet_id": "${azurerm_subnet.infrastructure.id}",
+        "internal_load_balancer_enabled": false,
+        "location": "eastus",
+        "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
+        "name": "prod-nginx-flask-mysql-env",
+        "resource_group_name": "prod"
+      }
+    },
     "azurerm_key_vault": {
       "main": {
         "location": "eastus",
@@ -154,9 +158,13 @@
         "administrator_login": "cloudcompose",
         "administrator_password": "${random_password.mysql_admin.result}",
         "backup_retention_days": 7,
+        "delegated_subnet_id": "${azurerm_subnet.mysql.id}",
+        "depends_on": [
+          "azurerm_private_dns_zone_virtual_network_link.mysql"
+        ],
         "location": "eastus",
         "name": "prod-nginx-flask-mysql-mysql",
-        "public_network_access": "Enabled",
+        "private_dns_zone_id": "${azurerm_private_dns_zone.mysql.id}",
         "resource_group_name": "prod",
         "sku_name": "B_Standard_B1ms",
         "storage": [
@@ -167,11 +175,99 @@
         "version": "8.0.21"
       }
     },
+    "azurerm_private_dns_zone": {
+      "mysql": {
+        "name": "nginx-flask-mysql-mysql.mysql.database.azure.com",
+        "resource_group_name": "prod"
+      }
+    },
+    "azurerm_private_dns_zone_virtual_network_link": {
+      "mysql": {
+        "name": "nginx-flask-mysql-mysql-link",
+        "private_dns_zone_name": "${azurerm_private_dns_zone.mysql.name}",
+        "registration_enabled": false,
+        "resource_group_name": "prod",
+        "virtual_network_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet"
+      }
+    },
     "azurerm_role_assignment": {
       "kv_role": {
         "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
         "role_definition_name": "Key Vault Secrets User",
         "scope": "${azurerm_key_vault.main.id}"
+      }
+    },
+    "azurerm_subnet": {
+      "infrastructure": {
+        "address_prefixes": [
+          "10.0.128.0/26"
+        ],
+        "delegation": [
+          {
+            "name": "container-apps",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.App/environments"
+              }
+            ]
+          }
+        ],
+        "name": "prod-nginx-flask-mysql-infrastructure",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "mysql": {
+        "address_prefixes": [
+          "10.0.128.128/26"
+        ],
+        "delegation": [
+          {
+            "name": "mysql-flexible-server",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.DBforMySQL/flexibleServers"
+              }
+            ]
+          }
+        ],
+        "name": "prod-nginx-flask-mysql-mysql",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "postgresql": {
+        "address_prefixes": [
+          "10.0.128.64/26"
+        ],
+        "delegation": [
+          {
+            "name": "postgresql-flexible-server",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.DBforPostgreSQL/flexibleServers"
+              }
+            ]
+          }
+        ],
+        "name": "prod-nginx-flask-mysql-postgresql",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "redis": {
+        "address_prefixes": [
+          "10.0.128.192/26"
+        ],
+        "name": "prod-nginx-flask-mysql-redis",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
       }
     },
     "azurerm_user_assigned_identity": {

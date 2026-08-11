@@ -328,6 +328,11 @@ fi
 # --- 2. Compile the app ------------------------------------------------------
 log "Compiling $COMPOSE with cloudcompose…"
 cd "$ROOT"
+# --subnet-index not passed: defaults to 0, correct here since exactly
+# one example ever deploys per CI run's environment (see
+# examples/README.md's own note on this). A future run deploying more
+# than one app into the same environment would need a distinct
+# --subnet-index per app -- see docs/azure-app-isolation-design.md.
 "$CLOUDCOMPOSE" main -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" -o "$BUILD_DIR"
 
 # --- 3. Deploy the app -------------------------------------------------------

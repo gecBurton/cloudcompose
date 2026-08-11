@@ -7,12 +7,22 @@ import (
 )
 
 // GenerateAzureEnvironment generates Terraform JSON for a shared Azure
-// environment. Creates a Resource Group, Log Analytics Workspace, VNet
-// with four subnets (Container
-// Apps, PostgreSQL, MySQL -- each delegated -- and Redis, a plain
-// subnet for a Managed Redis private endpoint, added 2026-08-08, see
-// docs/azure-aws-parity-todo.md's Priority 3 Redis private networking
-// item), and a Container Apps Environment.
+// environment. Creates a Resource Group, Log Analytics Workspace, and a
+// VNet -- the Cloud Compose Environment layer: policy (log/backup
+// retention, HA, region) and the network address space apps live in, not
+// the apps themselves.
+//
+// Does NOT create a Container Apps Environment or any subnets: those
+// are per-app now, created by GenerateAzure (cloudcompose main), one
+// set per app inside this VNet -- see
+// docs/azure-app-isolation-design.md for why. A Container Apps
+// Environment is Azure's actual isolation boundary (confirmed against
+// the real azurerm_container_app schema, which has no networking fields
+// at all, and Microsoft's own docs: "Use more than one environment when
+// you want two or more applications to... never share the same compute
+// resources"), so a shared one here would defeat the isolation this
+// design exists to provide, the same way sharing one AWS security group
+// across unrelated apps would.
 //
 // The environment's facts are exposed as a plain Terraform
 // `output "environment"` block only -- see aws.GenerateAwsEnvironment's
@@ -104,93 +114,33 @@ func GenerateAzureEnvironment(
 		},
 	}
 
-	infraCIDR, err := shared.Cidrsubnet(vnetCIDR, 5, 0)
+	// appsCIDR is the upper half of the VNet, reserved for apps -- see
+	// docs/azure-app-isolation-design.md's "Decided: CIDR math" section
+	// for the full reasoning (128 apps at the default VNet size, each
+	// app's own /24 split into four /26 subnets, double Container
+	// Apps' own documented /27 minimum). The lower half is implicitly
+	// reserved for whatever the Cloud Compose Environment layer itself
+	// might need in its own address space in the future -- nothing
+	// uses it today, but reserving it now costs nothing and avoids a
+	// second breaking change later if something does.
+	appsCIDR, err := shared.Cidrsubnet(vnetCIDR, 1, 1)
 	if err != nil {
 		return "", err
-	}
-	pgCIDR, err := shared.Cidrsubnet(vnetCIDR, 5, 1)
-	if err != nil {
-		return "", err
-	}
-	mysqlCIDR, err := shared.Cidrsubnet(vnetCIDR, 5, 2)
-	if err != nil {
-		return "", err
-	}
-	redisCIDR, err := shared.Cidrsubnet(vnetCIDR, 5, 3)
-	if err != nil {
-		return "", err
-	}
-
-	delegation := func(delegationName, serviceName string) []any {
-		return []any{map[string]any{
-			"name": delegationName,
-			"service_delegation": []any{map[string]any{
-				"name":    serviceName,
-				"actions": []string{"Microsoft.Network/virtualNetworks/subnets/join/action"},
-			}},
-		}}
-	}
-
-	resource["azurerm_subnet"] = map[string]any{
-		tfn + "_infrastructure": map[string]any{
-			"name":                 "infrastructure",
-			"resource_group_name":  fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
-			"virtual_network_name": fmt.Sprintf("${azurerm_virtual_network.%s.name}", tfn),
-			"address_prefixes":     []string{infraCIDR},
-			"delegation":           delegation("container-apps", "Microsoft.App/environments"),
-		},
-		tfn + "_postgresql": map[string]any{
-			"name":                 "postgresql",
-			"resource_group_name":  fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
-			"virtual_network_name": fmt.Sprintf("${azurerm_virtual_network.%s.name}", tfn),
-			"address_prefixes":     []string{pgCIDR},
-			"delegation":           delegation("postgresql-flexible-server", "Microsoft.DBforPostgreSQL/flexibleServers"),
-		},
-		tfn + "_mysql": map[string]any{
-			"name":                 "mysql",
-			"resource_group_name":  fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
-			"virtual_network_name": fmt.Sprintf("${azurerm_virtual_network.%s.name}", tfn),
-			"address_prefixes":     []string{mysqlCIDR},
-			"delegation":           delegation("mysql-flexible-server", "Microsoft.DBforMySQL/flexibleServers"),
-		},
-		// Not delegated: azurerm_private_endpoint (used for Managed
-		// Redis, see permissions.go/managed.go's privateEndpoint
-		// helpers) attaches to a plain subnet, unlike the delegated
-		// subnets Flexible Server needs above.
-		tfn + "_redis": map[string]any{
-			"name":                 "redis",
-			"resource_group_name":  fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
-			"virtual_network_name": fmt.Sprintf("${azurerm_virtual_network.%s.name}", tfn),
-			"address_prefixes":     []string{redisCIDR},
-		},
-	}
-
-	resource["azurerm_container_app_environment"] = map[string]any{
-		tfn: map[string]any{
-			"name":                       name + "-env",
-			"location":                   location,
-			"resource_group_name":        fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
-			"log_analytics_workspace_id": fmt.Sprintf("${azurerm_log_analytics_workspace.%s.id}", tfn),
-			"infrastructure_subnet_id":   fmt.Sprintf("${azurerm_subnet.%s_infrastructure.id}", tfn),
-			"tags":                       shared.MergedTags(tags, envTag),
-		},
 	}
 
 	environmentConfig := map[string]any{
-		"target":                          "azure",
-		"name":                            name,
-		"region":                          location,
-		"container_apps_environment_name": fmt.Sprintf("${azurerm_container_app_environment.%s.name}", tfn),
-		"log_analytics_workspace_id":      fmt.Sprintf("${azurerm_log_analytics_workspace.%s.id}", tfn),
-		"vnet_id":                         fmt.Sprintf("${azurerm_virtual_network.%s.id}", tfn),
-		"infrastructure_subnet_id":        fmt.Sprintf("${azurerm_subnet.%s_infrastructure.id}", tfn),
-		"postgresql_subnet_id":            fmt.Sprintf("${azurerm_subnet.%s_postgresql.id}", tfn),
-		"mysql_subnet_id":                 fmt.Sprintf("${azurerm_subnet.%s_mysql.id}", tfn),
-		"redis_subnet_id":                 fmt.Sprintf("${azurerm_subnet.%s_redis.id}", tfn),
-		"retain_data_on_destroy":          retainDataOnDestroy,
-		"high_availability_enabled":       highAvailabilityEnabled,
-		"backup_retention_days":           backupRetentionDays,
-		"log_retention_days":              workspaceRetentionDays,
+		"target":                     "azure",
+		"name":                       name,
+		"region":                     location,
+		"log_analytics_workspace_id": fmt.Sprintf("${azurerm_log_analytics_workspace.%s.id}", tfn),
+		"resource_group_name":        fmt.Sprintf("${azurerm_resource_group.%s.name}", tfn),
+		"vnet_id":                    fmt.Sprintf("${azurerm_virtual_network.%s.id}", tfn),
+		"vnet_name":                  fmt.Sprintf("${azurerm_virtual_network.%s.name}", tfn),
+		"apps_cidr":                  appsCIDR,
+		"retain_data_on_destroy":     retainDataOnDestroy,
+		"high_availability_enabled":  highAvailabilityEnabled,
+		"backup_retention_days":      backupRetentionDays,
+		"log_retention_days":         workspaceRetentionDays,
 	}
 	if len(tags) > 0 {
 		environmentConfig["tags"] = tags

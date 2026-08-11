@@ -26,13 +26,36 @@ func TfName(name string) string {
 // Cidrsubnet calculates a subnet CIDR using Terraform's cidrsubnet logic.
 // Simplified implementation that works for the common cases this module
 // actually uses (IPv4, single-digit newbits).
+//
+// Validates netnum against newbits the same way Terraform's own
+// cidrsubnet does (confirmed against its real documentation: "netnum is
+// a whole number that can be represented as a binary integer with no
+// more than newbits binary digits"), not assumed: found via a real test
+// failure that netnum=128 with newbits=7 previously computed a
+// CIDR one full range past the intended block with no error at all --
+// silently spilling into whatever address space came next, rather than
+// failing loudly the way Terraform's own function would. Every existing
+// caller before docs/azure-app-isolation-design.md happened to pass a
+// small, hardcoded, or narrowly-bounded netnum that never exercised
+// this path; that design's own --subnet-index is the first caller where
+// netnum comes from external, unbounded input.
 func Cidrsubnet(baseCIDR string, newbits, netnum int) (string, error) {
+	if netnum < 0 || netnum >= (1<<newbits) {
+		return "", fmt.Errorf(
+			"cidrsubnet(%q, %d, %d): netnum must be representable in %d bits (0-%d), got %d",
+			baseCIDR, newbits, netnum, newbits, (1<<newbits)-1, netnum,
+		)
+	}
+
 	_, network, err := net.ParseCIDR(baseCIDR)
 	if err != nil {
 		return "", fmt.Errorf("parse CIDR %q: %w", baseCIDR, err)
 	}
 	ones, _ := network.Mask.Size()
 	newPrefix := ones + newbits
+	if newPrefix > 32 {
+		return "", fmt.Errorf("cidrsubnet(%q, %d, %d): resulting prefix /%d exceeds 32 bits", baseCIDR, newbits, netnum, newPrefix)
+	}
 
 	networkInt := ipToUint32(network.IP)
 	subnetSize := uint32(1) << (32 - newPrefix)

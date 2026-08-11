@@ -2,12 +2,6 @@
   "data": {
     "azurerm_client_config": {
       "current": {}
-    },
-    "azurerm_container_app_environment": {
-      "main": {
-        "name": "prod-env",
-        "resource_group_name": "prod"
-      }
     }
   },
   "output": {
@@ -26,7 +20,7 @@
   "resource": {
     "azurerm_container_app": {
       "web": {
-        "container_app_environment_id": "${data.azurerm_container_app_environment.main.id}",
+        "container_app_environment_id": "${azurerm_container_app_environment.main.id}",
         "identity": {
           "identity_ids": [
             "${azurerm_user_assigned_identity.main.id}"
@@ -100,6 +94,16 @@
         }
       }
     },
+    "azurerm_container_app_environment": {
+      "main": {
+        "infrastructure_subnet_id": "${azurerm_subnet.infrastructure.id}",
+        "internal_load_balancer_enabled": false,
+        "location": "eastus",
+        "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
+        "name": "prod-platform-config-env",
+        "resource_group_name": "prod"
+      }
+    },
     "azurerm_key_vault": {
       "main": {
         "location": "eastus",
@@ -145,6 +149,79 @@
         "principal_id": "${azurerm_user_assigned_identity.main.principal_id}",
         "role_definition_name": "Key Vault Secrets User",
         "scope": "${azurerm_key_vault.main.id}"
+      }
+    },
+    "azurerm_subnet": {
+      "infrastructure": {
+        "address_prefixes": [
+          "10.0.128.0/26"
+        ],
+        "delegation": [
+          {
+            "name": "container-apps",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.App/environments"
+              }
+            ]
+          }
+        ],
+        "name": "prod-platform-config-infrastructure",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "mysql": {
+        "address_prefixes": [
+          "10.0.128.128/26"
+        ],
+        "delegation": [
+          {
+            "name": "mysql-flexible-server",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.DBforMySQL/flexibleServers"
+              }
+            ]
+          }
+        ],
+        "name": "prod-platform-config-mysql",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "postgresql": {
+        "address_prefixes": [
+          "10.0.128.64/26"
+        ],
+        "delegation": [
+          {
+            "name": "postgresql-flexible-server",
+            "service_delegation": [
+              {
+                "actions": [
+                  "Microsoft.Network/virtualNetworks/subnets/join/action"
+                ],
+                "name": "Microsoft.DBforPostgreSQL/flexibleServers"
+              }
+            ]
+          }
+        ],
+        "name": "prod-platform-config-postgresql",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
+      },
+      "redis": {
+        "address_prefixes": [
+          "10.0.128.192/26"
+        ],
+        "name": "prod-platform-config-redis",
+        "resource_group_name": "prod",
+        "virtual_network_name": "prod-vnet"
       }
     },
     "azurerm_user_assigned_identity": {

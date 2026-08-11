@@ -437,10 +437,21 @@ type KeyVaultSecret struct {
 	KeyVaultID string              `json:"key_vault_id"`
 	Value      string              `json:"value"`
 	Lifecycle  map[string][]string `json:"lifecycle"`
+	// DependsOn holds a reference to the RBAC-propagation time_sleep
+	// (see TimeSleep's own doc comment) whenever this secret was
+	// created after a role assignment its own reference graph doesn't
+	// mention -- every azurerm_key_vault_secret in this codebase is
+	// created after granting some identity read access to the vault,
+	// so this is set unconditionally by every constructor of this
+	// type, not left for callers to remember individually.
+	DependsOn []string `json:"depends_on,omitempty"`
 }
 
 func NewKeyVaultSecret() KeyVaultSecret {
-	return KeyVaultSecret{Lifecycle: map[string][]string{"ignore_changes": {"value"}}}
+	return KeyVaultSecret{
+		Lifecycle: map[string][]string{"ignore_changes": {"value"}},
+		DependsOn: []string{"time_sleep.kv_role_propagation"},
+	}
 }
 
 // UserAssignedIdentity is created once per app that has any service
@@ -473,6 +484,41 @@ type RoleAssignment struct {
 	RoleDefinitionName string `json:"role_definition_name"`
 	PrincipalID        string `json:"principal_id"`
 }
+
+// TimeSleep mirrors time_sleep (hashicorp/time provider) -- a resource
+// whose only purpose is to make Terraform wait, used here to work
+// around a real, Microsoft-documented gap Terraform's own dependency
+// graph can't express: `azurerm_role_assignment.kv_role` reporting
+// "created" does not mean the grant has actually propagated on Azure's
+// side. Microsoft's own RBAC troubleshooting docs put worst-case
+// propagation at up to 10 minutes; confirmed as a real, not
+// theoretical, failure mode against a live francecentral run
+// (2026-08-10, docs/azure-todo.md's "Key Vault role-assignment RBAC
+// propagation" item) -- every azurerm_key_vault_secret created in the
+// same apply failed with 403/AuthorizationFailed because Terraform
+// tried to read them back before the grant had actually taken effect,
+// despite azurerm_role_assignment.kv_role itself reporting success.
+//
+// DependsOn must name azurerm_role_assignment.kv_role explicitly (not
+// left to Terraform to infer): nothing in this resource's own
+// arguments references the role assignment, so without an explicit
+// depends_on Terraform would have no reason to order this after it at
+// all, let alone wait the intended duration before anything that reads
+// Key Vault runs.
+type TimeSleep struct {
+	CreateDuration string   `json:"create_duration"`
+	DependsOn      []string `json:"depends_on"`
+}
+
+// KeyVaultRoleAssignmentPropagationDelay is Terraform's own
+// create_duration for the RBAC-propagation time_sleep, chosen as a
+// balance: Microsoft's documented worst case is up to 10 minutes, but
+// waiting the full worst case on every single deployment that creates
+// any managed-service credential -- including the overwhelming majority
+// that would never hit this race -- trades a rare failure for a
+// guaranteed, large delay on every real deployment. 90s is long enough
+// to clear typical propagation without imposing that cost.
+const KeyVaultRoleAssignmentPropagationDelay = "90s"
 
 type StorageAccount struct {
 	Name                    string            `json:"name"`
@@ -772,6 +818,7 @@ type AzureResources struct {
 	KeyVaultSecret                   map[string]KeyVaultSecret                   `json:"azurerm_key_vault_secret,omitempty"`
 	UserAssignedIdentity             map[string]UserAssignedIdentity             `json:"azurerm_user_assigned_identity,omitempty"`
 	RoleAssignment                   map[string]RoleAssignment                   `json:"azurerm_role_assignment,omitempty"`
+	TimeSleep                        map[string]TimeSleep                        `json:"time_sleep,omitempty"`
 	ManagedRedis                     map[string]ManagedRedis                     `json:"azurerm_managed_redis,omitempty"`
 	StorageAccount                   map[string]StorageAccount                   `json:"azurerm_storage_account,omitempty"`
 	StorageContainer                 map[string]StorageContainer                 `json:"azurerm_storage_container,omitempty"`
@@ -817,6 +864,7 @@ func NewAzureResources() *AzureResources {
 		KeyVaultSecret:                   map[string]KeyVaultSecret{},
 		UserAssignedIdentity:             map[string]UserAssignedIdentity{},
 		RoleAssignment:                   map[string]RoleAssignment{},
+		TimeSleep:                        map[string]TimeSleep{},
 		ManagedRedis:                     map[string]ManagedRedis{},
 		StorageAccount:                   map[string]StorageAccount{},
 		StorageContainer:                 map[string]StorageContainer{},

@@ -109,6 +109,34 @@ silently accepted as one-off flakiness, since the exact same failure
 class recurring would suggest a real, fixable gap rather than genuine
 randomness.
 
+**Fixed (2026-08-11), the explicit-wait approach.** `grantKeyVaultAccessOnce`
+(`azure/permissions.go`) now also creates a `time_sleep` resource
+(`hashicorp/time` provider — genuinely new to this codebase, this is the
+first non-`docker`/`random` provider Azure's generator declares) with
+`create_duration = "90s"`, `depends_on = ["azurerm_role_assignment.kv_role"]`.
+Every `azurerm_key_vault_secret` this codebase creates depends on that
+sleep in turn — fixed at the one shared constructor
+(`models.NewKeyVaultSecret`) every one of the 4 call sites already goes
+through, not duplicated at each site individually.
+
+90 seconds, not the full 10-minute worst case Microsoft's own RBAC
+troubleshooting docs cite: waiting the full worst case on every single
+deployment that creates any managed-service credential — including the
+overwhelming majority that would never hit this race — trades a rare
+failure for a guaranteed, large delay on every real deployment. A
+`time_sleep`, not a script-level retry: this fixes the generated
+Terraform itself, so it protects every real deployment using this
+project, not just CI's own smoke tests the way a `scripts/smoke-test.sh`
+retry would have.
+
+Not yet re-verified against a real Azure run with the fix applied (the
+run that found this issue predates the fix) — `terraform validate`d
+against the real `azurerm`/`time` provider schemas and covered by 4 new
+unit tests, but the actual propagation-delay race is exactly the kind of
+timing-dependent behavior `validate` cannot exercise. Worth a real
+`azure-acceptance.yml` run before treating this as fully confirmed fixed,
+the same way the WAF item above was.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

@@ -20,7 +20,8 @@
     "azurerm": {
       "features": {}
     },
-    "random": {}
+    "random": {},
+    "time": {}
   },
   "resource": {
     "azurerm_container_app": {
@@ -104,6 +105,9 @@
     },
     "azurerm_key_vault_secret": {
       "redis_secret": {
+        "depends_on": [
+          "time_sleep.kv_role_propagation"
+        ],
         "key_vault_id": "${azurerm_key_vault.main.id}",
         "lifecycle": {
           "ignore_changes": [
@@ -143,6 +147,14 @@
         "name": "prod-flask-redis-identity",
         "resource_group_name": "prod"
       }
+    },
+    "time_sleep": {
+      "kv_role_propagation": {
+        "create_duration": "90s",
+        "depends_on": [
+          "azurerm_role_assignment.kv_role"
+        ]
+      }
     }
   },
   "terraform": {
@@ -154,6 +166,10 @@
       "random": {
         "source": "hashicorp/random",
         "version": "~> 3.6"
+      },
+      "time": {
+        "source": "hashicorp/time",
+        "version": "~> 0.13"
       }
     }
   }

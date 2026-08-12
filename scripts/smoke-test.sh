@@ -365,6 +365,21 @@ if [[ "$PROVIDER" == "azure" ]]; then
     if grep -q "at least one enabled origin is created under the origin group" /tmp/tf-apply-app.log; then
       log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
       eval "$TF apply -auto-approve"
+    elif grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
+      # azurerm_role_assignment.kv_role (Key Vault Secrets User, granting
+      # the app's managed identity read access to its own secrets) can
+      # report "created" before the grant has actually propagated on
+      # Azure's side — docs/azure-todo.md's Key Vault RBAC item. A
+      # time_sleep after the role assignment (models.NewKeyVaultSecret's
+      # own DependsOn) already covers the common case; confirmed against a
+      # real run (2026-08-11) that 90s is not always enough — one run's
+      # GetSecret calls still failed with ForbiddenByRbac over 5 minutes
+      # after the sleep completed. A second apply succeeds once
+      # propagation has actually finished, the same shape of fix as the
+      # Front Door retry above for a different Azure-side eventual-
+      # consistency issue.
+      log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md) — retrying apply…"
+      eval "$TF apply -auto-approve"
     else
       fail "terraform apply failed for the app stack"
     fi

@@ -200,6 +200,28 @@ the latter the wider `Microsoft.Authorization/*` (also covers managing
 custom role definitions, not needed here) -- confirmed against
 Microsoft's own role definitions, not assumed from the names alone.
 
+**Re-verified against real Azure (2026-08-11) — the permission fix
+worked, but exposed the `time_sleep`'s own limit.** With the new role
+granted, `azurerm_role_assignment.kv_role` created successfully
+(confirmed: no `AuthorizationFailed` at all, on the write itself, for
+the first time across every run this item has ever seen). But the same
+run's `GetSecret` calls still failed with `ForbiddenByRbac` — this time
+over 5 minutes *after* `time_sleep.kv_role_propagation`'s own 90-second
+wait had already completed (`kv_role` created at `21:28:57`, sleep
+finished at `21:30:28`, the `GetSecret` failures landed at `21:34:12`).
+90 seconds is not always enough; this run's actual propagation delay
+was real and materially longer. Not a reason to abandon the
+`time_sleep` (it likely still resolves the common case in under 90s,
+and fixes the *generated Terraform* every real deployment gets, not
+just CI) — added a second, complementary mitigation instead:
+`scripts/smoke-test.sh`'s app-stack apply now also retries once on a
+`ForbiddenByRbac` failure, the same shape of fix already used there for
+the Front Door origin race (`grep`-detect the specific error, retry the
+whole `apply` once). This is CI-only (a real user hitting this on their
+own deployment would still need to re-run `terraform apply` by hand) —
+flagged as a real, if narrower, gap the `time_sleep` alone doesn't
+close for every deployment, only every CI run.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

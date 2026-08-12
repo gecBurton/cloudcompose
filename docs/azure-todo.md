@@ -316,6 +316,33 @@ on top of the 90s sleep) as a tactical mitigation while a support case
 remains the only way to actually root-cause the cache-refresh delay
 itself.
 
+**Widened budget also exhausted (2026-08-12) — the delay is not
+bounded by any retry budget tried so far, tactical mitigation
+abandoned.** Re-ran once more with the 10-attempt/90s loop: it lasted
+longer (all 10 attempts, ~22 minutes of retrying, vs. the previous
+loop's ~8) but still failed. Full timeline: `kv_role` write completed
+17:55:46, `time_sleep` finished 17:57:17, first `ForbiddenByRbac`
+18:01:03 (~5.3 min after the write), final failure after 10 exhausted
+attempts at 18:24:51 — **~29 minutes** after the role assignment write,
+noticeably worse than the previous run's ~14.5 minutes, not just a
+larger sample of the same distribution. Ruled out two other plausible
+causes before accepting this as pure propagation delay: `az keyvault
+list-deleted` shows no soft-deleted vault from a prior run's teardown
+colliding with the new one, and the vault's own
+`public_network_access_enabled` is `true` with no network ACL blocking
+access (so this isn't a network-layer 403 masquerading as an RBAC one).
+
+Doubling the retry budget did not just fail to help, it revealed the
+delay itself scales with something the budget doubling can't
+compensate for — going by these two data points alone, widening the
+budget further looks like chasing a moving target rather than closing
+a gap. Abandoning further retry-budget tuning as the fix; reverted
+`scripts/smoke-test.sh` is not planned, but escalating this to Azure
+support (or filing against `terraform-provider-azurerm`/Key Vault's own
+RBAC data-plane propagation, if a support case surfaces enough
+information to justify it) is now the only remaining path to actually
+close this, not a longer sleep or a bigger loop.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

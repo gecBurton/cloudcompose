@@ -164,6 +164,114 @@ exact role assignment *has* succeeded before — the third run confirms
 this is genuine intermittency, not a 100%-reproducible permissions gap:
 still unresolved, but no longer just a hypothesis with one data point.
 
+**Root cause found and fixed (2026-08-11) — not intermittency at all.**
+Checked the CI service principal's own live role assignments directly
+(`az role assignment list --assignee <object-id>`): `Contributor` at the
+subscription scope, nothing else. Confirmed against Microsoft's own
+built-in role definition that `Contributor`'s own description says
+"does not allow you to assign roles in Azure RBAC" and its `notActions`
+explicitly excludes `Microsoft.Authorization/*/Write` — this covers
+`Microsoft.Authorization/roleAssignments/write` exactly, the action the
+real error names. This is a deterministic permission gap, not
+propagation delay or randomness: the CI service principal could
+*never* create `kv_role`, at any scope, no matter how long a
+`time_sleep` waited. The "intermittency" across the three post-fix runs
+was real (this exact role assignment has genuinely succeeded before,
+per the "Verified against real Azure" table predating all of them), but
+not evidence *for* propagation delay -- more likely, the CI service
+principal's own permissions were broadened at some point after the
+table's 2026-08-05 entries and then never re-confirmed, or the earlier
+successes happened before the `kv_role` resource existed in generated
+Terraform at all.
+
+Fixed by granting the existing CI service principal "Role Based Access
+Control Administrator" at the subscription scope (`ci/README.md`'s
+Azure setup section now documents this, and the scope itself was
+corrected at the same time -- the doc previously said to scope the
+service principal to a single fixed resource group, which was already
+stale relative to what live acceptance runs actually need: each run
+creates its own dynamically-named resource group, so subscription-level
+scope was already implicitly required and, it turned out, already
+granted for `Contributor` -- just never for this role). Chose "Role
+Based Access Control Administrator" over the broader "User Access
+Administrator": the former grants exactly
+`Microsoft.Authorization/roleAssignments/{write,delete}` + `*/read`,
+the latter the wider `Microsoft.Authorization/*` (also covers managing
+custom role definitions, not needed here) -- confirmed against
+Microsoft's own role definitions, not assumed from the names alone.
+
+**Re-verified against real Azure (2026-08-11) — the permission fix
+worked, but exposed the `time_sleep`'s own limit.** With the new role
+granted, `azurerm_role_assignment.kv_role` created successfully
+(confirmed: no `AuthorizationFailed` at all, on the write itself, for
+the first time across every run this item has ever seen). But the same
+run's `GetSecret` calls still failed with `ForbiddenByRbac` — this time
+over 5 minutes *after* `time_sleep.kv_role_propagation`'s own 90-second
+wait had already completed (`kv_role` created at `21:28:57`, sleep
+finished at `21:30:28`, the `GetSecret` failures landed at `21:34:12`).
+90 seconds is not always enough; this run's actual propagation delay
+was real and materially longer. Not a reason to abandon the
+`time_sleep` (it likely still resolves the common case in under 90s,
+and fixes the *generated Terraform* every real deployment gets, not
+just CI) — added a second, complementary mitigation: a single retry on
+a `ForbiddenByRbac` failure, the same shape of fix already used for the
+Front Door origin race (`grep`-detect the specific error, retry the
+whole `apply`).
+
+**A single retry was not enough either (2026-08-12).** Re-ran again to
+confirm the single-retry fix: the retry correctly triggered (confirmed
+in the logs: `azurerm_role_assignment.kv_role` created successfully
+this time too, no permission error at all — the actual fix from above
+holds), but the retry's own `apply` failed with the identical
+`ForbiddenByRbac` one minute later. This run's real propagation delay
+was 6+ minutes end to end (`kv_role` created, `time_sleep` finished 90s
+later, first `apply` failed 4m40s after that, the retry failed another
+minute after that) — closer to Microsoft's own documented worst case of
+"up to 10 minutes" than to a quick one-off. A single retry assumes a
+deterministic, fixed-duration issue (correct for the Front Door bug;
+wrong for genuine variable-duration propagation). Replaced with a
+proper retry loop: up to 5 attempts, 60 seconds apart (~5 more minutes
+of headroom on top of the 90s sleep), bailing immediately without
+retrying at all if the failure is anything other than `ForbiddenByRbac`
+— this is CI-only (a real user hitting this on their own deployment
+would still need to re-run `terraform apply` by hand themselves) —
+flagged as a real, if narrower, gap the `time_sleep` alone doesn't
+close for every deployment, only every CI run.
+
+**The retry loop also exhausted (2026-08-12) — propagation delay is
+worse than estimated, and escalation stopped here.** Re-ran once more:
+the loop behaved exactly as designed (5 correctly-spaced attempts,
+`ForbiddenByRbac` detected and retried each time, a clear failure
+message on exhaustion — verified against 3 simulated scenarios before
+trusting it in another ~40-minute real run), but all 5 attempts still
+failed. Total elapsed time from `kv_role` creation to final failure:
+90s sleep + roughly 6.5 more minutes of retries, close to 8 minutes —
+still not enough. Investigated further rather than immediately
+escalating the retry budget again: confirmed the Key Vault is correctly
+in RBAC-authorization mode (`models.NewKeyVault` already sets
+`RbacAuthorizationEnabled: true`, ruling out the legacy access-policy
+model as the cause), confirmed the role name/scope/principal reference
+are all correct against Microsoft's own docs, and confirmed each
+`terraform apply` in the retry loop is a genuinely fresh process (not
+reusing a stale cached Azure AD token client-side). None of these
+explain a propagation delay this long. Checked whether the "managed
+identity token caching can take hours" caveat in Microsoft's own docs
+applies here — it doesn't: that caveat is specifically about *group or
+app-role membership* changes for the identity, not a direct role
+assignment on a resource scope, which is what this actually is.
+
+Stopped escalating the retry budget speculatively at this point. Four
+real runs now confirm the permission fix itself is solid and necessary
+(`kv_role` creates successfully every time now, which never happened
+before this session) — that part is done. The remaining `GetSecret`
+propagation delay is real, reproducible, and worse than Microsoft's own
+"up to 10 minutes" documented worst case suggested it should be, but
+further root-causing it needs something this session doesn't have
+access to: Azure's own Activity Log / Entra sign-in log detail for the
+specific role assignment, or a support case. Left open rather than
+thrown more wait time at without evidence that would actually help —
+the next step is diagnostic access, not a longer sleep.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

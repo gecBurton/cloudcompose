@@ -365,6 +365,36 @@ if [[ "$PROVIDER" == "azure" ]]; then
     if grep -q "at least one enabled origin is created under the origin group" /tmp/tf-apply-app.log; then
       log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
       eval "$TF apply -auto-approve"
+    elif grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
+      # azurerm_role_assignment.kv_role (Key Vault Secrets User, granting
+      # the app's managed identity read access to its own secrets) can
+      # report "created" before the grant has actually propagated on
+      # Azure's side — docs/azure-todo.md's Key Vault RBAC item. A
+      # time_sleep after the role assignment (models.NewKeyVaultSecret's
+      # own DependsOn) already covers the common case, but confirmed
+      # against two real runs (2026-08-11/12) that a single 90s sleep and
+      # a single ~1-minute-later retry are both sometimes not enough:
+      # propagation has been observed taking 5-6+ minutes, closer to
+      # Microsoft's own documented worst case of "up to 10 minutes" than
+      # to the common case. A fixed loop (up to 5 attempts, 60s apart —
+      # ~5 more minutes on top of the 90s sleep, covering that observed
+      # worst case) rather than one retry: unlike the Front Door bug
+      # above (deterministic, always fixed by exactly one more apply),
+      # this is genuine variable-duration propagation, so "try again
+      # once" isn't the right shape of fix for it.
+      attempt=1
+      max_attempts=5
+      until eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; do
+        if ! grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
+          fail "terraform apply failed for the app stack (not the Key Vault RBAC propagation issue)"
+        fi
+        if (( attempt >= max_attempts )); then
+          fail "terraform apply failed for the app stack: Key Vault RBAC propagation still not visible after $max_attempts attempts"
+        fi
+        attempt=$(( attempt + 1 ))
+        log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md), attempt $attempt/$max_attempts — waiting 60s before retrying…"
+        sleep 60
+      done
     else
       fail "terraform apply failed for the app stack"
     fi

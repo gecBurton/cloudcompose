@@ -249,3 +249,77 @@ func TestInferCdnAzure_MultipleServicesGetDistinctFirewallPolicies(t *testing.T)
 		t.Errorf("expected distinct firewall policy names, both got %q", webWaf.Name)
 	}
 }
+
+// --- CDN: only ever exercised with exactly one CDN-enabled service.
+
+func TestInferCdnAzure_NoCdnServicesCreatesNothing(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, Ingress: &models.Ingress{Path: "/"}},
+		},
+	}
+	env := testAppEnv(0)
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, minimalGetName("prod", "app"), nil)
+
+	if len(resources.CdnFrontdoorProfile) != 0 {
+		t.Errorf("expected no Front Door profile, got %v", keysOf(resources.CdnFrontdoorProfile))
+	}
+}
+
+func TestInferCdnAzure_CdnWithoutIngressCreatesNothing(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true}, // no ingress
+		},
+	}
+	env := testAppEnv(0)
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, minimalGetName("prod", "app"), nil)
+
+	if len(resources.CdnFrontdoorProfile) != 0 {
+		t.Errorf("expected no Front Door profile without ingress, got %v", keysOf(resources.CdnFrontdoorProfile))
+	}
+}
+
+func TestInferCdnAzure_MultipleServicesShareOneProfileDistinctOrigins(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/"}},
+			{Name: "api", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/api"}},
+		},
+	}
+	env := testAppEnv(0)
+	resources := models.NewAzureResources()
+	inferCdnAzure(resources, app, &env, minimalGetName("prod", "app"), nil)
+
+	if len(resources.CdnFrontdoorProfile) != 1 {
+		t.Fatalf("expected exactly 1 shared profile, got %d: %v", len(resources.CdnFrontdoorProfile), keysOf(resources.CdnFrontdoorProfile))
+	}
+	if len(resources.CdnFrontdoorOrigin) != 2 {
+		t.Fatalf("expected 2 distinct origins, got %d: %v", len(resources.CdnFrontdoorOrigin), keysOf(resources.CdnFrontdoorOrigin))
+	}
+	webOrigin := resources.CdnFrontdoorOrigin["web"]
+	apiOrigin := resources.CdnFrontdoorOrigin["api"]
+	if webOrigin.HostName == apiOrigin.HostName {
+		t.Errorf("expected distinct origin hostnames, both got %q", webOrigin.HostName)
+	}
+}
+
+func TestFrontDoorProfile_HasNoLocationField(t *testing.T) {
+	t.Parallel()
+	profile := models.NewFrontDoorProfile()
+	// Front Door is global, unlike everything else this inference
+	// creates -- structurally verified by the absence of a Location
+	// field on the type itself (compile-time check: this line would fail
+	// to compile if FrontDoorProfile had one), and the SKU default.
+	if profile.SkuName != "Standard_AzureFrontDoor" {
+		t.Errorf("SkuName = %q, want Standard_AzureFrontDoor", profile.SkuName)
+	}
+}

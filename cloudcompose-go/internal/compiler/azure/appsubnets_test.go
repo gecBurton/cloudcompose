@@ -11,17 +11,6 @@ import (
 // carved out of the environment's shared AppsCIDR at the app's own
 // SubnetIndex.
 
-func testAppEnv(subnetIndex int) models.AzureEnvironment {
-	env := models.NewAzureEnvironment()
-	env.Name = "prod"
-	env.ResourceGroupName = "prod"
-	env.LogAnalyticsWorkspaceID = "/subscriptions/123/workspaces/prod"
-	env.VnetName = "prod-vnet"
-	env.AppsCIDR = "10.0.128.0/17"
-	env.SubnetIndex = subnetIndex
-	return env
-}
-
 func TestAppSubnetsAzure_CreatesFourSubnets(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{Name: "myapp"}

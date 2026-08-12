@@ -789,21 +789,47 @@ been latent and untested since MySQL support was first ported.
 - [x] **Add `examples/scaling/expected/azure/`** once `service.Size`
   flows into Azure DB sizing and CPU/Memory autoscaling exists
   (Priority 2).
-- [ ] **Add dedicated Azure unit test files** mirroring AWS's structure —
-  currently all Azure unit coverage is consolidated into one
-  `coverage_test.go` (18 tests) vs AWS's 10 files/86 tests. Natural to do
-  incrementally alongside each feature fix above rather than as a
-  separate pass (write the test for `inferContainerApps`'s autoscaling
-  when fixing autoscaling, etc.), rather than a big-bang test-writing
-  exercise disconnected from real behavior changes.
-
-  Partially addressed as a side effect of Priority 2 (a new
-  `priority2_test.go`, 14 tests, was added alongside the feature work
-  rather than folded into `coverage_test.go` — the "do it incrementally"
-  approach this item recommended), and again by the Priority 4
-  CPU/memory-pair fix (a new `compute_resources_test.go`, 8 tests, added
-  the same way), but Azure unit coverage is still not split into
-  per-concern files the way AWS's is. Left open.
+- [x] **Add dedicated Azure unit test files** mirroring AWS's structure —
+  originally framed as "all Azure unit coverage is consolidated into one
+  `coverage_test.go` (18 tests) vs AWS's 10 files/86 tests." By the time
+  this was picked up, that premise was already stale in both directions:
+  incremental work on other items (Priority 2's `priority2_test.go`,
+  Priority 4's `compute_resources_test.go`, plus `managed_ha_test.go`,
+  `keyvault_propagation_test.go`, `health_probes_test.go`) had grown
+  Azure to 13 files/121 tests — *more* files and tests than AWS's actual
+  current count (10 files/73 tests, not the 86 originally cited). The
+  real, still-open problem wasn't file count but organization: despite
+  13 files, related tests were scattered across several of them (e.g.
+  `TestInferDatabasesAzure_*` split across 3 different files; CDN tests
+  across 2).
+  
+  **Done (2026-08-12)**: fully reorganized into one test file per source
+  file, matching AWS's exact convention: `compute_test.go`,
+  `connections_test.go`, `edge_test.go`, `environment_generator_test.go`,
+  `managed_test.go`, `naming_test.go`, `permissions_test.go` (each named
+  after its corresponding `.go` file), plus `scheduling_test.go` (cron,
+  no direct source-file counterpart) and `generator_test.go`
+  (determinism/registry/output-generation tests, mirroring AWS having
+  both a lean `golden_test.go` — trimmed to just
+  `TestInferAzure_GoldenExamplesByteIdentical` plus its
+  `mockAzureProdEnv`/`azureGoldenExamples` support, exactly like AWS's
+  own — and a separate `generator_test.go`). Also consolidated duplicate
+  test helpers that had drifted into near-identical copies
+  (`azureTestEnv()`/`testAppEnv(subnetIndex)` were functionally
+  identical; `testGetNameAzure`/`keysOfAny`/`minimalGetName`/`keysOf`/
+  `strPtr`/`intPtr` were each declared more than once across files) into
+  one shared `testhelpers_test.go`, keeping `mockAzureProdEnv` separate
+  since it serves a different, documented purpose (golden-fixture
+  byte-matching against fully-formed resource IDs, not general-purpose
+  unit tests). Deleted `coverage_test.go`, `priority2_test.go`,
+  `managed_ha_test.go`, `keyvault_propagation_test.go`,
+  `compute_resources_test.go`, `health_probes_test.go` once their
+  content was fully redistributed. Verified the reorg was lossless: the
+  full sorted list of all 121 test function names is byte-identical
+  before and after (diffed against a clean `git worktree` of the
+  pre-reorg commit), zero duplicate function names introduced, and
+  `gofmt`/`go vet`/`go build ./...`/`go test ./... -count=1` all clean
+  throughout.
 
 ## Explicitly not a gap (architectural differences confirmed intentional)
 

@@ -45,14 +45,6 @@ func TestGenerateAzureEnvironment_ValidStructure(t *testing.T) {
 	}
 }
 
-func keysOfAny(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // TestGenerateAzureEnvironment_LogRetentionDaysFlowsIntoWorkspaceAndOutput
 // is the Azure counterpart to
 // aws.TestGenerateAwsEnvironment_LogRetentionDaysFlowsIntoOutput --

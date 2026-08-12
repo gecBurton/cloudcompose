@@ -47,6 +47,14 @@ EXPECT="${EXPECT:-Server name}"                          # string expected in HT
 POLL_TIMEOUT="${POLL_TIMEOUT:-300}"                      # seconds to wait for a healthy app
                                                          # (AWS: ALB default health check needs
                                                          # 5×30s + Fargate cold start)
+FRONTDOOR_POLL_TIMEOUT="${FRONTDOOR_POLL_TIMEOUT:-900}"  # seconds to wait for Front Door's own
+                                                         # edge/DNS propagation (Azure only, only
+                                                         # when a service has cdn:true) -- kept
+                                                         # separate from POLL_TIMEOUT since it's a
+                                                         # genuinely different, longer-tailed delay
+                                                         # (Microsoft's own guidance: "a few minutes
+                                                         # up to 10"), confirmed against a real run
+                                                         # 2026-08-12 that exceeded 480s.
 KEEP="${KEEP:-0}"                                        # 1 = do not destroy afterwards
 
 # Region to deploy into. AWS default matches examples/hello/environment.yaml
@@ -485,12 +493,23 @@ if [[ -n "${CDN_FQDN:-}" ]]; then
   # Front Door's own DNS + edge propagation is a separate, additional delay
   # on top of the Container App's own cold start already waited out above,
   # so this gets its own timeout rather than reusing whatever budget the
-  # first poll had left.
-  if ! poll_until_served "$cdn_url" "$POLL_TIMEOUT"; then
+  # first poll had left. Confirmed against a real run (2026-08-12,
+  # production-stack/francecentral, after fixing the unrelated Key Vault
+  # RBAC data-plane permission gap that had blocked every previous attempt
+  # at reaching this step at all): the route itself created successfully
+  # and the Container App's own FQDN served correctly, but Front Door's
+  # own endpoint still returned "Page not found" (Front Door's own error
+  # page, not a timeout/connection error) after the full 480s POLL_TIMEOUT
+  # — global anycast edge propagation for a newly created route can
+  # genuinely take longer than that. FRONTDOOR_POLL_TIMEOUT defaults to
+  # 900s (Microsoft's own guidance for Front Door propagation is "a few
+  # minutes up to 10"), independent of POLL_TIMEOUT so a slow-to-serve
+  # Container App doesn't need every other example to also wait longer.
+  if ! poll_until_served "$cdn_url" "$FRONTDOOR_POLL_TIMEOUT"; then
     echo
     echo "----- last response (for diagnosis) -----"
     echo "${body:-<no response>}" | head -20
-    fail "timed out after ${POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
+    fail "timed out after ${FRONTDOOR_POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
   fi
   log "Front Door is live — response contains '$EXPECT' through the CDN endpoint too. 🎉"
 fi

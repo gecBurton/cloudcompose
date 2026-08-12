@@ -97,6 +97,30 @@ the golden fixture regeneration are both clean, but the smoke test
 itself (the actual end-to-end proof this item exists to get) needs a
 real `production-stack` deployment to confirm.
 
+**First real attempt at this verification (2026-08-12) blocked by an
+unrelated, pre-existing gap, then genuinely progressed once fixed.**
+Four consecutive `production-stack`/`francecentral` runs failed before
+ever reaching Front Door at all — see item 3 below for the full
+investigation; in short, the CI service principal had no permanent
+Key Vault data-plane grant, misdiagnosed for a long time as pure RBAC
+propagation delay. Once that was fixed (granting the CI service
+principal "Key Vault Secrets Officer", `ci/README.md`), the next real
+run got all the way through: the app deployed, the Container App's own
+FQDN served correctly (`Welcome to nginx`), and it reached the Front
+Door poll for the first time ever. That poll itself then failed —
+Front Door's endpoint returned its own "Page not found" error page
+(not a connection error/timeout) after the full 480s `POLL_TIMEOUT`,
+even though `azurerm_cdn_frontdoor_route.web` had created successfully
+with no errors. Not investigated as a config bug before retrying:
+Microsoft's own guidance for Front Door edge/DNS propagation after a
+new route is created is "a few minutes up to 10", comfortably longer
+than the 480s waited. Gave the Front Door poll its own
+`FRONTDOOR_POLL_TIMEOUT` (default 900s), independent of `POLL_TIMEOUT`,
+rather than just raising the shared budget for every example. Re-run
+with the longer timeout not yet completed — that's the actual
+remaining step to close this item, now that the real blocker (item 3)
+is out of the way.
+
 ### 2. Smaller things
 
 

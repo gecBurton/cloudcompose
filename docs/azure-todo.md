@@ -238,6 +238,40 @@ would still need to re-run `terraform apply` by hand themselves) —
 flagged as a real, if narrower, gap the `time_sleep` alone doesn't
 close for every deployment, only every CI run.
 
+**The retry loop also exhausted (2026-08-12) — propagation delay is
+worse than estimated, and escalation stopped here.** Re-ran once more:
+the loop behaved exactly as designed (5 correctly-spaced attempts,
+`ForbiddenByRbac` detected and retried each time, a clear failure
+message on exhaustion — verified against 3 simulated scenarios before
+trusting it in another ~40-minute real run), but all 5 attempts still
+failed. Total elapsed time from `kv_role` creation to final failure:
+90s sleep + roughly 6.5 more minutes of retries, close to 8 minutes —
+still not enough. Investigated further rather than immediately
+escalating the retry budget again: confirmed the Key Vault is correctly
+in RBAC-authorization mode (`models.NewKeyVault` already sets
+`RbacAuthorizationEnabled: true`, ruling out the legacy access-policy
+model as the cause), confirmed the role name/scope/principal reference
+are all correct against Microsoft's own docs, and confirmed each
+`terraform apply` in the retry loop is a genuinely fresh process (not
+reusing a stale cached Azure AD token client-side). None of these
+explain a propagation delay this long. Checked whether the "managed
+identity token caching can take hours" caveat in Microsoft's own docs
+applies here — it doesn't: that caveat is specifically about *group or
+app-role membership* changes for the identity, not a direct role
+assignment on a resource scope, which is what this actually is.
+
+Stopped escalating the retry budget speculatively at this point. Four
+real runs now confirm the permission fix itself is solid and necessary
+(`kv_role` creates successfully every time now, which never happened
+before this session) — that part is done. The remaining `GetSecret`
+propagation delay is real, reproducible, and worse than Microsoft's own
+"up to 10 minutes" documented worst case suggested it should be, but
+further root-causing it needs something this session doesn't have
+access to: Azure's own Activity Log / Entra sign-in log detail for the
+specific role assignment, or a support case. Left open rather than
+thrown more wait time at without evidence that would actually help —
+the next step is diagnostic access, not a longer sleep.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

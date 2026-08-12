@@ -233,7 +233,8 @@ func TestGrantManagedServicePermissions_DoesNotDuplicateKeyVaultRoleAssignment(t
 		"cache": {Host: "cache.example.com", Password: &cachePassword},
 	}
 
-	grantManagedServicePermissions(resources, app, &env, minimalGetName("prod", "myapp"), nil, "${azurerm_user_assigned_identity.main.id}", connections)
+	grantManagedServicePermissions(resources, app, &env, minimalGetName("prod", "myapp"), nil, "${azurerm_user_assigned_identity.main.id}", connections,
+		map[string]map[string]bool{"web": {"db": true, "cache": true}})
 
 	kvRoleAssignments := 0
 	for _, ra := range resources.RoleAssignment {
@@ -260,7 +261,7 @@ func TestInferContainerApps_DefaultAutoScalingWhenMaxScaleAboveOne(t *testing.T)
 	env := azureTestEnv()
 	resources := models.NewAzureResources()
 
-	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil)
+	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil, nil)
 
 	containerApp, ok := resources.ContainerApp["web"]
 	if !ok {
@@ -301,7 +302,7 @@ func TestInferContainerApps_NoDefaultAutoScalingWhenMaxScaleIsOne(t *testing.T) 
 	env := azureTestEnv()
 	resources := models.NewAzureResources()
 
-	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil)
+	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil, nil)
 
 	containerApp := resources.ContainerApp["web"]
 	if len(containerApp.Template.CustomScaleRule) != 0 {
@@ -327,7 +328,7 @@ func TestInferContainerApps_ExplicitAutoScalingOverridesDefault(t *testing.T) {
 	env := azureTestEnv()
 	resources := models.NewAzureResources()
 
-	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil)
+	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil, nil)
 
 	containerApp := resources.ContainerApp["web"]
 	rules := containerApp.Template.CustomScaleRule
@@ -357,7 +358,7 @@ func TestInferContainerApps_RequestsPerTargetMetricStillUsesHttpScaleRule(t *tes
 	env := azureTestEnv()
 	resources := models.NewAzureResources()
 
-	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil)
+	inferContainerApps(resources, app, &env, minimalGetName("prod", "myapp"), nil, "", "", nil, nil, nil)
 
 	containerApp := resources.ContainerApp["web"]
 	if len(containerApp.Template.CustomScaleRule) != 0 {

@@ -454,7 +454,7 @@ been latent and untested since MySQL support was first ported.
   `terraform validate` against both the environment-bootstrap output and
   a manually-generated app output with the subnet set.
 
-- [ ] **Azure's RBAC/identity-granting model is `depends_on:`-driven,
+- [x] **Azure's RBAC/identity-granting model is `depends_on:`-driven,
   where AWS's is usage-driven.** Found while generalizing Azure's
   connection-string rendering (above), not the same gap. AWS only grants
   a service IAM permissions on a managed service if a *resolved env var
@@ -473,6 +473,37 @@ been latent and untested since MySQL support was first ported.
   at the same time. Worth deciding: tighten Azure to match AWS's
   usage-driven model, or is the current over-grant an acceptable,
   simpler default worth keeping and just documenting as intentional?
+
+  **Done (2026-08-12) — tightened Azure to match AWS, chose consistency
+  over the simpler default.** Added `referencedServersAzure`
+  (`azure/permissions.go`) as the Azure-side equivalent of AWS's own
+  `referencedNames` discovery, built the same way (`shared.ResolveValue`
+  over each service's own `Env` map) — computed once upfront for the
+  whole app rather than once per container the way AWS discovers it,
+  since Azure's ordering constraint (the identity must exist and be
+  granted access *before* any Container App/Job that references it)
+  means "what does this app actually use" has to be known before
+  `containerSpecAzure` ever runs, not learned during it.
+  `inferManagedServiceIdentity`/`grantManagedServicePermissions`/
+  `identityForService` (the actual function name — the item's own
+  `containerAppIdentityFor` reference was already stale) all now consume
+  this instead of `app.Relationships` directly. Compose
+  `secrets:`/`config:` deliberately left as its own, independent,
+  always-real trigger for needing the identity — declaring a compose
+  secret *is* the usage, unlike `depends_on:`, so there's no equivalent
+  "declared but never used" case to close for that mechanism.
+
+  Zero golden fixtures changed: no existing example happens to exercise
+  a service that `depends_on:` a managed service without also
+  referencing it, so this was a pure refactor against every case this
+  codebase already tests. Verified the actual fixed behavior end-to-end
+  with two hand-built compose files outside the test suite (one
+  `depends_on: db` with no reference, one with an actual
+  `DATABASE_URL:` reference) — confirmed via real `cloudcompose
+  compile-azure` runs that the first creates no identity/role
+  assignment/Key Vault secret at all, the second creates all three, and
+  `terraform validate`d both against the real `azurerm` provider. 7 new
+  dedicated unit tests added (`azure/usage_driven_rbac_test.go`).
 
 ## Priority 4 — Smaller robustness/consistency gaps
 

@@ -53,18 +53,31 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 		connections[k] = v
 	}
 
-	// Step 7.5: if any service has a Relationship to a managed service,
-	// create a user-assigned identity for the app (before any Container
-	// App/Job exists, so it can be granted RBAC first -- see
-	// permissions.go's own doc comments for the ordering reason) and
-	// grant it access to that service's stored credential/storage
-	// account. Only services that actually have such a Relationship use
-	// this identity (see managedIdentityForService in compute.go); every
-	// other service keeps using env.UserAssignedIdentityID or falls back
-	// to system-assigned, exactly as before this feature existed.
-	managedServiceIdentityID := inferManagedServiceIdentity(resources, app, env, getName, tags, connections)
+	// Step 7.5: discover which connections each service's own authored
+	// `environment:` values actually reference (docs/azure-aws-parity-todo.md's
+	// "Azure's RBAC/identity-granting model is depends_on:-driven, where
+	// AWS's is usage-driven" item) -- must happen before deciding whether
+	// any service needs a managed-service identity at all, since Azure's
+	// ordering constraint (the identity must exist and be granted access
+	// *before* any Container App/Job that references it) means "what
+	// does this app actually use" has to be known upfront, not learned
+	// while containerSpecAzure builds each container. See
+	// referencedServersAzure's own doc comment for the full reasoning.
+	referenced := referencedServersAzure(app, connections)
+
+	// Step 7.6: if any service's own authored environment: values
+	// actually reference a managed service, create a user-assigned
+	// identity for the app (before any Container App/Job exists, so it
+	// can be granted RBAC first -- see permissions.go's own doc comments
+	// for the ordering reason) and grant it access to that service's
+	// stored credential/storage account. Only services that actually
+	// reference a connection use this identity (see identityForService
+	// in compute.go); every other service keeps using
+	// env.UserAssignedIdentityID or falls back to system-assigned,
+	// exactly as before this feature existed.
+	managedServiceIdentityID := inferManagedServiceIdentity(resources, app, env, getName, tags, connections, referenced)
 	if managedServiceIdentityID != "" {
-		grantManagedServicePermissions(resources, app, env, getName, tags, managedServiceIdentityID, connections)
+		grantManagedServicePermissions(resources, app, env, getName, tags, managedServiceIdentityID, connections, referenced)
 	}
 
 	// connectionOrder tracks connections in the same insertion order they
@@ -80,12 +93,12 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	connectionOrder := connectionOrderForAzure(app, connections)
 
 	// Step 8: Infer container apps.
-	if err := inferContainerApps(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder); err != nil {
+	if err := inferContainerApps(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder, referenced); err != nil {
 		return nil, err
 	}
 
 	// Step 9: Scheduled services run as Jobs, not as always-on Container Apps.
-	if err := inferScheduledJobs(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder); err != nil {
+	if err := inferScheduledJobs(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder, referenced); err != nil {
 		return nil, err
 	}
 

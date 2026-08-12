@@ -741,21 +741,29 @@ func defaultAutoScalingConfigAzure() *models.AutoScalingConfig {
 
 // identityForService picks which identity a specific service's Container
 // App/Job should use: the app-wide managed-service identity only if this
-// particular service has a Relationship to a database/cache/storage
-// connection (see permissions.go's inferManagedServiceIdentity), falling
-// back to identityID (env.UserAssignedIdentityID, or "" for
-// system-assigned) for every other service. Without this per-service
-// check, every service in the app would switch to UserAssigned the
-// moment *any* service needed the managed-service identity -- confirmed
-// as a real, not theoretical, divergence while regenerating Azure golden
-// fixtures for this fix (2026-08-08): the flask example's "frontend"
-// service, which has no relationship to "db" at all, switched identity
-// types for no reason before this function existed.
+// particular service's own authored `environment:` values actually
+// reference a database/cache/storage connection (see permissions.go's
+// referencedServersAzure/inferManagedServiceIdentity), falling back to
+// identityID (env.UserAssignedIdentityID, or "" for system-assigned) for
+// every other service. Without this per-service check, every service in
+// the app would switch to UserAssigned the moment *any* service needed
+// the managed-service identity -- confirmed as a real, not theoretical,
+// divergence while regenerating Azure golden fixtures for this fix
+// (2026-08-08): the flask example's "frontend" service, which has no
+// relationship to "db" at all, switched identity types for no reason
+// before this function existed.
+//
+// Originally checked app.Relationships (compose depends_on:) directly;
+// switched to referenced (actual env-var usage) to close
+// docs/azure-aws-parity-todo.md's "Azure's RBAC/identity-granting model
+// is depends_on:-driven, where AWS's is usage-driven" item -- a service
+// could depends_on: db for pure startup-ordering reasons, never
+// reference it in an env var at all, and still get the managed-service
+// identity (and therefore Key Vault/storage access) before this fix.
 func identityForService(
-	app *models.Application,
 	service *models.Service,
 	identityID, managedServiceIdentityID string,
-	connections map[string]models.Connection,
+	referenced map[string]map[string]bool,
 ) string {
 	if managedServiceIdentityID == "" {
 		return identityID
@@ -763,13 +771,8 @@ func identityForService(
 	if len(service.Secrets) > 0 || len(service.Config) > 0 {
 		return managedServiceIdentityID
 	}
-	for _, r := range app.Relationships {
-		if r.Client != service.Name {
-			continue
-		}
-		if _, ok := connections[r.Server]; ok {
-			return managedServiceIdentityID
-		}
+	if len(referenced[service.Name]) > 0 {
+		return managedServiceIdentityID
 	}
 	return identityID
 }
@@ -783,6 +786,7 @@ func inferScheduledJobs(
 	identityID, managedServiceIdentityID string,
 	connections map[string]models.Connection,
 	connectionOrder []string,
+	referenced map[string]map[string]bool,
 ) error {
 	for i := range app.Services {
 		service := &app.Services[i]
@@ -811,7 +815,7 @@ func inferScheduledJobs(
 		job.Template = []models.ContainerAppJobTemplate{
 			{Container: []models.ContainerAppContainer{containerSpec}},
 		}
-		job.Identity = managedIdentityAzure(identityForService(app, service, identityID, managedServiceIdentityID, connections))
+		job.Identity = managedIdentityAzure(identityForService(service, identityID, managedServiceIdentityID, referenced))
 		job.Secret = secretConfig
 		job.Registry = registryConfig
 		job.Tags = tags
@@ -833,6 +837,7 @@ func inferContainerApps(
 	identityID, managedServiceIdentityID string,
 	connections map[string]models.Connection,
 	connectionOrder []string,
+	referenced map[string]map[string]bool,
 ) error {
 	for i := range app.Services {
 		service := &app.Services[i]
@@ -951,7 +956,7 @@ func inferContainerApps(
 		containerApp.ContainerAppEnvironmentID = "${azurerm_container_app_environment.main.id}"
 		containerApp.Template = template
 		containerApp.Ingress = ingressConfig
-		containerApp.Identity = managedIdentityAzure(identityForService(app, service, identityID, managedServiceIdentityID, connections))
+		containerApp.Identity = managedIdentityAzure(identityForService(service, identityID, managedServiceIdentityID, referenced))
 		containerApp.Secret = secretConfig
 		containerApp.Registry = registryConfig
 		containerApp.Tags = tags

@@ -2,8 +2,10 @@ package azure
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -27,10 +29,58 @@ const (
 // centralize.
 const secretsPlaceholderValueAzure = "PLACEHOLDER_VALUE_CHANGE_IN_AZURE_PORTAL"
 
+// referencedServersAzure discovers, for every service in the app, which
+// connections its own authored `environment:` values actually resolve
+// against -- the Azure-side equivalent of aws/permissions.go's own
+// referencedNames, built the same way (via shared.ResolveValue over each
+// service's Env map), computed once upfront here rather than once per
+// container the way AWS discovers it, since Azure's ordering constraint
+// (the identity must exist and be granted access *before* any Container
+// App/Job that references it) means "what does this app actually use"
+// has to be known before containerSpecAzure ever runs, not learned
+// during it.
+//
+// docs/azure-aws-parity-todo.md's "Azure's RBAC/identity-granting model
+// is depends_on:-driven, where AWS's is usage-driven" item: before this,
+// inferManagedServiceIdentity/grantManagedServicePermissions/
+// identityForService all iterated app.Relationships (compose
+// `depends_on:`) directly, granting an identity + Key Vault/storage
+// access to any service that depends_on: a managed service, whether or
+// not it actually referenced that service in an env var at all. This is
+// the one place that now computes what's actually referenced; all three
+// of those functions consume this instead of app.Relationships.
+//
+// ResolveValue is pure/side-effect-free, so calling it here for
+// discovery and again later in containerSpecAzure's own resolution pass
+// is deliberate, not a missed opportunity to cache: the second call is
+// what actually builds the Key Vault secret/env var, using the identity
+// this discovery pass's result was used to decide whether to create at
+// all.
+func referencedServersAzure(app *models.Application, connections map[string]models.Connection) map[string]map[string]bool {
+	referenced := map[string]map[string]bool{}
+	order := connectionOrderForAzure(app, connections)
+	for i := range app.Services {
+		service := &app.Services[i]
+		for _, value := range service.Env {
+			resolved := shared.ResolveValue(value, connections, order)
+			if resolved.Service == nil {
+				continue
+			}
+			if referenced[service.Name] == nil {
+				referenced[service.Name] = map[string]bool{}
+			}
+			referenced[service.Name][*resolved.Service] = true
+		}
+	}
+	return referenced
+}
+
 // inferManagedServiceIdentity creates one user-assigned identity per app
-// that needs one -- i.e. if any service has a Relationship to a database,
-// cache, or object-storage service, or declares compose secrets:/has
-// platform-supplied config (see grantServiceSecretPermissions/
+// that needs one -- i.e. if any service's own authored `environment:`
+// values actually reference a database, cache, or object-storage
+// service (see referencedServersAzure's own doc comment for why this is
+// usage-driven, not depends_on:-driven), or declares compose
+// secrets:/has platform-supplied config (see grantServiceSecretPermissions/
 // grantPlatformConfigPermissions) -- so RoleAssignments granting it
 // access to Key Vault secrets/storage can be created *before* any
 // Container App exists to use them.
@@ -54,10 +104,11 @@ func inferManagedServiceIdentity(
 	getName func(string) string,
 	tags map[string]string,
 	connections map[string]models.Connection,
+	referenced map[string]map[string]bool,
 ) string {
 	needsIdentity := false
-	for _, r := range app.Relationships {
-		if _, ok := connections[r.Server]; ok {
+	for _, servers := range referenced {
+		if len(servers) > 0 {
 			needsIdentity = true
 			break
 		}
@@ -108,7 +159,9 @@ func managedServiceIdentityRef(resources *models.AzureResources) string {
 // grantManagedServicePermissions creates Key Vault secrets for every
 // database/cache connection's credential and a scoped RoleAssignment
 // granting the app's user-assigned identity access to read them, plus
-// Storage Blob Data Contributor for any object-storage relationship,
+// Storage Blob Data Contributor for any object-storage connection any
+// service actually references (see referencedServersAzure's own doc
+// comment for why this is usage-driven, not depends_on:-driven),
 // mirroring aws/permissions.go's grantDatabasePermissions/
 // grantS3Permissions -- but as RBAC role assignments rather than IAM
 // policies, since that's Azure's equivalent primitive.
@@ -136,6 +189,7 @@ func grantManagedServicePermissions(
 	tags map[string]string,
 	identityID string,
 	connections map[string]models.Connection,
+	referenced map[string]map[string]bool,
 ) {
 	if identityID == "" {
 		return
@@ -145,14 +199,30 @@ func grantManagedServicePermissions(
 	grantedStorage := map[string]bool{}
 	grantedKeyVault := false
 
-	for _, r := range app.Relationships {
-		conn, ok := connections[r.Server]
+	// Every server any service actually references, deduplicated and
+	// sorted for deterministic output -- Go map iteration order is
+	// randomized, and this determines which secret/role-assignment
+	// Terraform resource key is created in which order.
+	servers := map[string]bool{}
+	for _, byService := range referenced {
+		for server := range byService {
+			servers[server] = true
+		}
+	}
+	sortedServers := make([]string, 0, len(servers))
+	for server := range servers {
+		sortedServers = append(sortedServers, server)
+	}
+	sort.Strings(sortedServers)
+
+	for _, server := range sortedServers {
+		conn, ok := connections[server]
 		if !ok {
 			continue
 		}
 
 		if conn.Password != nil {
-			storeManagedServiceSecret(resources, r.Server, *conn.Password, getName, tags)
+			storeManagedServiceSecret(resources, server, *conn.Password, getName, tags)
 			grantKeyVaultAccessOnce(resources, &grantedKeyVault, principalIDRef)
 			continue
 		}
@@ -161,10 +231,10 @@ func grantManagedServicePermissions(
 		// models.Connection's own doc comment -- storage access is
 		// granted via RBAC directly, not a credential value, so there's
 		// no secret to store).
-		if !grantedStorage[r.Server] {
-			grantedStorage[r.Server] = true
-			resources.RoleAssignment[r.Server+"_storage_role"] = models.RoleAssignment{
-				Scope:              fmt.Sprintf("${azurerm_storage_account.%s_storage.id}", r.Server),
+		if !grantedStorage[server] {
+			grantedStorage[server] = true
+			resources.RoleAssignment[server+"_storage_role"] = models.RoleAssignment{
+				Scope:              fmt.Sprintf("${azurerm_storage_account.%s_storage.id}", server),
 				RoleDefinitionName: storageBlobDataContributorRole,
 				PrincipalID:        principalIDRef,
 			}

@@ -41,6 +41,84 @@ func TestGenerateAzure_NoIngressProducesNoOutputKey(t *testing.T) {
 	}
 }
 
+// --- output.cdn_fqdn presence: docs/azure-todo.md's Front Door item --
+// a clean apply had only ever been verified by polling the Container
+// App's own FQDN (output.fqdn), never Front Door's actual endpoint
+// hostname, so this output publishes the latter for a smoke test to
+// poll directly.
+
+func TestAzureCdnFQDN_NoCdnEndpointsReturnsNil(t *testing.T) {
+	t.Parallel()
+	resources := models.NewAzureResources()
+
+	if fqdn := azureCdnFQDN(resources); fqdn != nil {
+		t.Errorf("expected nil, got %v", *fqdn)
+	}
+}
+
+func TestAzureCdnFQDN_ReturnsHostNameReference(t *testing.T) {
+	t.Parallel()
+	resources := models.NewAzureResources()
+	resources.CdnFrontdoorEndpoint["web"] = models.FrontDoorEndpoint{Name: "prod-app-web-fd"}
+
+	fqdn := azureCdnFQDN(resources)
+	if fqdn == nil {
+		t.Fatalf("expected a non-nil reference")
+	}
+	want := "${azurerm_cdn_frontdoor_endpoint.web.host_name}"
+	if *fqdn != want {
+		t.Errorf("got %q, want %q", *fqdn, want)
+	}
+}
+
+func TestAzureCdnFQDN_MultipleEndpointsPicksDeterministicFirst(t *testing.T) {
+	t.Parallel()
+	resources := models.NewAzureResources()
+	resources.CdnFrontdoorEndpoint["web"] = models.FrontDoorEndpoint{Name: "web"}
+	resources.CdnFrontdoorEndpoint["api"] = models.FrontDoorEndpoint{Name: "api"}
+
+	fqdn := azureCdnFQDN(resources)
+	if fqdn == nil {
+		t.Fatalf("expected a non-nil reference")
+	}
+	// Sorted alphabetically, same convention as azureIngressFQDN's own
+	// "first" match -- "api" sorts before "web".
+	want := "${azurerm_cdn_frontdoor_endpoint.api.host_name}"
+	if *fqdn != want {
+		t.Errorf("got %q, want %q (deterministic, sorted first)", *fqdn, want)
+	}
+}
+
+func TestGenerateAzure_CdnFqdnOutputCoexistsWithIngressFqdn(t *testing.T) {
+	t.Parallel()
+	resources := models.NewAzureResources()
+	app := models.NewContainerApp()
+	app.Name = "prod-app-web"
+	app.Ingress = &models.ContainerAppIngress{}
+	resources.ContainerApp["web"] = app
+	resources.CdnFrontdoorEndpoint["web"] = models.FrontDoorEndpoint{Name: "prod-app-web-fd"}
+	env := testAppEnv(0)
+
+	out, err := GenerateAzure(resources, &env)
+	if err != nil {
+		t.Fatalf("GenerateAzure failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	output, ok := parsed["output"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected an 'output' key, got %v", parsed["output"])
+	}
+	if _, ok := output["fqdn"]; !ok {
+		t.Errorf("expected output.fqdn to still be present alongside output.cdn_fqdn")
+	}
+	if _, ok := output["cdn_fqdn"]; !ok {
+		t.Errorf("expected output.cdn_fqdn to be present")
+	}
+}
+
 // TestGenerateAzure_Deterministic runs the same input through the full
 // pipeline 6 times and diffs the output, per this phase's own review
 // discipline: every new map-shaped/ordered output gets a determinism

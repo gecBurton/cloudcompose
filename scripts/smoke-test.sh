@@ -407,28 +407,42 @@ if [[ "$PROVIDER" == "azure" ]]; then
     || fail "app stack published no usable fqdn output (got: ${CONTAINER_APP_FQDN:-<empty>})"
   log "Container App FQDN: $CONTAINER_APP_FQDN"
   url="https://$CONTAINER_APP_FQDN$HTTP_PATH"
+
+  # cdn_fqdn is only published when a service has cdn:true (see
+  # azureCdnFQDN's own doc comment in generator.go) -- empty for most
+  # examples, so no error if the output is absent, unlike CONTAINER_APP_FQDN
+  # above.
+  CDN_FQDN="$(eval "$TF output -raw cdn_fqdn" 2>/dev/null || true)"
+  [[ "$CDN_FQDN" =~ ^[A-Za-z0-9.-]+$ ]] || CDN_FQDN=""
 else
   eval "$TF apply -auto-approve"
   url="http://$ALB_DNS$HTTP_PATH"
 fi
 
 # --- 4. Poll the app's URL until it serves the page --------------------------
-log "Polling $url (up to ${POLL_TIMEOUT}s)…"
-deadline=$(( SECONDS + POLL_TIMEOUT ))
-served=0
-body=""
-while (( SECONDS < deadline )); do
-  # No -f: capture non-2xx bodies (e.g. a 503 /health) for the EXPECT match and
-  # for diagnostics on timeout.
-  body="$(curl -sS --max-time 5 "$url" 2>/dev/null || true)"
-  if [[ "$body" == *"$EXPECT"* ]]; then
-    served=1
-    break
-  fi
-  printf '.'
-  sleep 5
-done
-if (( served != 1 )); then
+# Factored into a function so the Front Door poll below (step 4b) can
+# reuse the exact same wait/retry shape rather than duplicating it.
+poll_until_served() {
+  local poll_url="$1" timeout="$2"
+  log "Polling $poll_url (up to ${timeout}s)…"
+  local deadline=$(( SECONDS + timeout ))
+  local served=0
+  body=""
+  while (( SECONDS < deadline )); do
+    # No -f: capture non-2xx bodies (e.g. a 503 /health) for the EXPECT
+    # match and for diagnostics on timeout.
+    body="$(curl -sS --max-time 5 "$poll_url" 2>/dev/null || true)"
+    if [[ "$body" == *"$EXPECT"* ]]; then
+      served=1
+      break
+    fi
+    printf '.'
+    sleep 5
+  done
+  return $(( served == 1 ? 0 : 1 ))
+}
+
+if ! poll_until_served "$url" "$POLL_TIMEOUT"; then
   echo
   echo "----- last response (for diagnosis) -----"
   echo "${body:-<no response>}" | head -20
@@ -438,6 +452,30 @@ fi
 log "App is live — response contains '$EXPECT'. 🎉"
 echo "----- response -----"
 echo "$body" | head -20
+
+# --- 4b. Front Door: confirm traffic actually flows through the CDN itself ---
+# docs/azure-todo.md's Front Door item: a clean `terraform apply` only ever
+# proved the five Front Door resources exist and reference each other
+# correctly, never that Front Door actually proxies real traffic to the
+# Container App end to end. cdn_fqdn (see azureCdnFQDN in generator.go) is
+# only published when a service has cdn:true, so this step is a no-op for
+# every other example. The Container App's own FQDN above already proved
+# the app itself serves correctly; this proves the separate CDN/WAF hop in
+# front of it also works, not just that Terraform thinks it applied cleanly.
+if [[ -n "${CDN_FQDN:-}" ]]; then
+  cdn_url="https://$CDN_FQDN$HTTP_PATH"
+  # Front Door's own DNS + edge propagation is a separate, additional delay
+  # on top of the Container App's own cold start already waited out above,
+  # so this gets its own timeout rather than reusing whatever budget the
+  # first poll had left.
+  if ! poll_until_served "$cdn_url" "$POLL_TIMEOUT"; then
+    echo
+    echo "----- last response (for diagnosis) -----"
+    echo "${body:-<no response>}" | head -20
+    fail "timed out after ${POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
+  fi
+  log "Front Door is live — response contains '$EXPECT' through the CDN endpoint too. 🎉"
+fi
 
 # --- 5. Managed-resource assertions ------------------------------------------
 # Prove every substituted service (minio->S3/Blob, postgres->RDS/Flexible

@@ -18,6 +18,33 @@ func azureIngressFQDN(resources *models.AzureResources) *string {
 	return nil
 }
 
+// azureCdnFQDN is the Terraform reference to the hostname of the first
+// Front Door endpoint, if any service has cdn:true. Once traffic is
+// fronted by Front Door, that hostname -- not the Container App's own
+// ingress FQDN azureIngressFQDN already publishes -- is the address a
+// real client should actually be sent to: the Container App's ingress
+// FQDN keeps working directly (Front Door does not disable it), but
+// bypasses the CDN/WAF layer entirely, which is exactly the case
+// docs/azure-todo.md's Front Door item flagged as unverified -- a clean
+// `terraform apply` had only ever been checked by polling the Container
+// App's own FQDN, never Front Door's.
+//
+// host_name is azurerm_cdn_frontdoor_endpoint's own computed attribute
+// (confirmed against the real provider schema, not assumed from the
+// other resources' `name`/`id` pattern).
+func azureCdnFQDN(resources *models.AzureResources) *string {
+	keys := make([]string, 0, len(resources.CdnFrontdoorEndpoint))
+	for k := range resources.CdnFrontdoorEndpoint {
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	sortStringsAzure(keys)
+	fqdn := "${azurerm_cdn_frontdoor_endpoint." + keys[0] + ".host_name}"
+	return &fqdn
+}
+
 // sortedStringKeysAzureApp returns ContainerApp map keys sorted, so
 // azureIngressFQDN's "first" match is deterministic rather than dependent
 // on Go's randomized map iteration order.
@@ -98,6 +125,19 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 				"description": "Public hostname of the ingress-enabled service.",
 				"value":       *fqdn,
 			},
+		}
+	}
+
+	// Only present when a service has cdn:true (azureCdnFQDN returns nil
+	// otherwise). See azureCdnFQDN's own doc comment for why this is a
+	// distinct output from "fqdn" above, not a replacement for it.
+	if cdnFqdn := azureCdnFQDN(resources); cdnFqdn != nil {
+		if manifest.Output == nil {
+			manifest.Output = map[string]any{}
+		}
+		manifest.Output["cdn_fqdn"] = map[string]any{
+			"description": "Public hostname of the Front Door endpoint fronting the CDN-enabled service.",
+			"value":       *cdnFqdn,
 		}
 	}
 

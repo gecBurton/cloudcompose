@@ -366,41 +366,53 @@ if [[ "$PROVIDER" == "azure" ]]; then
       log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
       eval "$TF apply -auto-approve"
     elif grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
-      # azurerm_role_assignment.kv_role (Key Vault Secrets User, granting
-      # the app's managed identity read access to its own secrets) can
-      # report "created" before the grant has actually propagated on
-      # Azure's side — docs/azure-todo.md's Key Vault RBAC item. A
-      # time_sleep after the role assignment (models.NewKeyVaultSecret's
-      # own DependsOn) already covers the common case, but confirmed
-      # against five real runs now (2026-08-11/12) that a single 90s sleep
-      # and a single ~1-minute-later retry are both sometimes not enough:
-      # propagation has been observed taking 5-6+ minutes, closer to
-      # Microsoft's own documented worst case of "up to 10 minutes" than
-      # to the common case. Three consecutive runs on 2026-08-12
-      # (production-stack/francecentral) exhausted the previous 5-attempt/
-      # 60s-apart budget (~5 more minutes on top of the 90s sleep) every
-      # time — Azure's own Activity Log confirmed the role assignment
-      # *write* itself succeeded quickly each time (no permission gap),
-      # but the data-plane RBAC check Key Vault's GetSecret enforces
-      # stayed stale for 8+ minutes past that. Bumped to 10 attempts, 90s
-      # apart (~15 more minutes on top of the 90s sleep) to cover this
-      # worse-than-previously-observed delay — still a fixed loop, not one
-      # retry, since unlike the Front Door bug above (deterministic,
-      # always fixed by exactly one more apply) this is genuine
-      # variable-duration propagation.
-      attempt=1
-      max_attempts=10
-      until eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; do
-        if ! grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
-          fail "terraform apply failed for the app stack (not the Key Vault RBAC propagation issue)"
+      # Root cause (found 2026-08-12, after four consecutive real-Azure
+      # failures survived widening a blind apply-retry loop rather than
+      # converging on a bound): the GetSecret 403 in every failure names
+      # the CI service principal itself as the denied caller
+      # (`appid=<AZURE_CLIENT_ID>`), not the app's own managed identity —
+      # `azurerm_role_assignment.kv_role` (Key Vault Secrets User) only
+      # ever grants the *app's* identity read access; it was never meant
+      # to, and never did, cover the identity actually running
+      # `terraform apply` (Terraform itself creates azurerm_key_vault_secret
+      # resources, a data-plane write/read, as the CI service principal).
+      # Contributor's own `dataActions` is empty (confirmed against the
+      # real role definition) -- it grants management-plane access only,
+      # so the CI service principal had no path to Key Vault's data plane
+      # at all, permanently, no matter how long anything waited. Fixed by
+      # granting "Key Vault Secrets Officer" to the CI service principal
+      # itself (ci/README.md's Azure setup section) -- a one-time,
+      # subscription-level setup step, not something this script can grant
+      # itself at runtime.
+      #
+      # This was misdiagnosed for a long time as pure RBAC propagation
+      # delay (docs/azure-todo.md's Key Vault RBAC item): real propagation
+      # delay for azurerm_role_assignment.kv_role does also exist on top of
+      # this (Microsoft's own docs cite up to 10 minutes), which is why a
+      # `time_sleep` + retry genuinely helped some runs without fully
+      # fixing the underlying gap. The polling loop below stays as a
+      # legitimate defense against *that* genuine, bounded propagation
+      # delay -- now polling the Key Vault's own data plane directly
+      # rather than retrying a full `apply` on every attempt, which is
+      # cheap enough to run every 15s rather than 60-90s, and decoupled
+      # from `apply`'s own replan/refresh cost entirely.
+      KV_NAME="$(eval "$TF output -raw key_vault_name" 2>/dev/null || true)"
+      [[ -n "$KV_NAME" ]] || fail "terraform apply failed for the app stack with ForbiddenByRbac, but no key_vault_name output to poll against"
+      log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md, ci/README.md) — polling $KV_NAME's data plane directly (up to 600s) instead of blind apply retries…"
+      kv_deadline=$(( SECONDS + 600 ))
+      kv_visible=0
+      while (( SECONDS < kv_deadline )); do
+        if az keyvault secret list --vault-name "$KV_NAME" --auth-mode login -o none 2>/dev/null; then
+          kv_visible=1
+          break
         fi
-        if (( attempt >= max_attempts )); then
-          fail "terraform apply failed for the app stack: Key Vault RBAC propagation still not visible after $max_attempts attempts"
-        fi
-        attempt=$(( attempt + 1 ))
-        log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md), attempt $attempt/$max_attempts — waiting 90s before retrying…"
-        sleep 90
+        printf '.'
+        sleep 15
       done
+      echo
+      (( kv_visible == 1 )) || fail "Key Vault RBAC propagation still not visible on $KV_NAME's own data plane after 600s -- if this is a fresh CI service principal, check it has 'Key Vault Secrets Officer' granted per ci/README.md, not just propagation delay"
+      log "Key Vault RBAC now visible on $KV_NAME's data plane — retrying apply once…"
+      eval "$TF apply -auto-approve"
     else
       fail "terraform apply failed for the app stack"
     fi

@@ -343,6 +343,52 @@ RBAC data-plane propagation, if a support case surfaces enough
 information to justify it) is now the only remaining path to actually
 close this, not a longer sleep or a bigger loop.
 
+**Root cause actually found (2026-08-12) — not propagation delay at
+all, a permanent missing grant.** Before escalating to Azure support,
+checked who the `GetSecret` `403` actually names as the denied caller
+in every failure so far: the CI service principal itself
+(`appid=fe4b4b29-...`, matching `AZURE_CLIENT_ID`), not the app's own
+managed identity. That distinction had been present in every error
+message across all four failed runs but never checked closely —
+`azurerm_role_assignment.kv_role` (Key Vault Secrets User) only ever
+grants the *app's* identity read access, and correctly so; it was never
+meant to, and never did, cover the identity actually running `terraform
+apply`. Terraform itself creates `azurerm_key_vault_secret` resources
+(a data-plane write, then reads them back on refresh) as the CI service
+principal, which had no data-plane grant on Key Vault at all:
+`az role definition list --name Contributor --query
+"[0].permissions[0].dataActions"` returns `[]` — Contributor and Role
+Based Access Control Administrator (the fix from the previous session,
+still correct and still needed for `kv_role` itself to be creatable)
+both grant management-plane access only. This is a **permanent,
+deterministic** gap, not a delay: no amount of waiting was ever going
+to close it, which is exactly why widening the retry budget made
+failures take longer without ever succeeding.
+
+Fixed by granting the CI service principal "Key Vault Secrets Officer"
+at subscription scope (`ci/README.md` now documents this as a required
+one-time setup step, alongside the existing Contributor/RBAC
+Administrator grants). `scripts/smoke-test.sh`'s Key Vault polling loop
+(added the same day, see the comment at its call site) is kept as a
+legitimate defense against the separate, genuine, bounded propagation
+delay for `kv_role` itself (Microsoft's own docs cite up to 10 minutes)
+— that delay is real and independent of this permission gap, just not
+what caused four consecutive full failures on its own.
+
+This also means most of the "propagation" analysis above (the
+`ForbiddenByRbac` timeline investigation, the retry-loop widening, the
+Front Door origin-race precedent applied here) was chasing the wrong
+variable the entire time: every run in this doc's history failed the
+same way because the CI service principal has never had a Key Vault
+data-plane grant, not because propagation was ever taking 15-29
+minutes. The retry loop happening to succeed on some earlier runs (the
+"four real runs" cited above as confirming `kv_role` "creates
+successfully every time") was conflating `kv_role`'s own creation
+(a management-plane write, which always worked) with the downstream
+`GetSecret` calls (data-plane reads, which never had a path to succeed)
+— not yet re-verified with the new grant in place; that's the next real
+test of this fix, not an assumption it works.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

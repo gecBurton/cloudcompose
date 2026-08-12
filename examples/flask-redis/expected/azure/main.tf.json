@@ -8,6 +8,10 @@
     "fqdn": {
       "description": "Public hostname of the ingress-enabled service.",
       "value": "${azurerm_container_app.web.ingress[0].fqdn}"
+    },
+    "key_vault_name": {
+      "description": "Name of the Key Vault holding managed-service/secrets/config credentials, if any.",
+      "value": "${azurerm_key_vault.main.name}"
     }
   },
   "provider": {

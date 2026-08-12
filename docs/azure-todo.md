@@ -213,12 +213,28 @@ finished at `21:30:28`, the `GetSecret` failures landed at `21:34:12`).
 was real and materially longer. Not a reason to abandon the
 `time_sleep` (it likely still resolves the common case in under 90s,
 and fixes the *generated Terraform* every real deployment gets, not
-just CI) — added a second, complementary mitigation instead:
-`scripts/smoke-test.sh`'s app-stack apply now also retries once on a
-`ForbiddenByRbac` failure, the same shape of fix already used there for
-the Front Door origin race (`grep`-detect the specific error, retry the
-whole `apply` once). This is CI-only (a real user hitting this on their
-own deployment would still need to re-run `terraform apply` by hand) —
+just CI) — added a second, complementary mitigation: a single retry on
+a `ForbiddenByRbac` failure, the same shape of fix already used for the
+Front Door origin race (`grep`-detect the specific error, retry the
+whole `apply`).
+
+**A single retry was not enough either (2026-08-12).** Re-ran again to
+confirm the single-retry fix: the retry correctly triggered (confirmed
+in the logs: `azurerm_role_assignment.kv_role` created successfully
+this time too, no permission error at all — the actual fix from above
+holds), but the retry's own `apply` failed with the identical
+`ForbiddenByRbac` one minute later. This run's real propagation delay
+was 6+ minutes end to end (`kv_role` created, `time_sleep` finished 90s
+later, first `apply` failed 4m40s after that, the retry failed another
+minute after that) — closer to Microsoft's own documented worst case of
+"up to 10 minutes" than to a quick one-off. A single retry assumes a
+deterministic, fixed-duration issue (correct for the Front Door bug;
+wrong for genuine variable-duration propagation). Replaced with a
+proper retry loop: up to 5 attempts, 60 seconds apart (~5 more minutes
+of headroom on top of the 90s sleep), bailing immediately without
+retrying at all if the failure is anything other than `ForbiddenByRbac`
+— this is CI-only (a real user hitting this on their own deployment
+would still need to re-run `terraform apply` by hand themselves) —
 flagged as a real, if narrower, gap the `time_sleep` alone doesn't
 close for every deployment, only every CI run.
 

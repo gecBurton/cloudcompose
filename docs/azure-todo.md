@@ -71,14 +71,31 @@ the way — full detail in git history (`7d1e301`, `3cc0721`, `387e17b`,
    since `-target` turned out to pull in a resource's entire dependency
    chain regardless of how the retry was scoped.
 
-**Still not fully verified even with a clean apply**: the smoke test polls
-the Container App's own FQDN directly and has never actually sent a request
+**Was not fully verified even with a clean apply**: the smoke test polled
+the Container App's own FQDN directly and had never actually sent a request
 through the Front Door endpoint itself. A clean apply confirms the five
 resources exist and correctly reference each other — it does not confirm
 Front Door actually proxies real traffic to the Container App end to end.
-Extend the smoke test to poll `azurerm_cdn_frontdoor_endpoint.<key>.host_name`
-instead of (or as well as) the Container App's own FQDN before treating this
-as fully proven.
+
+**Fixed (2026-08-12).** Added a `cdn_fqdn` Terraform output
+(`azureCdnFQDN` in `azure/generator.go`) — a reference to
+`azurerm_cdn_frontdoor_endpoint.<key>.host_name` (confirmed against the
+real provider schema, not assumed from the naming pattern of the other
+Front Door resources' `name`/`id` attributes), published alongside the
+existing `fqdn` output whenever any service has `cdn:true`. Only
+`production-stack` exercises this; its golden fixture was regenerated
+and re-`terraform validate`d. `scripts/smoke-test.sh` now polls this
+output too (factored the existing poll loop into a `poll_until_served`
+function so the new Front Door poll reuses the exact same retry shape,
+not a second, subtly different copy) — a genuinely separate,
+additional poll after the Container App's own FQDN already succeeds,
+with its own full `POLL_TIMEOUT` budget rather than sharing whatever
+was left over, since Front Door's own DNS/edge propagation is an
+additional delay on top of the Container App's cold start. Not yet
+re-run against real Azure with this change — `terraform validate` and
+the golden fixture regeneration are both clean, but the smoke test
+itself (the actual end-to-end proof this item exists to get) needs a
+real `production-stack` deployment to confirm.
 
 ### 2. Smaller things
 

@@ -5,6 +5,10 @@
     }
   },
   "output": {
+    "cdn_fqdn": {
+      "description": "Public hostname of the Front Door endpoint fronting the CDN-enabled service.",
+      "value": "${azurerm_cdn_frontdoor_endpoint.web.host_name}"
+    },
     "fqdn": {
       "description": "Public hostname of the ingress-enabled service.",
       "value": "${azurerm_container_app.web.ingress[0].fqdn}"

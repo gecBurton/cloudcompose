@@ -289,6 +289,33 @@ specific role assignment, or a support case. Left open rather than
 thrown more wait time at without evidence that would actually help —
 the next step is diagnostic access, not a longer sleep.
 
+**Three more consecutive failures (2026-08-12, same day, verifying the
+Front Door `cdn_fqdn` change above).** Re-ran `production-stack` in
+`francecentral` three times in a row specifically to verify the Front
+Door traffic-polling change; all three failed identically, exhausting
+the 5-attempt/60s-apart retry loop every time (~8 minutes of retries on
+top of the 90s sleep). Checked what diagnostic access actually was
+available before just retrying again: `az role assignment list
+--assignee <ci-sp-object-id> --all` confirms the CI service principal
+still holds `Role Based Access Control Administrator` at subscription
+scope (the Priority-1 permission fix is intact, not regressed), and
+`az monitor activity-log list` confirms the control-plane
+`Microsoft.Authorization/roleAssignments/write` for `kv_role` itself
+completed in seconds each time (16:08:33 → 16:08:35 in the third run) —
+so the write path is not the bottleneck. The first `GetSecret`
+`ForbiddenByRbac` in that same run landed at 16:14:06, ~5.5 minutes
+after the role assignment write succeeded and ~3.5 minutes after the
+90s `time_sleep` finished; the loop's final failure landed at 16:23:13,
+~14.5 minutes after the write. Confirms the delay lives in Key Vault's
+own data-plane RBAC cache refresh, not anywhere Activity Log has
+visibility into (it only shows the control-plane write, not when Key
+Vault's cache actually picks it up) — the same conclusion the previous
+session reached, now with three more consistent data points instead of
+one. Bumped the retry loop to 10 attempts/90s apart (~15 more minutes
+on top of the 90s sleep) as a tactical mitigation while a support case
+remains the only way to actually root-cause the cache-refresh delay
+itself.
+
 ## Things worth knowing before touching this again
 
 **`generator_azure.py` was silently dropping every model's `lifecycle`

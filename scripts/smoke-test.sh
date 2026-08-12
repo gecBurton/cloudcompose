@@ -372,18 +372,24 @@ if [[ "$PROVIDER" == "azure" ]]; then
       # Azure's side — docs/azure-todo.md's Key Vault RBAC item. A
       # time_sleep after the role assignment (models.NewKeyVaultSecret's
       # own DependsOn) already covers the common case, but confirmed
-      # against two real runs (2026-08-11/12) that a single 90s sleep and
-      # a single ~1-minute-later retry are both sometimes not enough:
+      # against five real runs now (2026-08-11/12) that a single 90s sleep
+      # and a single ~1-minute-later retry are both sometimes not enough:
       # propagation has been observed taking 5-6+ minutes, closer to
       # Microsoft's own documented worst case of "up to 10 minutes" than
-      # to the common case. A fixed loop (up to 5 attempts, 60s apart —
-      # ~5 more minutes on top of the 90s sleep, covering that observed
-      # worst case) rather than one retry: unlike the Front Door bug
-      # above (deterministic, always fixed by exactly one more apply),
-      # this is genuine variable-duration propagation, so "try again
-      # once" isn't the right shape of fix for it.
+      # to the common case. Three consecutive runs on 2026-08-12
+      # (production-stack/francecentral) exhausted the previous 5-attempt/
+      # 60s-apart budget (~5 more minutes on top of the 90s sleep) every
+      # time — Azure's own Activity Log confirmed the role assignment
+      # *write* itself succeeded quickly each time (no permission gap),
+      # but the data-plane RBAC check Key Vault's GetSecret enforces
+      # stayed stale for 8+ minutes past that. Bumped to 10 attempts, 90s
+      # apart (~15 more minutes on top of the 90s sleep) to cover this
+      # worse-than-previously-observed delay — still a fixed loop, not one
+      # retry, since unlike the Front Door bug above (deterministic,
+      # always fixed by exactly one more apply) this is genuine
+      # variable-duration propagation.
       attempt=1
-      max_attempts=5
+      max_attempts=10
       until eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; do
         if ! grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
           fail "terraform apply failed for the app stack (not the Key Vault RBAC propagation issue)"
@@ -392,8 +398,8 @@ if [[ "$PROVIDER" == "azure" ]]; then
           fail "terraform apply failed for the app stack: Key Vault RBAC propagation still not visible after $max_attempts attempts"
         fi
         attempt=$(( attempt + 1 ))
-        log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md), attempt $attempt/$max_attempts — waiting 60s before retrying…"
-        sleep 60
+        log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md), attempt $attempt/$max_attempts — waiting 90s before retrying…"
+        sleep 90
       done
     else
       fail "terraform apply failed for the app stack"

@@ -173,10 +173,7 @@ func managedServiceIdentityRef(resources *models.AzureResources) string {
 // every credential this function stores shares the same Key Vault (and
 // therefore the same scope) and the same identity -- so a DB secret and
 // a cache secret each granting their own "Key Vault Secrets User" on the
-// same vault would collide. Confirmed as a real bug, not a hypothetical
-// one, while implementing secrets:/config: support in the same file
-// (2026-08-08): the doctor/production-stack golden fixtures already had
-// exactly this duplicate before this fix.
+// same vault would collide.
 //
 // Must run after inferManagedServiceIdentity (needs the identity to grant
 // roles to) and before containerSpecAzure builds any container that

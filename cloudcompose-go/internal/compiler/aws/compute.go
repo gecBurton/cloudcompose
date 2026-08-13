@@ -543,11 +543,10 @@ func handleAutoscaling(
 	//
 	// A bare zero-value models.AutoScalingConfig{} has none of the
 	// defaultAutoScalingConfig defaults (CPU 70%/Memory 80% metrics and
-	// 300s/60s cooldowns) -- confirmed as a real, silent divergence (not
-	// merely an equivalent-empty-value one) by diffing actual output for
-	// the production-stack example, which relies on exactly this default
-	// and would otherwise get no autoscaling policies at all despite
-	// declaring max_scale > min_scale (2026-08-06).
+	// 300s/60s cooldowns) -- a real, silent divergence (not merely an
+	// equivalent-empty-value one): a service relying on this default
+	// (declaring max_scale > min_scale with no explicit auto_scaling
+	// block) would otherwise get no autoscaling policies at all.
 	config := service.AutoScaling
 	if config == nil {
 		config = defaultAutoScalingConfig()

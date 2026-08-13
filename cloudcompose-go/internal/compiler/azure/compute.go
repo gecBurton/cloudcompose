@@ -105,24 +105,15 @@ func registryAuthAzure(service *models.Service) (registry []models.ContainerAppR
 // connection when a Relationship declares it, and only ever adds one
 // `<SERVER>_URL` env var per relationship rather than substituting into
 // service.Env's own values -- both narrower than AWS by design, tracked
-// as a Priority 3 item in docs/azure-aws-parity-todo.md, not fixed here.
-// What *is* fixed here (2026-08-08, see docs/azure-aws-parity-todo.md
-// Priority 1 item 3): the URL scheme now matches the target's actual
-// capability (postgresql://, mysql://, rediss://, or a bare
-// https://<host>/<container> for object storage) instead of always
-// rendering a Postgres-shaped URL regardless of target -- previously a
-// Redis/Storage relationship rendered as
-// "postgresql://None:None@<redis-host>:None/None", a real bug, not just
-// a stylistic mismatch with AWS. Credentials are also no longer
-// interpolated as plaintext: a connection with a password uses
-// ContainerAppEnvVar.SecretName, pointing at the Key Vault secret
-// grantManagedServicePermissions stored, rather than
-// ContainerAppEnvVar.Value.
+// as an open item in docs/azure-aws-parity-todo.md. The URL scheme
+// matches the target's actual capability (postgresql://, mysql://,
+// rediss://, or a bare https://<host>/<container> for object storage),
+// and credentials with a password use ContainerAppEnvVar.SecretName,
+// pointing at the Key Vault secret grantManagedServicePermissions
+// stored, rather than a plaintext ContainerAppEnvVar.Value.
 //
-// getName/tags/identityID (added 2026-08-08, see
-// docs/azure-aws-parity-todo.md Priority 2 items 1-2) are only used to
-// wire compose secrets:/platform config: -- see
-// grantServiceSecretPermissions/grantPlatformConfigPermissions.
+// getName/tags/identityID are only used to wire compose secrets:/platform
+// config: -- see grantServiceSecretPermissions/grantPlatformConfigPermissions.
 // identityID must be the *managed-service* identity (not just any
 // identity the service happens to use), since secrets/config always go
 // through Key Vault the same way managed-service credentials do.
@@ -237,29 +228,24 @@ func containerSpecAzure(
 }
 
 // resolveEnvVarAzure substitutes a real managed-service connection into
-// one authored `environment:` value, mirroring
-// aws/permissions.go's own per-entry loop over a service's container
-// definition -- but built on the same shared.ResolveValue both clouds
-// now use (docs/azure-aws-parity-todo.md's "generalize Azure's
-// connection-string rendering" item), not a hardcoded Postgres-shaped
-// template.
+// one authored `environment:` value, mirroring aws/permissions.go's own
+// per-entry loop over a service's container definition -- built on the
+// same shared.ResolveValue both clouds use, not a hardcoded
+// Postgres-shaped template.
 //
 // This is additive, not a replacement for containerSpecAzure's own
 // <SERVER>_URL synthesis a few lines up: that mechanism is Azure's
 // equivalent of AWS's always-emitted DB_PASSWORD/DB_USERNAME convenience
-// vars (grantDatabasePermissions), not itself the bug -- an app can
-// consume either the synthesized <SERVER>_URL or its own authored
-// DATABASE_URL/DATABASE_HOST, the same way an AWS app can consume either
-// DB_PASSWORD/DB_USERNAME or its own authored DATABASE_URL. What was
-// actually missing, and what this function fixes, is that an authored
-// value referencing a service by name or URL was never substituted at
-// all: `DATABASE_URL: postgres://db:5432/app` or `DATABASE_HOST: db`
-// shipped to Azure exactly as compose wrote them -- the local
-// container's own hostname, unreachable once db becomes a managed
-// Flexible Server. Confirmed as a real bug, not a hypothetical: the
-// doctor example's own app.py reads DATABASE_URL/REDIS_URL directly, and
-// its Azure golden fixture shipped both the broken literal value and a
-// separate DB_URL/CACHE_URL the app never reads.
+// vars (grantDatabasePermissions) -- an app can consume either the
+// synthesized <SERVER>_URL or its own authored DATABASE_URL/
+// DATABASE_HOST, the same way an AWS app can consume either
+// DB_PASSWORD/DB_USERNAME or its own authored value. This function
+// handles the case where an authored value references a service by name
+// or URL directly (e.g. `DATABASE_URL: postgres://db:5432/app` or
+// `DATABASE_HOST: db`) and needs substituting to the real managed
+// endpoint, since compose's own literal value points at the local
+// container's hostname, unreachable once db becomes a managed Flexible
+// Server.
 //
 // A confidential resolution (the value now carries a real password) is
 // stored in Key Vault, one secret per (service, env-var-name) --
@@ -434,8 +420,7 @@ func getContainerImageAzure(service *models.Service, app *models.Application, en
 // documentation (learn.microsoft.com/azure/container-apps/containers#allocations).
 // Not enforced by Terraform's own schema (a plain `number`/`string`
 // with no validation) -- this is an Azure API-level constraint cloudcompose
-// checks itself, added 2026-08-08 (see docs/azure-aws-parity-todo.md's
-// Priority 4 size-ceiling item).
+// checks itself.
 const (
 	azureConsumptionMaxCPU      = 2.0
 	azureConsumptionMaxMemoryGB = 4.0
@@ -461,12 +446,10 @@ const azureConsumptionCPUStep = 0.25
 // 2.0/4.0Gi) -- not just independently under the 2vCPU/4GiB cap.
 // Terraform's schema does not enforce this (a plain number/string with
 // no validation), so `terraform validate` passes regardless; only
-// Azure's own API rejects an unpaired combination, at `apply` time.
-// Confirmed via the compute-tuning example's own worker service
-// (size: medium = 1.0 vCPU + an explicit memory: 4096 override = 4Gi):
-// terraform validate accepts cpu=1, memory="4096Mi" even though 1.0vCPU
-// only pairs validly with 2.0Gi -- this function is what closes that gap
-// (docs/azure-aws-parity-todo.md's Priority 4 "New gap found" item).
+// Azure's own API rejects an unpaired combination, at `apply` time
+// (e.g. size: medium = 1.0 vCPU + an explicit memory: 4096 override =
+// 4Gi passes `terraform validate` but is rejected by the real API,
+// since 1.0vCPU only pairs validly with 2.0Gi).
 func azureCPUMemoryPairAzure(serviceName string, cpu, memoryGB float64) error {
 	steps := cpu / azureConsumptionCPUStep
 	if steps != math.Round(steps) {
@@ -747,19 +730,15 @@ func defaultAutoScalingConfigAzure() *models.AutoScalingConfig {
 // identityID (env.UserAssignedIdentityID, or "" for system-assigned) for
 // every other service. Without this per-service check, every service in
 // the app would switch to UserAssigned the moment *any* service needed
-// the managed-service identity -- confirmed as a real, not theoretical,
-// divergence while regenerating Azure golden fixtures for this fix
-// (2026-08-08): the flask example's "frontend" service, which has no
-// relationship to "db" at all, switched identity types for no reason
-// before this function existed.
+// the managed-service identity -- e.g. an app's "frontend" service with
+// no relationship to "db" at all would still switch identity types for
+// no reason.
 //
-// Originally checked app.Relationships (compose depends_on:) directly;
-// switched to referenced (actual env-var usage) to close
-// docs/azure-aws-parity-todo.md's "Azure's RBAC/identity-granting model
-// is depends_on:-driven, where AWS's is usage-driven" item -- a service
-// could depends_on: db for pure startup-ordering reasons, never
-// reference it in an env var at all, and still get the managed-service
-// identity (and therefore Key Vault/storage access) before this fix.
+// Checks actual env-var usage (referenced), not app.Relationships
+// (compose depends_on:) directly: a service could depends_on: db for
+// pure startup-ordering reasons, never reference it in an env var at
+// all, and shouldn't need the managed-service identity (and therefore
+// Key Vault/storage access) just because of that ordering hint.
 func identityForService(
 	service *models.Service,
 	identityID, managedServiceIdentityID string,
@@ -891,9 +870,7 @@ func inferContainerApps(
 		// for it here would be dead code.
 		//
 		// CPU/Memory custom_scale_rule support and the
-		// MaxScale>1-with-no-explicit-policy default added 2026-08-08
-		// (see docs/azure-aws-parity-todo.md Priority 2 items 5-6):
-		// previously only requests_per_target was handled at all, and a
+		// MaxScale>1-with-no-explicit-policy default: without them, a
 		// service with max_scale>1 but no ingress and no explicit
 		// auto_scaling block got zero scale rules -- min/max replicas
 		// were honored, but nothing ever drove scaling past 1. Mirrors

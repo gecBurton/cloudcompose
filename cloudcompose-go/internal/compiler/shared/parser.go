@@ -23,18 +23,17 @@ import (
 // that SkipInterpolation does not touch, so a real POSTGRES_PASSWORD from a
 // .env file still showed up looking exactly like a value written in the
 // compose file itself — the precise case this function exists to catch,
-// silently defeated (confirmed against a real env_file 2026-08-05). A raw
-// second YAML parse via gopkg.in/yaml.v3, bypassing compose-go entirely, was
-// tried next and worked, but duplicated logic compose-go's own loader
-// already has (the two accepted forms of `environment:` — a mapping, or a
-// list of "KEY=value"/"KEY" strings) and would silently drift from whatever
-// compose-go itself does if that logic ever changes. SkipResolveEnvironment
-// is compose-go's own supported way to skip exactly the env_file merge step
-// — no exported With... functional-option wraps it, but the field is public
-// on loader.Options, so it's reachable the same way SkipInterpolation is set
-// below. Confirmed empirically against a real .env file 2026-08-06: with
-// both flags set, POSTGRES_PASSWORD from .env is absent, and ${DATABASE_URL}
-// stays unresolved rather than substituted.
+// silently defeated. A raw second YAML parse via gopkg.in/yaml.v3, bypassing
+// compose-go entirely, was tried next and worked, but duplicated logic
+// compose-go's own loader already has (the two accepted forms of
+// `environment:` — a mapping, or a list of "KEY=value"/"KEY" strings) and
+// would silently drift from whatever compose-go itself does if that logic
+// ever changes. SkipResolveEnvironment is compose-go's own supported way to
+// skip exactly the env_file merge step — no exported With... functional-option
+// wraps it, but the field is public on loader.Options, so it's reachable the
+// same way SkipInterpolation is set below. Confirmed empirically against a
+// real .env file: with both flags set, POSTGRES_PASSWORD from .env is
+// absent, and ${DATABASE_URL} stays unresolved rather than substituted.
 func declaredEnvironment(filePath, workingDir string) (map[string]map[string]*string, error) {
 	project, err := loader.LoadWithContext(context.Background(), types.ConfigDetails{
 		WorkingDir: workingDir,
@@ -237,10 +236,10 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		// ServiceVolumeConfig's shape was tried first and silently matched
 		// neither form in a type switch downstream — every named volume
 		// compiled clean with no error and no record of the mount at all,
-		// exactly the failure RejectPersistentVolumes exists to catch
-		// (confirmed against a real compose file 2026-08-06). Converting
-		// explicitly here, the same way Ports/Build/Command already are,
-		// keeps that conversion in one place rather than depending on a
+		// exactly the failure RejectPersistentVolumes exists to catch.
+		// Converting explicitly here, the same way Ports/Build/Command
+		// already are, keeps that conversion in one place rather than
+		// depending on a
 		// type switch elsewhere to happen to agree with what compose-go
 		// actually produces.
 		for _, volume := range service.Volumes {

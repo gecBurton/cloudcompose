@@ -46,12 +46,10 @@ func InferGcp(app *models.Application, env *models.GcpEnvironment) *models.GcpRe
 
 	// connectionOrder tracks connections in insertion order: databases
 	// first, then caches, then storage -- each group in the order its
-	// services appear in app.Services. Iterating a Go map directly (as
-	// this code did before) diffs the wrong way whenever a service
-	// references more than one connection type -- confirmed as a real,
-	// not theoretical, requirement against the doctor example
-	// (2026-08-06), the same bug class Azure's implementation hit and
-	// fixed the same way.
+	// services appear in app.Services. Iterating a Go map directly diffs
+	// the wrong way whenever a service references more than one
+	// connection type -- the same bug class Azure's implementation hit
+	// and fixed the same way.
 	connectionOrder := connectionOrderForGcp(app, connections)
 
 	// Step 5: Create Cloud Run services.
@@ -424,10 +422,10 @@ func buildConnectionURLGcp(conn *models.Connection) string {
 
 // pyNoneStringGcp renders the literal string "None" for an unset
 // Optional[str] value, not an empty string. Still a live, unfixed
-// divergence on GCP as of 2026-08-09 -- Azure's equivalent bug
-// (containerSpecAzure) was found and fixed in a later pass, see
-// docs/azure-aws-parity-todo.md's Priority 1 item 3; this GCP one has
-// not been revisited since.
+// divergence on GCP -- Azure's equivalent bug (containerSpecAzure) was
+// found and fixed in a later pass; this GCP one has not been revisited
+// since, consistent with GCP's overall lighter-verification scope (see
+// docs/azure-aws-parity-todo.md).
 func pyNoneStringGcp(value *string) string {
 	if value == nil {
 		return "None"

@@ -85,11 +85,10 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	// group in the order its services appear in app.Services -- since
 	// containerSpecAzure's env-var loop iterates connections in whatever
 	// order they were inserted, and that order determines which _URL env
-	// var comes first when a service references more than one. Confirmed
-	// as a real, not theoretical, requirement by diffing actual output for
-	// the doctor and production-stack examples against their golden
-	// files (2026-08-06): DB_URL/BLOBS_URL and CACHE_URL appeared in the
-	// wrong relative position under simple alphabetical-key sorting.
+	// var comes first when a service references more than one. This
+	// matters in practice, not just in theory: alphabetical-key sorting
+	// puts DB_URL/BLOBS_URL and CACHE_URL in the wrong relative position
+	// for some real examples.
 	connectionOrder := connectionOrderForAzure(app, connections)
 
 	// Step 8: Infer container apps.

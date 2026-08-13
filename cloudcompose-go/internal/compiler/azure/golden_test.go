@@ -55,34 +55,18 @@ var azureGoldenExamples = []string{
 	"web-api",
 	"minio-s3",
 	"nginx-flask-mysql",
-	// Added 2026-08-08 (docs/azure-aws-parity-todo.md Priority 2):
-	// previously untestable on Azure since the features these examples
-	// exercise (database sizing, compose secrets:/platform config:)
-	// were silent no-ops.
-	//
-	// "scaling" was removed from this list the same day, after the size
-	// table was consolidated with shared.SizeMappings (Priority 4): its
-	// web service's `size: large` maps to 4 vCPU, which exceeds Azure
-	// Container Apps' Consumption tier limit and is now a real,
-	// intentional cloudcompose-side rejection -- see
+	// "scaling" is deliberately not in this list: its web service's
+	// `size: large` maps to 4 vCPU, which exceeds Azure Container Apps'
+	// Consumption tier limit -- a real, intentional cloudcompose-side
+	// rejection, not something to golden-test against. See
 	// TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap for the
-	// dedicated test covering this, since there's no valid Azure output
-	// for this example to golden-test against.
+	// dedicated test covering this.
 	"platform-config",
-	// "compute-tuning" was added 2026-08-08 (its container-level
-	// cpu/memory overrides worked correctly at the time), removed again
-	// once the exact-CPU/memory-pair validation was added the same
-	// week (its worker service's `size: medium` + an explicit
-	// `memory: 4096` override resolved to 1.0 vCPU + 4Gi -- not one of
-	// Consumption's fixed pairs, correctly rejected), then added back
-	// once more (2026-08-10) after the example's worker override was
-	// changed to a matched pair valid on both clouds (2.0 vCPU/4Gi,
-	// via an explicit `cpu:` override alongside `memory:` rather than
-	// overriding memory alone against a `size:` default) -- see
-	// docs/azure-aws-parity-todo.md's Priority 4 item for the full
-	// history, and TestResolveContainerResourcesAzure_AllowsMatchedExplicitOverrides
-	// for the dedicated test covering the pattern this example now
-	// demonstrates.
+	// "compute-tuning"'s worker service uses an explicit `cpu:` override
+	// alongside `memory:` (2.0 vCPU/4Gi) so both AWS and Azure land on a
+	// matched CPU/memory pair -- see
+	// TestResolveContainerResourcesAzure_AllowsMatchedExplicitOverrides
+	// for the dedicated test covering exact-pair validation.
 	"compute-tuning",
 }
 

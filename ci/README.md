@@ -96,68 +96,34 @@ Similar setup for the **Azure Acceptance** workflow (`.github/workflows/azure-ac
 
 ```bash
 # Create a resource group for CI resources (the Terraform state
-# storage account lives here -- see "Create the Terraform state
-# backend" below; not where acceptance runs deploy their own
-# infrastructure).
+# storage account lives here; not where acceptance runs deploy their
+# own infrastructure).
 az group create --name cloudcompose-acceptance --location eastus
 
 # Create a service principal for GitHub Actions. Scoped to the whole
-# subscription, not the resource group above: each acceptance run
-# creates its own resource group (ci<run-number>), a name that doesn't
-# exist until the run itself creates it, so a resource-group-scoped
-# role assignment created ahead of time could never cover it.
+# subscription: each acceptance run creates its own resource group
+# (ci<run-number>), so a resource-group-scoped role assignment can't
+# be created ahead of time.
 az ad sp create-for-rbac \
   --name "cloudcompose-acceptance-ci" \
   --role "Contributor" \
   --scopes /subscriptions/{subscription-id}
 
-# Contributor explicitly excludes Microsoft.Authorization/*/Write
-# (confirmed against Microsoft's own built-in role definition, "Grants
-# full access to manage all resources, but does not allow you to assign
-# roles in Azure RBAC") -- cloudcompose's own generated Terraform creates
-# an azurerm_role_assignment (Key Vault Secrets User, granting an app's
-# managed identity read access to its own secrets) inside every
-# deployed app's resource group, which Contributor alone can never
-# create, at any scope, no matter how long you wait. This is the actual
-# root cause behind docs/azure-todo.md's "Key Vault role-assignment RBAC
-# propagation" item -- misdiagnosed as pure propagation delay at first
-# because a separate, real propagation-delay bug (fixed with a
-# time_sleep) happened to reduce the symptom's visibility without
-# addressing this underlying permission gap.
-# "Role Based Access Control Administrator" grants exactly
-# Microsoft.Authorization/roleAssignments/{write,delete} + */read --
-# precisely what's needed, not the broader Microsoft.Authorization/*
-# "User Access Administrator" also grants (which additionally covers
-# managing custom role definitions, unneeded here).
+# Contributor cannot create role assignments (excludes
+# Microsoft.Authorization/*/Write). cloudcompose's own generated
+# Terraform creates an azurerm_role_assignment (Key Vault Secrets
+# User, for the app's managed identity) in every deployed app, which
+# needs this grant.
 az role assignment create --assignee <service-principal-object-id> \
   --role "Role Based Access Control Administrator" \
   --scope /subscriptions/{subscription-id}
 
-# Contributor's dataActions is empty (confirmed against the real role
-# definition: `az role definition list --name Contributor --query
-# "[0].permissions[0].dataActions"` returns `[]`) -- it grants
-# management-plane access only. Key Vault's RBAC-authorization-mode
-# data plane (getSecret, setSecret, ...) is gated exclusively by
-# dataActions, which neither Contributor nor Role Based Access Control
-# Administrator grants. Terraform itself -- not just the apps it
-# deploys -- creates azurerm_key_vault_secret resources (a data-plane
-# write) and, separately, has to read them back on refresh, so the CI
-# service principal needs its own permanent data-plane grant on Key
-# Vault, distinct from and in addition to the app-identity grant
-# (`azurerm_role_assignment.kv_role`) cloudcompose's own generated
-# Terraform creates for the deployed app's managed identity.
-#
-# This was misdiagnosed for a long time as pure RBAC propagation delay
-# (docs/azure-todo.md's Key Vault RBAC item): a time_sleep + retry loop
-# happened to reduce the failure rate on some runs (real propagation
-# delay does exist on top of this, per that doc), which masked that the
-# CI service principal was missing a permanent grant it would never
-# get no matter how long anything waited. Confirmed as the actual root
-# cause 2026-08-12 after four consecutive real-Azure failures survived
-# widening the retry budget rather than converging on a bound -- the
-# GetSecret 403 in every failure names the CI service principal itself
-# as the denied caller (`appid=<AZURE_CLIENT_ID>`), not the app's own
-# managed identity, which `kv_role` already covers correctly.
+# Contributor's dataActions is empty -- it grants management-plane
+# access only. Key Vault's RBAC data plane (getSecret, setSecret) is
+# gated by dataActions. Terraform itself creates azurerm_key_vault_secret
+# resources and reads them back on refresh, so the CI service
+# principal needs its own data-plane grant, separate from the
+# app-identity grant above.
 az role assignment create --assignee <service-principal-object-id> \
   --role "Key Vault Secrets Officer" \
   --scope /subscriptions/{subscription-id}

@@ -160,7 +160,7 @@ func TestNormalizeExplicitMinScaleZeroIsPreserved(t *testing.T) {
 	// >= 1). A redundant defaulting pass in Normalize used to treat any
 	// zero MinScale as "unset" and silently reset it to 1, discarding an
 	// explicit min_scale: 0 for any service that had an x-cloud block
-	// at all (confirmed against a real x-cloud block 2026-08-06).
+	// at all.
 	app := &models.ComposeApplication{
 		Services: map[string]models.ComposeService{
 			"web": {
@@ -219,9 +219,7 @@ func TestNormalizeMissingImageFallsBackToPlaceholder(t *testing.T) {
 func TestNormalizeServiceOrderIsDeterministic(t *testing.T) {
 	t.Parallel()
 	// Go map iteration order is randomized per run; Normalize must not leak
-	// that into its own output. Confirmed nondeterministic before this test
-	// existed: five runs of the equivalent compose file through the real
-	// CLI produced five different service orderings (2026-08-06).
+	// that into its own output.
 	names := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"}
 	services := make(map[string]models.ComposeService, len(names))
 	for _, n := range names {

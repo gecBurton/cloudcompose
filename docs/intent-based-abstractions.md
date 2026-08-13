@@ -2,14 +2,6 @@
 
 The docker-compose.yml captures **application intent**. The compiler translates intent to cloud-specific implementation. Engineers write the same compose file regardless of target cloud.
 
-> This is a live design principle, not a historical doc — it still
-> accurately describes how `internal/compiler/{aws,azure,gcp}` work today.
-> An earlier version of this file proposed a more elaborate intent syntax
-> (`x-cloud.capacity.scale_on`, `x-cloud.access`) that was never
-> built; the examples below have been corrected to the `x-cloud` keys
-> that actually exist (`internal/models/compose.go`), and the Python
-> inference snippets have been replaced with the real Go functions.
-
 ## Guiding Principle
 
 **Compose file declares:** "I need this to handle 1000 concurrent users"

@@ -25,10 +25,7 @@ func gcpTestEnv() models.GcpEnvironment {
 // block -- a lighter bar than AWS/Azure's byte-identical golden
 // comparisons, deliberately: GCP has no golden examples and essentially
 // no dedicated test suite to check against in the first place, so this
-// is a smoke test, not a coverage claim. These same examples' output was
-// checked manually for correctness during development (2026-08-06), but
-// not preserved as a golden-file test the way AWS/Azure's were, since no
-// committed golden files exist for GCP to check future changes against.
+// is a smoke test, not a coverage claim.
 func TestInferGcp_RealExamplesProduceValidJSON(t *testing.T) {
 	examples := []string{"hello", "doctor", "flask-redis", "minio-s3", "production-stack", "nginx-flask-mysql"}
 	for _, name := range examples {

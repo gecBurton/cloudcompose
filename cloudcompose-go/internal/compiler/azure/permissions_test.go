@@ -111,13 +111,10 @@ func TestGrantPlatformConfigPermissions_NoConfigIsNoop(t *testing.T) {
 
 func TestGrantManagedServicePermissions_DoesNotDuplicateKeyVaultRoleAssignment(t *testing.T) {
 	t.Parallel()
-	// Regression test for a real bug found while implementing Priority 2
-	// (2026-08-08): an app with both a database and a cache relationship
-	// used to get two RoleAssignment resources granting the identical
-	// (principal_id, role_definition_name, scope) triple, which Azure's
-	// ARM API rejects as a duplicate. Confirmed via the doctor/
-	// production-stack golden fixtures, which had exactly this before
-	// the fix.
+	// Regression test: an app with both a database and a cache
+	// relationship used to get two RoleAssignment resources granting
+	// the identical (principal_id, role_definition_name, scope) triple,
+	// which Azure's ARM API rejects as a duplicate.
 	app := &models.Application{
 		Name: "myapp",
 		Relationships: []models.Relationship{
@@ -154,7 +151,7 @@ func TestGrantManagedServicePermissions_DoesNotDuplicateKeyVaultRoleAssignment(t
 // Tests for docs/azure-todo.md's "Key Vault role-assignment RBAC
 // propagation" item: azurerm_role_assignment.kv_role reporting created
 // does not mean the grant has actually propagated on Azure's side
-// (confirmed against a real francecentral run, 2026-08-10) --
+// --
 // grantKeyVaultAccessOnce now also creates a time_sleep every
 // azurerm_key_vault_secret depends on.
 

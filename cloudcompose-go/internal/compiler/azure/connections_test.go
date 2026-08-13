@@ -338,11 +338,9 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 
 // TestConnectionOrderForAzure_DatabasesThenCachesThenStorage pins that
 // connections are ordered databases-then-caches-then-storage (each group
-// in service declaration order) -- caught as a real requirement against
-// the doctor and production-stack golden files (2026-08-06), where
-// alphabetically sorting connection keys put a URL env var in the wrong
-// relative position whenever a service referenced more than one
-// connection.
+// in service declaration order): alphabetically sorting connection keys
+// puts a URL env var in the wrong relative position whenever a service
+// references more than one connection.
 func TestConnectionOrderForAzure_DatabasesThenCachesThenStorage(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{

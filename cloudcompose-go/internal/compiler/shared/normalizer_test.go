@@ -110,7 +110,7 @@ func TestNormalizeAllExamples(t *testing.T) {
 // arrive as compose-go's own types.ServiceVolumeConfig instead — matching
 // neither case, so named-volume rejection silently did nothing against any
 // real file while every hand-built-struct test still passed (confirmed
-// against real compose files, both short- and long-form syntax, 2026-08-06).
+// against real compose files, both short- and long-form syntax).
 // This test would have caught that: it is the only one in this package that
 // goes through ParseCompose for a volume-bearing file at all.
 func TestParseAndNormalizeRejectsNamedVolumesFromRealComposeFiles(t *testing.T) {

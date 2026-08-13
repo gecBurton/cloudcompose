@@ -325,6 +325,19 @@ full, actively-maintained tracker of what's done and what's still open
 
 ### Install
 
+Download a prebuilt binary from the
+[Releases page](https://github.com/gecBurton/cloudcompose/releases) —
+archives are published for Linux, macOS, and Windows (amd64 and arm64).
+For example, on macOS (Apple Silicon):
+
+```bash
+curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloudcompose_<version>_darwin_arm64.tar.gz
+tar -xzf cloudcompose_<version>_darwin_arm64.tar.gz
+chmod +x cloudcompose
+```
+
+Or build from source:
+
 ```bash
 git clone https://github.com/gecBurton/cloudcompose.git
 cd cloudcompose/cloudcompose-go

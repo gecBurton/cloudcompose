@@ -1,0 +1,44 @@
+version: 2
+
+# The Go module lives in cloudcompose-go/, not the repo root -- set per
+# build below (top-level `dir` is a GoReleaser Pro-only monorepo
+# feature, not available in OSS GoReleaser).
+
+builds:
+  - id: cloudcompose
+    dir: cloudcompose-go
+    main: ./cmd/cloudcompose
+    binary: cloudcompose
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.rootVersion={{ .Version }}
+
+archives:
+  - id: cloudcompose
+    ids:
+      - cloudcompose
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: gecBurton
+    name: cloudcompose

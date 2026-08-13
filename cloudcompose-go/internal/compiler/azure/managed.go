@@ -81,9 +81,7 @@ const (
 
 // privateEndpointRedisAzure attaches a private endpoint to redis (and
 // wires the corresponding private DNS zone/link + sets
-// public_network_access to "Disabled") when env.RedisSubnetID is set,
-// added 2026-08-08 (see docs/azure-aws-parity-todo.md's Priority 3
-// Redis/Blob private networking item).
+// public_network_access to "Disabled") when env.RedisSubnetID is set.
 //
 // Unlike privateNetworkingAzure above (Flexible Server takes
 // delegated_subnet_id/private_dns_zone_id directly on the server
@@ -158,13 +156,12 @@ func privateEndpointRedisAzure(
 // including postgres, postgresql, pgvector, timescale, etc. -- defaults
 // to PostgreSQL.
 //
-// MariaDB detection added 2026-08-08 (see
-// docs/azure-aws-parity-todo.md's Priority 2 item 4): previously only
-// checked for "mysql", so a mariadb image was silently misclassified as
-// PostgreSQL -- AWS's inferDatabase (aws/managed.go) already detected
-// both. Azure has no dedicated MariaDB Flexible Server product, so a
-// MariaDB image is still provisioned onto the MySQL Flexible Server
-// (the closest wire-compatible managed offering Azure has), the same way
+// Checking for "mariadb" too (not just "mysql") matches AWS's own
+// inferDatabase (aws/managed.go), which already detects both -- without
+// it, a mariadb image would be silently misclassified as PostgreSQL.
+// Azure has no dedicated MariaDB Flexible Server product, so a MariaDB
+// image is still provisioned onto the MySQL Flexible Server (the
+// closest wire-compatible managed offering Azure has), the same way
 // AWS's own "mariadb" branch still creates an RDS instance with
 // engine="mariadb" rather than a distinct product.
 func isMySQLImage(image string) bool {

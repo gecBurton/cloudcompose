@@ -84,12 +84,12 @@ func TestNamedVolumeOnSubstitutedServiceIsAccepted(t *testing.T) {
 func TestLocalOnlyMountsAreIgnored(t *testing.T) {
 	t.Parallel()
 	// Shapes below match what compose-go's loader actually produces for
-	// each compose-file syntax (confirmed against a real compose file
-	// 2026-08-06) — compose-go normalizes every form, short or long, bind
-	// or anonymous volume, into this one struct before parser.go ever sees
-	// it. There is no code path where a bare "./local:/data" string form
-	// reaches ComposeService.Volumes in production, so testing against one
-	// would not have caught the bug this file's history records.
+	// each compose-file syntax -- compose-go normalizes every form,
+	// short or long, bind or anonymous volume, into this one struct
+	// before parser.go ever sees it. There is no code path where a bare
+	// "./local:/data" string form reaches ComposeService.Volumes in
+	// production, so testing against one would not have caught the bug
+	// this file's history records.
 	cases := []struct {
 		name   string
 		volume models.VolumeDefinition

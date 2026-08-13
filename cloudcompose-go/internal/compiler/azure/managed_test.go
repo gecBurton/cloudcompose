@@ -367,7 +367,7 @@ func TestInferDatabasesAzure_SharedServerSizedForLargestConsumer(t *testing.T) {
 }
 
 // Tests for docs/azure-aws-parity-todo.md's Priority 3 Redis private
-// networking item (added 2026-08-08).
+// networking item.
 
 func TestInferCachesAzure_NoPrivateEndpointWithoutRedisSubnetID(t *testing.T) {
 	t.Parallel()
@@ -468,7 +468,7 @@ func TestInferCachesAzure_SharedPrivateDnsZoneForMultipleCaches(t *testing.T) {
 }
 
 // Tests for docs/azure-aws-parity-todo.md's Priority 4 size-ceiling
-// item (added 2026-08-08).
+// item.
 
 // Tests for docs/azure-aws-parity-todo.md's Priority 4 backup/HA item:
 // AzureEnvironment.HighAvailabilityEnabled/BackupRetentionDays wired

@@ -302,10 +302,8 @@ func TestEcsTasksAssumeRolePolicy_HasExpectedStatement(t *testing.T) {
 
 // TestEcsService_LoadBalancerDefaultsToEmptyList checks that a service with
 // no ingress still emits "load_balancer": [] rather than omitting the key
-// -- caught as a real divergence against the nginx-flask-mysql and
-// compute-tuning golden files (2026-08-06), both of which have no public
-// ingress and both of which show "load_balancer": [] in their expected
-// output.
+// -- golden files for services with no public ingress show
+// "load_balancer": [] in their expected output.
 func TestEcsService_LoadBalancerDefaultsToEmptyList(t *testing.T) {
 	t.Parallel()
 	service := &models.Service{Name: "backend", Capability: models.CapabilityContainer, MinScale: 1, MaxScale: 1}
@@ -331,9 +329,8 @@ func TestEcsService_LoadBalancerDefaultsToEmptyList(t *testing.T) {
 // TestHandleAutoscaling_DefaultsToCpuAndMemoryWhenUnspecified checks that a
 // scaling service with no explicit auto_scaling block still gets both a CPU
 // and a Memory policy from defaultAutoScalingConfig (not an empty
-// configuration) -- caught as a real divergence, not a theoretical one,
-// against the production-stack golden file, which relies on exactly this
-// default (2026-08-06).
+// configuration) -- the production-stack golden file relies on exactly
+// this default.
 func TestHandleAutoscaling_DefaultsToCpuAndMemoryWhenUnspecified(t *testing.T) {
 	t.Parallel()
 	service := &models.Service{Name: "web", MinScale: 2, MaxScale: 10}

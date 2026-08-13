@@ -245,12 +245,11 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 
 	// Go map iteration order is randomized per the language spec, so
 	// iterating composeApp.Services directly would make Normalize's own
-	// output order nondeterministic across runs on identical input —
-	// confirmed against a real multi-service compose file 2026-08-06: five
-	// runs produced five different service orderings. Determinism is a
-	// stated project invariant (output must be byte-identical for the same
-	// input), so the iteration order has to be fixed independently of
-	// whatever order the map happens to hand keys back in.
+	// output order nondeterministic across runs on identical input.
+	// Determinism is a stated project invariant (output must be
+	// byte-identical for the same input), so the iteration order has to
+	// be fixed independently of whatever order the map happens to hand
+	// keys back in.
 	serviceNames := make([]string, 0, len(composeApp.Services))
 	for serviceName := range composeApp.Services {
 		serviceNames = append(serviceNames, serviceName)

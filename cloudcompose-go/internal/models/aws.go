@@ -68,10 +68,9 @@ type EcsService struct {
 	NetworkConfiguration       map[string]any `json:"network_configuration"`
 	ServiceRegistries          map[string]any `json:"service_registries,omitempty"`
 	// No omitempty: the output always includes "load_balancer": [] for a
-	// service with no ingress -- confirmed by diffing real output for the
-	// nginx-flask-mysql and compute-tuning examples (2026-08-06), both of
-	// which have no public ingress and both of which the golden files
-	// show "load_balancer": [] for.
+	// service with no ingress -- confirmed by diffing real output for
+	// examples with no public ingress, whose golden files show
+	// "load_balancer": [] rather than an absent key.
 	LoadBalancer []map[string]any    `json:"load_balancer"`
 	Lifecycle    *TerraformLifecycle `json:"lifecycle,omitempty"`
 	Tags         map[string]string   `json:"tags,omitempty"`

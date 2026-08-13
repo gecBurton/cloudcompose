@@ -30,12 +30,9 @@ import (
 // remembered. See docs/authored-environment-config.md for the full
 // design and examples/README.md for a real, runnable walkthrough.
 //
-// This is a deliberate simplification (2026-08-09): earlier revisions
-// of this command accepted ~14 decision flags that silently overrode
-// the file field-by-field when both were given. That merge logic added
-// real complexity (a three-way precedence -- flag, file, hardcoded
-// default -- tracked via cobra's Changed(), invisible unless you read
-// the source) for a command whose entire point is to be the one
+// This is a deliberate simplification: no decision flags means no
+// three-way precedence (flag, file, hardcoded default) to keep
+// straight, for a command whose entire point is to be the one
 // reviewable, authored source of truth for an environment, the same way
 // docker-compose.yml is for an app: nobody expects `docker compose`
 // itself to take per-field override flags for compose.yml, and there's

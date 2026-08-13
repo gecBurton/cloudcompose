@@ -39,12 +39,11 @@ var awsGoldenExamples = []string{
 // things stringifying identically that a structural diff would still
 // catch as different types).
 //
-// Moved from the bare examples/<name>/expected/main.tf.json to
-// expected/aws/main.tf.json on 2026-08-09, for symmetry with Azure/GCP's
-// own expected/{azure,gcp}/main.tf.json subfolders: AWS being first
-// meant it originally got the bare path with no cloud name at all, which
-// read as though AWS were somehow the default/canonical cloud rather
-// than just the first one built.
+// Golden fixtures live at expected/aws/main.tf.json, for symmetry with
+// Azure/GCP's own expected/{azure,gcp}/main.tf.json subfolders -- not a
+// bare examples/<name>/expected/main.tf.json, which would read as though
+// AWS were somehow the default/canonical cloud rather than just the
+// first one built.
 func TestInferAWS_GoldenExamplesByteIdentical(t *testing.T) {
 	for _, name := range awsGoldenExamples {
 		name := name

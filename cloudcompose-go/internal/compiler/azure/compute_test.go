@@ -269,12 +269,6 @@ func TestInferContainerApps_RequestsPerTargetMetricStillUsesHttpScaleRule(t *tes
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 3 Redis private
-// networking item (added 2026-08-08).
-
-// Tests for docs/azure-aws-parity-todo.md's Priority 4 size-ceiling
-// item (added 2026-08-08).
-
 func TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap(t *testing.T) {
 	t.Parallel()
 	// "large" now derives from shared.SizeMappings (4096 CPU units =
@@ -336,10 +330,8 @@ func TestGetMemoryGBAzure_RejectsExplicitMemoryAboveConsumptionCap(t *testing.T)
 
 func TestGetCPUCoresAzure_MediumMatchesAwsSizeMappings(t *testing.T) {
 	t.Parallel()
-	// Regression test for the real, already-drifted duplicate found
-	// while consolidating the size table (2026-08-08): Azure's own
-	// table previously defined medium as 0.5 vCPU where AWS's medium
-	// (shared.SizeMappings) is 1.0 vCPU.
+	// Regression test: Azure's own table previously defined medium as
+	// 0.5 vCPU where AWS's medium (shared.SizeMappings) is 1.0 vCPU.
 	service := &models.Service{Name: "web", Size: models.ServiceSizeMedium}
 	cores, err := getCPUCoresAzure(service)
 	if err != nil {

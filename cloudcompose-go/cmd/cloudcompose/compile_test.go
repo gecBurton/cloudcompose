@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -41,6 +42,67 @@ func TestEnvironmentTarget_RejectsUnsupportedType(t *testing.T) {
 	_, err := environmentTarget("not an environment")
 	if err == nil {
 		t.Fatal("expected an error for an unsupported type")
+	}
+}
+
+func TestDemoEnvironment(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		cloud string
+		want  string
+	}{
+		{"aws", "aws"},
+		{"azure", "azure"},
+		{"gcp", "gcp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.cloud, func(t *testing.T) {
+			env, err := demoEnvironment(tc.cloud)
+			if err != nil {
+				t.Fatalf("demoEnvironment(%q) failed: %v", tc.cloud, err)
+			}
+			got, err := environmentTarget(env)
+			if err != nil {
+				t.Fatalf("environmentTarget failed: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDemoEnvironment_RejectsUnknownCloud(t *testing.T) {
+	t.Parallel()
+	_, err := demoEnvironment("nonsense")
+	if err == nil {
+		t.Fatal("expected an error for an unrecognised cloud name")
+	}
+}
+
+// TestDemoEnvironment_CompilesRealExample is a light integration check
+// that every demo environment (not just AWS's, per
+// TestCompileTerraform_DispatchesToAWS above) reaches its full
+// infer/generate pipeline and produces valid Terraform JSON, the same
+// way --demo is actually used from the CLI.
+func TestDemoEnvironment_CompilesRealExample(t *testing.T) {
+	t.Parallel()
+	for _, cloud := range []string{"aws", "azure", "gcp"} {
+		cloud := cloud
+		t.Run(cloud, func(t *testing.T) {
+			t.Parallel()
+			env, err := demoEnvironment(cloud)
+			if err != nil {
+				t.Fatalf("demoEnvironment(%q) failed: %v", cloud, err)
+			}
+			out, err := compileTerraform("../../../examples/hello/compose.yml", env, "hello")
+			if err != nil {
+				t.Fatalf("compileTerraform failed: %v", err)
+			}
+			if out == "" {
+				t.Error("expected non-empty output")
+			}
+		})
 	}
 }
 
@@ -145,5 +207,82 @@ func TestCopyDockerBuildContexts_NoDockerImagesIsANoOp(t *testing.T) {
 	outputDir := t.TempDir()
 	if err := copyDockerBuildContexts(`{"resource": {}}`, outputDir, outputDir); err != nil {
 		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+// TestMain_RequiresEnvOrDemo confirms --env and --demo really are the
+// only two ways to supply an environment: neither given is an error, not
+// a silent default (see runMain's own "one way to configure, not two"
+// comment, mirroring init.go's).
+func TestMain_RequiresEnvOrDemo(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	cmd := exec.Command(bin, "main", "-f", "../../../examples/hello/compose.yml", "-o", t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit when neither --env nor --demo is given, got success:\n%s", out)
+	}
+	if !contains(string(out), "--env or --demo is required") {
+		t.Errorf("expected the error to name both flags, got:\n%s", out)
+	}
+}
+
+// TestMain_RejectsBothEnvAndDemo confirms --env and --demo are mutually
+// exclusive, not silently resolved by preferring one.
+func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	cmd := exec.Command(bin, "main",
+		"-f", "../../../examples/hello/compose.yml",
+		"-e", "../../../examples/hello",
+		"-d", "aws",
+		"-o", t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit when both --env and --demo are given, got success:\n%s", out)
+	}
+	if !contains(string(out), "mutually exclusive") {
+		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)
+	}
+}
+
+// TestMain_DemoRejectsUnknownCloud confirms --demo validates its argument
+// against the known cloud set rather than passing an unrecognised value
+// through to LoadEnvironment-shaped code.
+func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	cmd := exec.Command(bin, "main", "-f", "../../../examples/hello/compose.yml", "-d", "nonsense", "-o", t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit for an unrecognised --demo cloud, got success:\n%s", out)
+	}
+	if !contains(string(out), "aws, azure, gcp") {
+		t.Errorf("expected the error to list the valid clouds, got:\n%s", out)
+	}
+}
+
+// TestMain_DemoWritesTerraformWithNoEnvironment is the real end-to-end
+// path: --demo alone, no --env, no environment directory anywhere,
+// should still produce a compilable main.tf.json plus the demo-mode
+// warning banner on stderr.
+func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	outDir := t.TempDir()
+
+	cmd := exec.Command(bin, "main", "-f", "../../../examples/hello/compose.yml", "-d", "aws", "-o", outDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose main --demo aws failed: %v\n%s", err, out)
+	}
+	if !contains(string(out), "DEMO MODE") {
+		t.Errorf("expected a demo-mode warning, got:\n%s", out)
+	}
+	if _, statErr := os.Stat(filepath.Join(outDir, "main.tf.json")); statErr != nil {
+		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
 	}
 }

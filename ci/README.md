@@ -132,6 +132,35 @@ az ad sp create-for-rbac \
 az role assignment create --assignee <service-principal-object-id> \
   --role "Role Based Access Control Administrator" \
   --scope /subscriptions/{subscription-id}
+
+# Contributor's dataActions is empty (confirmed against the real role
+# definition: `az role definition list --name Contributor --query
+# "[0].permissions[0].dataActions"` returns `[]`) -- it grants
+# management-plane access only. Key Vault's RBAC-authorization-mode
+# data plane (getSecret, setSecret, ...) is gated exclusively by
+# dataActions, which neither Contributor nor Role Based Access Control
+# Administrator grants. Terraform itself -- not just the apps it
+# deploys -- creates azurerm_key_vault_secret resources (a data-plane
+# write) and, separately, has to read them back on refresh, so the CI
+# service principal needs its own permanent data-plane grant on Key
+# Vault, distinct from and in addition to the app-identity grant
+# (`azurerm_role_assignment.kv_role`) cloudcompose's own generated
+# Terraform creates for the deployed app's managed identity.
+#
+# This was misdiagnosed for a long time as pure RBAC propagation delay
+# (docs/azure-todo.md's Key Vault RBAC item): a time_sleep + retry loop
+# happened to reduce the failure rate on some runs (real propagation
+# delay does exist on top of this, per that doc), which masked that the
+# CI service principal was missing a permanent grant it would never
+# get no matter how long anything waited. Confirmed as the actual root
+# cause 2026-08-12 after four consecutive real-Azure failures survived
+# widening the retry budget rather than converging on a bound -- the
+# GetSecret 403 in every failure names the CI service principal itself
+# as the denied caller (`appid=<AZURE_CLIENT_ID>`), not the app's own
+# managed identity, which `kv_role` already covers correctly.
+az role assignment create --assignee <service-principal-object-id> \
+  --role "Key Vault Secrets Officer" \
+  --scope /subscriptions/{subscription-id}
 ```
 
 ## Create the Terraform state backend

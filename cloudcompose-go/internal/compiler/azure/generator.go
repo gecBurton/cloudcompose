@@ -45,6 +45,21 @@ func azureCdnFQDN(resources *models.AzureResources) *string {
 	return &fqdn
 }
 
+// azureKeyVaultName is the Terraform reference to the Key Vault's own
+// `name` attribute, published so callers outside Terraform (the smoke
+// test's Key Vault RBAC propagation poll, docs/azure-todo.md) can query
+// the vault's data plane directly (`az keyvault secret list`) without
+// having to re-derive KeyVaultName's own naming scheme in bash. Only
+// present when a Key Vault actually exists ("main" is the one resource
+// key azure/infer.go ever populates, InferAzure.go:159).
+func azureKeyVaultName(resources *models.AzureResources) *string {
+	if _, ok := resources.KeyVault["main"]; !ok {
+		return nil
+	}
+	name := "${azurerm_key_vault.main.name}"
+	return &name
+}
+
 // sortedStringKeysAzureApp returns ContainerApp map keys sorted, so
 // azureIngressFQDN's "first" match is deterministic rather than dependent
 // on Go's randomized map iteration order.
@@ -138,6 +153,22 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 		manifest.Output["cdn_fqdn"] = map[string]any{
 			"description": "Public hostname of the Front Door endpoint fronting the CDN-enabled service.",
 			"value":       *cdnFqdn,
+		}
+	}
+
+	// Only present when a Key Vault exists (azureKeyVaultName returns nil
+	// otherwise). Lets callers outside Terraform poll the vault's own
+	// data plane directly (docs/azure-todo.md's Key Vault RBAC
+	// propagation item) instead of re-deriving KeyVaultName's naming
+	// scheme in bash, or discovering propagation delay only via a full
+	// `terraform apply` failing and retrying.
+	if kvName := azureKeyVaultName(resources); kvName != nil {
+		if manifest.Output == nil {
+			manifest.Output = map[string]any{}
+		}
+		manifest.Output["key_vault_name"] = map[string]any{
+			"description": "Name of the Key Vault holding managed-service/secrets/config credentials, if any.",
+			"value":       *kvName,
 		}
 	}
 

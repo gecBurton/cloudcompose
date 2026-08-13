@@ -47,6 +47,14 @@ EXPECT="${EXPECT:-Server name}"                          # string expected in HT
 POLL_TIMEOUT="${POLL_TIMEOUT:-300}"                      # seconds to wait for a healthy app
                                                          # (AWS: ALB default health check needs
                                                          # 5×30s + Fargate cold start)
+FRONTDOOR_POLL_TIMEOUT="${FRONTDOOR_POLL_TIMEOUT:-900}"  # seconds to wait for Front Door's own
+                                                         # edge/DNS propagation (Azure only, only
+                                                         # when a service has cdn:true) -- kept
+                                                         # separate from POLL_TIMEOUT since it's a
+                                                         # genuinely different, longer-tailed delay
+                                                         # (Microsoft's own guidance: "a few minutes
+                                                         # up to 10"), confirmed against a real run
+                                                         # 2026-08-12 that exceeded 480s.
 KEEP="${KEEP:-0}"                                        # 1 = do not destroy afterwards
 
 # Region to deploy into. AWS default matches examples/hello/environment.yaml
@@ -366,35 +374,53 @@ if [[ "$PROVIDER" == "azure" ]]; then
       log "Front Door origin race hit (known azurerm provider bug #31647) — retrying apply…"
       eval "$TF apply -auto-approve"
     elif grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
-      # azurerm_role_assignment.kv_role (Key Vault Secrets User, granting
-      # the app's managed identity read access to its own secrets) can
-      # report "created" before the grant has actually propagated on
-      # Azure's side — docs/azure-todo.md's Key Vault RBAC item. A
-      # time_sleep after the role assignment (models.NewKeyVaultSecret's
-      # own DependsOn) already covers the common case, but confirmed
-      # against two real runs (2026-08-11/12) that a single 90s sleep and
-      # a single ~1-minute-later retry are both sometimes not enough:
-      # propagation has been observed taking 5-6+ minutes, closer to
-      # Microsoft's own documented worst case of "up to 10 minutes" than
-      # to the common case. A fixed loop (up to 5 attempts, 60s apart —
-      # ~5 more minutes on top of the 90s sleep, covering that observed
-      # worst case) rather than one retry: unlike the Front Door bug
-      # above (deterministic, always fixed by exactly one more apply),
-      # this is genuine variable-duration propagation, so "try again
-      # once" isn't the right shape of fix for it.
-      attempt=1
-      max_attempts=5
-      until eval "$TF apply -auto-approve" 2>&1 | tee /tmp/tf-apply-app.log; do
-        if ! grep -q "ForbiddenByRbac" /tmp/tf-apply-app.log; then
-          fail "terraform apply failed for the app stack (not the Key Vault RBAC propagation issue)"
+      # Root cause (found 2026-08-12, after four consecutive real-Azure
+      # failures survived widening a blind apply-retry loop rather than
+      # converging on a bound): the GetSecret 403 in every failure names
+      # the CI service principal itself as the denied caller
+      # (`appid=<AZURE_CLIENT_ID>`), not the app's own managed identity —
+      # `azurerm_role_assignment.kv_role` (Key Vault Secrets User) only
+      # ever grants the *app's* identity read access; it was never meant
+      # to, and never did, cover the identity actually running
+      # `terraform apply` (Terraform itself creates azurerm_key_vault_secret
+      # resources, a data-plane write/read, as the CI service principal).
+      # Contributor's own `dataActions` is empty (confirmed against the
+      # real role definition) -- it grants management-plane access only,
+      # so the CI service principal had no path to Key Vault's data plane
+      # at all, permanently, no matter how long anything waited. Fixed by
+      # granting "Key Vault Secrets Officer" to the CI service principal
+      # itself (ci/README.md's Azure setup section) -- a one-time,
+      # subscription-level setup step, not something this script can grant
+      # itself at runtime.
+      #
+      # This was misdiagnosed for a long time as pure RBAC propagation
+      # delay (docs/azure-todo.md's Key Vault RBAC item): real propagation
+      # delay for azurerm_role_assignment.kv_role does also exist on top of
+      # this (Microsoft's own docs cite up to 10 minutes), which is why a
+      # `time_sleep` + retry genuinely helped some runs without fully
+      # fixing the underlying gap. The polling loop below stays as a
+      # legitimate defense against *that* genuine, bounded propagation
+      # delay -- now polling the Key Vault's own data plane directly
+      # rather than retrying a full `apply` on every attempt, which is
+      # cheap enough to run every 15s rather than 60-90s, and decoupled
+      # from `apply`'s own replan/refresh cost entirely.
+      KV_NAME="$(eval "$TF output -raw key_vault_name" 2>/dev/null || true)"
+      [[ -n "$KV_NAME" ]] || fail "terraform apply failed for the app stack with ForbiddenByRbac, but no key_vault_name output to poll against"
+      log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md, ci/README.md) — polling $KV_NAME's data plane directly (up to 600s) instead of blind apply retries…"
+      kv_deadline=$(( SECONDS + 600 ))
+      kv_visible=0
+      while (( SECONDS < kv_deadline )); do
+        if az keyvault secret list --vault-name "$KV_NAME" --auth-mode login -o none 2>/dev/null; then
+          kv_visible=1
+          break
         fi
-        if (( attempt >= max_attempts )); then
-          fail "terraform apply failed for the app stack: Key Vault RBAC propagation still not visible after $max_attempts attempts"
-        fi
-        attempt=$(( attempt + 1 ))
-        log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md), attempt $attempt/$max_attempts — waiting 60s before retrying…"
-        sleep 60
+        printf '.'
+        sleep 15
       done
+      echo
+      (( kv_visible == 1 )) || fail "Key Vault RBAC propagation still not visible on $KV_NAME's own data plane after 600s -- if this is a fresh CI service principal, check it has 'Key Vault Secrets Officer' granted per ci/README.md, not just propagation delay"
+      log "Key Vault RBAC now visible on $KV_NAME's data plane — retrying apply once…"
+      eval "$TF apply -auto-approve"
     else
       fail "terraform apply failed for the app stack"
     fi
@@ -467,12 +493,23 @@ if [[ -n "${CDN_FQDN:-}" ]]; then
   # Front Door's own DNS + edge propagation is a separate, additional delay
   # on top of the Container App's own cold start already waited out above,
   # so this gets its own timeout rather than reusing whatever budget the
-  # first poll had left.
-  if ! poll_until_served "$cdn_url" "$POLL_TIMEOUT"; then
+  # first poll had left. Confirmed against a real run (2026-08-12,
+  # production-stack/francecentral, after fixing the unrelated Key Vault
+  # RBAC data-plane permission gap that had blocked every previous attempt
+  # at reaching this step at all): the route itself created successfully
+  # and the Container App's own FQDN served correctly, but Front Door's
+  # own endpoint still returned "Page not found" (Front Door's own error
+  # page, not a timeout/connection error) after the full 480s POLL_TIMEOUT
+  # — global anycast edge propagation for a newly created route can
+  # genuinely take longer than that. FRONTDOOR_POLL_TIMEOUT defaults to
+  # 900s (Microsoft's own guidance for Front Door propagation is "a few
+  # minutes up to 10"), independent of POLL_TIMEOUT so a slow-to-serve
+  # Container App doesn't need every other example to also wait longer.
+  if ! poll_until_served "$cdn_url" "$FRONTDOOR_POLL_TIMEOUT"; then
     echo
     echo "----- last response (for diagnosis) -----"
     echo "${body:-<no response>}" | head -20
-    fail "timed out after ${POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
+    fail "timed out after ${FRONTDOOR_POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
   fi
   log "Front Door is live — response contains '$EXPECT' through the CDN endpoint too. 🎉"
 fi

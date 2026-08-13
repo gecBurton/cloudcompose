@@ -97,6 +97,30 @@ the golden fixture regeneration are both clean, but the smoke test
 itself (the actual end-to-end proof this item exists to get) needs a
 real `production-stack` deployment to confirm.
 
+**First real attempt at this verification (2026-08-12) blocked by an
+unrelated, pre-existing gap, then genuinely progressed once fixed.**
+Four consecutive `production-stack`/`francecentral` runs failed before
+ever reaching Front Door at all — see item 3 below for the full
+investigation; in short, the CI service principal had no permanent
+Key Vault data-plane grant, misdiagnosed for a long time as pure RBAC
+propagation delay. Once that was fixed (granting the CI service
+principal "Key Vault Secrets Officer", `ci/README.md`), the next real
+run got all the way through: the app deployed, the Container App's own
+FQDN served correctly (`Welcome to nginx`), and it reached the Front
+Door poll for the first time ever. That poll itself then failed —
+Front Door's endpoint returned its own "Page not found" error page
+(not a connection error/timeout) after the full 480s `POLL_TIMEOUT`,
+even though `azurerm_cdn_frontdoor_route.web` had created successfully
+with no errors. Not investigated as a config bug before retrying:
+Microsoft's own guidance for Front Door edge/DNS propagation after a
+new route is created is "a few minutes up to 10", comfortably longer
+than the 480s waited. Gave the Front Door poll its own
+`FRONTDOOR_POLL_TIMEOUT` (default 900s), independent of `POLL_TIMEOUT`,
+rather than just raising the shared budget for every example. Re-run
+with the longer timeout not yet completed — that's the actual
+remaining step to close this item, now that the real blocker (item 3)
+is out of the way.
+
 ### 2. Smaller things
 
 
@@ -288,6 +312,106 @@ access to: Azure's own Activity Log / Entra sign-in log detail for the
 specific role assignment, or a support case. Left open rather than
 thrown more wait time at without evidence that would actually help —
 the next step is diagnostic access, not a longer sleep.
+
+**Three more consecutive failures (2026-08-12, same day, verifying the
+Front Door `cdn_fqdn` change above).** Re-ran `production-stack` in
+`francecentral` three times in a row specifically to verify the Front
+Door traffic-polling change; all three failed identically, exhausting
+the 5-attempt/60s-apart retry loop every time (~8 minutes of retries on
+top of the 90s sleep). Checked what diagnostic access actually was
+available before just retrying again: `az role assignment list
+--assignee <ci-sp-object-id> --all` confirms the CI service principal
+still holds `Role Based Access Control Administrator` at subscription
+scope (the Priority-1 permission fix is intact, not regressed), and
+`az monitor activity-log list` confirms the control-plane
+`Microsoft.Authorization/roleAssignments/write` for `kv_role` itself
+completed in seconds each time (16:08:33 → 16:08:35 in the third run) —
+so the write path is not the bottleneck. The first `GetSecret`
+`ForbiddenByRbac` in that same run landed at 16:14:06, ~5.5 minutes
+after the role assignment write succeeded and ~3.5 minutes after the
+90s `time_sleep` finished; the loop's final failure landed at 16:23:13,
+~14.5 minutes after the write. Confirms the delay lives in Key Vault's
+own data-plane RBAC cache refresh, not anywhere Activity Log has
+visibility into (it only shows the control-plane write, not when Key
+Vault's cache actually picks it up) — the same conclusion the previous
+session reached, now with three more consistent data points instead of
+one. Bumped the retry loop to 10 attempts/90s apart (~15 more minutes
+on top of the 90s sleep) as a tactical mitigation while a support case
+remains the only way to actually root-cause the cache-refresh delay
+itself.
+
+**Widened budget also exhausted (2026-08-12) — the delay is not
+bounded by any retry budget tried so far, tactical mitigation
+abandoned.** Re-ran once more with the 10-attempt/90s loop: it lasted
+longer (all 10 attempts, ~22 minutes of retrying, vs. the previous
+loop's ~8) but still failed. Full timeline: `kv_role` write completed
+17:55:46, `time_sleep` finished 17:57:17, first `ForbiddenByRbac`
+18:01:03 (~5.3 min after the write), final failure after 10 exhausted
+attempts at 18:24:51 — **~29 minutes** after the role assignment write,
+noticeably worse than the previous run's ~14.5 minutes, not just a
+larger sample of the same distribution. Ruled out two other plausible
+causes before accepting this as pure propagation delay: `az keyvault
+list-deleted` shows no soft-deleted vault from a prior run's teardown
+colliding with the new one, and the vault's own
+`public_network_access_enabled` is `true` with no network ACL blocking
+access (so this isn't a network-layer 403 masquerading as an RBAC one).
+
+Doubling the retry budget did not just fail to help, it revealed the
+delay itself scales with something the budget doubling can't
+compensate for — going by these two data points alone, widening the
+budget further looks like chasing a moving target rather than closing
+a gap. Abandoning further retry-budget tuning as the fix; reverted
+`scripts/smoke-test.sh` is not planned, but escalating this to Azure
+support (or filing against `terraform-provider-azurerm`/Key Vault's own
+RBAC data-plane propagation, if a support case surfaces enough
+information to justify it) is now the only remaining path to actually
+close this, not a longer sleep or a bigger loop.
+
+**Root cause actually found (2026-08-12) — not propagation delay at
+all, a permanent missing grant.** Before escalating to Azure support,
+checked who the `GetSecret` `403` actually names as the denied caller
+in every failure so far: the CI service principal itself
+(`appid=fe4b4b29-...`, matching `AZURE_CLIENT_ID`), not the app's own
+managed identity. That distinction had been present in every error
+message across all four failed runs but never checked closely —
+`azurerm_role_assignment.kv_role` (Key Vault Secrets User) only ever
+grants the *app's* identity read access, and correctly so; it was never
+meant to, and never did, cover the identity actually running `terraform
+apply`. Terraform itself creates `azurerm_key_vault_secret` resources
+(a data-plane write, then reads them back on refresh) as the CI service
+principal, which had no data-plane grant on Key Vault at all:
+`az role definition list --name Contributor --query
+"[0].permissions[0].dataActions"` returns `[]` — Contributor and Role
+Based Access Control Administrator (the fix from the previous session,
+still correct and still needed for `kv_role` itself to be creatable)
+both grant management-plane access only. This is a **permanent,
+deterministic** gap, not a delay: no amount of waiting was ever going
+to close it, which is exactly why widening the retry budget made
+failures take longer without ever succeeding.
+
+Fixed by granting the CI service principal "Key Vault Secrets Officer"
+at subscription scope (`ci/README.md` now documents this as a required
+one-time setup step, alongside the existing Contributor/RBAC
+Administrator grants). `scripts/smoke-test.sh`'s Key Vault polling loop
+(added the same day, see the comment at its call site) is kept as a
+legitimate defense against the separate, genuine, bounded propagation
+delay for `kv_role` itself (Microsoft's own docs cite up to 10 minutes)
+— that delay is real and independent of this permission gap, just not
+what caused four consecutive full failures on its own.
+
+This also means most of the "propagation" analysis above (the
+`ForbiddenByRbac` timeline investigation, the retry-loop widening, the
+Front Door origin-race precedent applied here) was chasing the wrong
+variable the entire time: every run in this doc's history failed the
+same way because the CI service principal has never had a Key Vault
+data-plane grant, not because propagation was ever taking 15-29
+minutes. The retry loop happening to succeed on some earlier runs (the
+"four real runs" cited above as confirming `kv_role` "creates
+successfully every time") was conflating `kv_role`'s own creation
+(a management-plane write, which always worked) with the downstream
+`GetSecret` calls (data-plane reads, which never had a path to succeed)
+— not yet re-verified with the new grant in place; that's the next real
+test of this fix, not an assumption it works.
 
 ## Things worth knowing before touching this again
 

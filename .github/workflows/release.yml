@@ -1,0 +1,50 @@
+name: Release
+
+# Manually triggered: build cross-platform cloudcompose binaries and
+# publish them as a GitHub Release, so users can download a binary
+# without building from source. Not triggered on every push -- release
+# timing is a deliberate choice, not automatic on merge to main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Release tag to create and publish (e.g. v0.3.0). Must not
+          already exist.
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cloudcompose-go/go.mod
+          cache-dependency-path: cloudcompose-go/go.sum
+
+      - name: Run tests
+        run: go vet ./... && go test ./...
+        working-directory: cloudcompose-go
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ inputs.tag }}"
+          git push origin "${{ inputs.tag }}"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

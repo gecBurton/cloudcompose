@@ -32,6 +32,7 @@ func runMain(cmd *cobra.Command, args []string) {
 
 	composeFile, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
+	demoCloud, _ := cmd.Flags().GetString("demo")
 	projectName, _ := cmd.Flags().GetString("project")
 	outputDir, _ := cmd.Flags().GetString("out")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
@@ -68,17 +69,40 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	if envDir == "" {
-		fmt.Fprintln(os.Stderr, "Error: --env is required to compile")
+	// --env and --demo are mutually exclusive, deliberate ways to supply
+	// an environment: one reads real Terraform-managed facts, the other
+	// synthesizes plausible-looking placeholder ones. Requiring exactly
+	// one (not defaulting either way when both are absent, and not
+	// silently preferring one when both are given) matches init.go's own
+	// "one way to configure, not two" reasoning -- this is the same
+	// choice applied to a second decision point.
+	if envDir == "" && demoCloud == "" {
+		fmt.Fprintln(os.Stderr, "Error: --env or --demo is required to compile")
+		os.Exit(1)
+	}
+	if envDir != "" && demoCloud != "" {
+		fmt.Fprintln(os.Stderr, "Error: --env and --demo are mutually exclusive")
 		os.Exit(1)
 	}
 
-	// 1. Load environment.
-	fmt.Printf("Loading environment: %s\n", envDir)
-	env, err := compiler.LoadEnvironment(envDir)
-	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+	var env any
+	if demoCloud != "" {
+		env, err = demoEnvironment(demoCloud)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "DEMO MODE: using placeholder resource IDs, not a real environment. "+
+			"The generated Terraform is for evaluation only and is not deployable as-is — "+
+			"run `cloudcompose init` to set up a real one.")
+	} else {
+		// 1. Load environment.
+		fmt.Printf("Loading environment: %s\n", envDir)
+		env, err = compiler.LoadEnvironment(envDir)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
 	}
 	target, err := environmentTarget(env)
 	if err != nil {
@@ -171,6 +195,28 @@ func environmentTarget(env any) (string, error) {
 		return "gcp", nil
 	default:
 		return "", fmt.Errorf("unsupported environment type %T", env)
+	}
+}
+
+// demoEnvironment builds a synthetic environment for --demo, one of the
+// same NewDemo*Environment values every golden fixture proves compiles
+// cleanly through the real infer/generate pipeline (see each
+// NewDemo*Environment's own doc comment in internal/models/environment.go).
+// Returns a pointer, matching what LoadEnvironment returns for a real
+// environment, since compileTerraform's own type switch expects one.
+func demoEnvironment(cloud string) (any, error) {
+	switch cloud {
+	case "aws":
+		env := models.NewDemoAwsEnvironment()
+		return &env, nil
+	case "azure":
+		env := models.NewDemoAzureEnvironment()
+		return &env, nil
+	case "gcp":
+		env := models.NewDemoGcpEnvironment()
+		return &env, nil
+	default:
+		return nil, fmt.Errorf("--demo must be one of aws, azure, gcp (got %q)", cloud)
 	}
 }
 
@@ -292,6 +338,7 @@ func init() {
 
 	mainCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
 	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
+	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
 	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	mainCmd.Flags().StringP("out", "o", "terraform", "Directory to write the generated Terraform JSON")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")

@@ -65,6 +65,32 @@ func (e *AwsEnvironment) Validate() error {
 	return nil
 }
 
+// NewDemoAwsEnvironment returns a fully-populated AwsEnvironment with
+// plausible-looking placeholder values (a fake VPC/subnet/cluster/ALB),
+// for `cloudcompose main --demo aws`: letting a prospective user see the
+// Terraform cloudcompose would generate without first running
+// `cloudcompose init` and `terraform apply` against a real AWS account.
+//
+// Values mirror what the AWS golden test suite's own hand-built mock
+// environment uses (aws/managed_test.go's fullMockProdEnv) -- proven, via
+// every AWS golden fixture, to compile cleanly through the full
+// infer/generate pipeline; not derived from any real deployed resource.
+func NewDemoAwsEnvironment() AwsEnvironment {
+	env := NewAwsEnvironment()
+	env.Name = "demo"
+	env.VpcID = "vpc-demo0123456789"
+	env.PublicSubnets = []string{"subnet-demo1", "subnet-demo2"}
+	env.PrivateSubnets = []string{"subnet-demo3", "subnet-demo4"}
+	env.EcsClusterArn = "arn:aws:ecs:us-east-1:000000000000:cluster/demo-cluster"
+	albArn := "arn:aws:elasticloadbalancing:us-east-1:000000000000:loadbalancer/app/demo-alb/0123456789abcdef"
+	albListenerArn := albArn + ":listener/0123456789abcdef"
+	albSG := "sg-demo0123456789"
+	env.AlbArn = &albArn
+	env.AlbListenerArn = &albListenerArn
+	env.AlbSecurityGroupID = &albSG
+	return env
+}
+
 // AzureEnvironment holds the Azure-specific environment configuration:
 // Container Apps Environment, VNet, and Flexible Server configuration.
 //
@@ -151,6 +177,31 @@ func NewAzureEnvironment() AzureEnvironment {
 	}
 }
 
+// NewDemoAzureEnvironment returns a fully-populated AzureEnvironment with
+// plausible-looking placeholder values, for `cloudcompose main --demo
+// azure`. See NewDemoAwsEnvironment's own doc comment for the rationale.
+//
+// Values mirror azure/golden_test.go's own mockAzureProdEnv, including
+// fully-formed resource IDs: the azurerm provider parses these during
+// `terraform validate`, so an abbreviated stand-in would fail before
+// producing anything a user could actually inspect.
+// InfrastructureSubnetID/PostgresqlSubnetID/MysqlSubnetID/RedisSubnetID
+// are deliberately left unset: InferAzure computes them itself from
+// AppsCIDR + SubnetIndex (see docs/azure-app-isolation-design.md).
+func NewDemoAzureEnvironment() AzureEnvironment {
+	env := NewAzureEnvironment()
+	env.Name = "demo"
+	env.ResourceGroupName = "demo"
+	env.LogAnalyticsWorkspaceID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/demo/providers/Microsoft.OperationalInsights/workspaces/demo-logs"
+	env.VnetID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/demo/providers/Microsoft.Network/virtualNetworks/demo-vnet"
+	env.VnetName = "demo-vnet"
+	env.AppsCIDR = "10.0.128.0/17"
+	env.SubnetIndex = 0
+	registryName := "demoacr"
+	env.ContainerRegistryName = &registryName
+	return env
+}
+
 // GcpEnvironment holds the GCP-specific environment configuration: Cloud
 // Run, VPC, and Cloud SQL configuration.
 //
@@ -201,4 +252,16 @@ func NewGcpEnvironment() GcpEnvironment {
 		LogRetentionDays:    7,
 		RetainDataOnDestroy: true,
 	}
+}
+
+// NewDemoGcpEnvironment returns a fully-populated GcpEnvironment with a
+// placeholder project ID, for `cloudcompose main --demo gcp`. See
+// NewDemoAwsEnvironment's own doc comment for the rationale. Mirrors
+// gcp/infer_test.go's own gcpTestEnv -- GCP's inference needs little
+// beyond Name/ProjectID, unlike AWS/Azure's networking-heavy environments.
+func NewDemoGcpEnvironment() GcpEnvironment {
+	env := NewGcpEnvironment()
+	env.Name = "demo"
+	env.ProjectID = "demo-project-000000"
+	return env
 }

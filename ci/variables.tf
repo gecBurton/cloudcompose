@@ -39,7 +39,7 @@ variable "github_subject_patterns" {
 variable "role_name" {
   type        = string
   description = "Name of the IAM role GitHub Actions assumes."
-  default     = "cloudcompose-acceptance-ci"
+  default     = "composey-acceptance-ci"
 }
 
 variable "create_oidc_provider" {

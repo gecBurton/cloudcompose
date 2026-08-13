@@ -9,6 +9,23 @@ for that example, used as regression tests by
 golden fixtures yet (see `AGENTS.md`'s "GCP has no committed golden
 files" note for why).
 
+## The fastest path: `--demo`, no setup at all
+
+To see what any example compiles to on a given cloud, with no cloud
+account, no credentials, and no `cloudcompose init` step:
+
+```bash
+cd cloudcompose-go
+go run ./cmd/cloudcompose main -f ../examples/hello/compose.yml -d aws
+```
+
+`-d aws`/`-d azure`/`-d gcp` swaps in a built-in synthetic environment
+(plausible-looking placeholder resource IDs) instead of reading a real
+one. The output is genuinely valid Terraform JSON, but not deployable
+as-is — it's for evaluation only. See
+`docs/authored-environment-config.md`'s "Evaluating without a live
+environment" section for the full design.
+
 ## The two-step flow: `init` once, `main` many times
 
 Deploying any of these examples for real is a two-step process — bootstrap

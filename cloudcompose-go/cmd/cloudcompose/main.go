@@ -19,8 +19,11 @@ var rootCmd = &cobra.Command{
 }
 
 // rootVersion is this binary's own version identifier, versioned
-// independently of any other package metadata.
-const rootVersion = "v0.2.0"
+// independently of any other package metadata. Overridden at build time
+// via -ldflags "-X main.rootVersion=vX.Y.Z" by the release workflow
+// (see .goreleaser.yaml); a plain `go build` with no ldflags keeps this
+// fallback so local/dev builds still report something sensible.
+var rootVersion = "v0.2.0-dev"
 
 var parseCmd = &cobra.Command{
 	Use:   "parse <file>",

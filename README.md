@@ -325,6 +325,19 @@ full, actively-maintained tracker of what's done and what's still open
 
 ### Install
 
+Download a prebuilt binary from the
+[Releases page](https://github.com/gecBurton/cloudcompose/releases) —
+archives are published for Linux, macOS, and Windows (amd64 and arm64).
+For example, on macOS (Apple Silicon):
+
+```bash
+curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloudcompose_<version>_darwin_arm64.tar.gz
+tar -xzf cloudcompose_<version>_darwin_arm64.tar.gz
+chmod +x cloudcompose
+```
+
+Or build from source:
+
 ```bash
 git clone https://github.com/gecBurton/cloudcompose.git
 cd cloudcompose/cloudcompose-go
@@ -332,6 +345,20 @@ go build -o cloudcompose ./cmd/cloudcompose
 ```
 
 ### Quick Test
+
+No cloud account needed — see what any example compiles to with
+`--demo`:
+
+```bash
+# From the cloudcompose-go directory
+./cloudcompose main -f ../examples/hello/compose.yml -d aws
+```
+
+Swap `-d aws` for `-d azure`/`-d gcp` to see the same compose file
+compiled for a different cloud. The output is real, valid Terraform
+JSON, but uses placeholder resource IDs — not deployable as-is.
+
+To actually deploy:
 
 ```bash
 # From the cloudcompose-go directory

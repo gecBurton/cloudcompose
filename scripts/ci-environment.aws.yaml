@@ -20,6 +20,14 @@ provider: aws
 name: PLACEHOLDER
 region: eu-west-2
 retain_data_on_destroy: false
+# The CI AWS account is Free Tier-restricted, which caps RDS backup
+# retention at 0 days -- cloudcompose's own default of 7
+# (cmd/cloudcompose/init.go) exceeds that and AWS rejects
+# CreateDBInstance outright (FreeTierRestrictionError) before Terraform
+# gets anywhere near applying it. 0 here is a CI-account constraint, not
+# a recommended production value; see examples/*/environment.yaml for
+# defaults meant to be deployed for real.
+backup_retention_days: 0
 tags:
   ManagedBy: cloudcompose-acceptance-ci
 

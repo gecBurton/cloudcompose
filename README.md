@@ -346,6 +346,20 @@ go build -o cloudcompose ./cmd/cloudcompose
 
 ### Quick Test
 
+No cloud account needed — see what any example compiles to with
+`--demo`:
+
+```bash
+# From the cloudcompose-go directory
+./cloudcompose main -f ../examples/hello/compose.yml -d aws
+```
+
+Swap `-d aws` for `-d azure`/`-d gcp` to see the same compose file
+compiled for a different cloud. The output is real, valid Terraform
+JSON, but uses placeholder resource IDs — not deployable as-is.
+
+To actually deploy:
+
 ```bash
 # From the cloudcompose-go directory
 ./cloudcompose init -f ../examples/hello/environment.yaml

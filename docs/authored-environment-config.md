@@ -17,6 +17,24 @@ facts by running `terraform output -json` in that directory (which must
 already have `terraform apply` run in it) and decoding its `environment`
 output.
 
+## Evaluating without a live environment: `--demo`
+
+`cloudcompose main -d <cloud>` (`aws`/`azure`/`gcp`) generates the same
+Terraform JSON a real compile would, using a built-in synthetic
+environment with plausible-looking placeholder resource IDs instead of
+reading a real one — for a prospective user to see what their compose
+file becomes on a given cloud without first running `cloudcompose init`
+or holding any cloud credentials at all.
+
+`-e` and `-d` are mutually exclusive and one is required: there is no
+default when neither is given, the same "one way to configure, not two"
+reasoning `init`'s own flag set follows. The output is genuinely valid
+Terraform JSON (every demo environment is checked against the real
+provider schema via `terraform validate`), but it is not deployable
+as-is — the placeholder IDs (`vpc-demo...`, fake ARNs, etc.) don't
+correspond to anything real. `cloudcompose main` prints a stderr banner
+saying so whenever `-d` is used.
+
 ## Schema: common envelope + discriminated provider block
 
 ```yaml

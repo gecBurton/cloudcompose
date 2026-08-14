@@ -10,6 +10,7 @@ import (
 
 	"github.com/gecburton/cloudcompose/internal/compiler"
 	"github.com/gecburton/cloudcompose/internal/compiler/aws"
+	"github.com/gecburton/cloudcompose/internal/compiler/azure"
 	"github.com/gecburton/cloudcompose/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -18,12 +19,12 @@ import (
 // `docker compose ps` shows live container status -- but for whatever
 // is actually running on the cloud right now, not for anything
 // Terraform or compose.yml alone can already tell you (see
-// aws.FetchStatus's own doc comment for why this deliberately never
-// reads Terraform state/output).
+// aws.FetchStatus/azure.FetchStatus's own doc comments for why this
+// deliberately never reads Terraform state/output).
 var psCmd = &cobra.Command{
 	Use:   "ps",
 	Short: "Show live status of deployed services",
-	Long:  "Query the cloud directly for each compose service's live running status (AWS only, for now).",
+	Long:  "Query the cloud directly for each compose service's live running status (AWS and Azure).",
 	Run:   runPs,
 }
 
@@ -56,13 +57,6 @@ func runPs(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	awsEnv, ok := env.(*models.AwsEnvironment)
-	if !ok {
-		target, _ := environmentTarget(env)
-		fmt.Fprintf(os.Stderr, "Error: `cloudcompose ps` only supports AWS environments so far (got %s)\n", target)
-		os.Exit(1)
-	}
-
 	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {
 		printUnexpectedError(err)
@@ -75,25 +69,50 @@ func runPs(cmd *cobra.Command, args []string) {
 	}
 
 	ctx := context.Background()
-	ecsClient, elbClient, err := aws.NewAWSClients(ctx, awsEnv.Region)
-	if err != nil {
-		printUnexpectedError(err)
+
+	switch e := env.(type) {
+	case *models.AwsEnvironment:
+		ecsClient, elbClient, err := aws.NewAWSClients(ctx, e.Region)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		statuses, err := aws.FetchStatus(ctx, ecsClient, elbClient, semanticApp, e)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		printAwsPsTable(os.Stdout, statuses)
+
+	case *models.AzureEnvironment:
+		subscriptionID, err := azure.SubscriptionIDFromResourceID(e.LogAnalyticsWorkspaceID)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		appsClient, revClient, err := azure.NewAzureClients(subscriptionID)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		statuses, err := azure.FetchStatus(ctx, appsClient, revClient, semanticApp, e)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		printAzurePsTable(os.Stdout, statuses)
+
+	default:
+		target, _ := environmentTarget(env)
+		fmt.Fprintf(os.Stderr, "Error: `cloudcompose ps` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
-
-	statuses, err := aws.FetchStatus(ctx, ecsClient, elbClient, semanticApp, awsEnv)
-	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
-	}
-
-	printPsTable(os.Stdout, statuses)
 }
 
-// printPsTable renders ps output in the same spirit as `docker compose
-// ps`: one aligned table, NAME first, a human STATUS summary rather
-// than raw counters where possible.
-func printPsTable(w io.Writer, statuses []aws.ServiceStatus) {
+// printAwsPsTable renders AWS ps output in the same spirit as `docker
+// compose ps`: one aligned table, NAME first, a human STATUS summary
+// rather than raw counters where possible.
+func printAwsPsTable(w io.Writer, statuses []aws.ServiceStatus) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tSTATUS\tTASKS\tHEALTH")
 	for _, s := range statuses {
@@ -102,9 +121,9 @@ func printPsTable(w io.Writer, statuses []aws.ServiceStatus) {
 	tw.Flush()
 }
 
-// psRow formats a single ServiceStatus, matching printPsTable's column
-// order. Split out from printPsTable so tests can assert on formatting
-// without capturing writer output.
+// psRow formats a single aws.ServiceStatus, matching printAwsPsTable's
+// column order. Split out from printAwsPsTable so tests can assert on
+// formatting without capturing writer output.
 func psRow(s aws.ServiceStatus) string {
 	if !s.Found {
 		return fmt.Sprintf("%s\tnot found\t-\t-", s.Name)
@@ -118,6 +137,35 @@ func psRow(s aws.ServiceStatus) string {
 	}
 
 	return fmt.Sprintf("%s\t%s\t%s\t%s", s.Name, s.Status, tasks, health)
+}
+
+// printAzurePsTable renders Azure ps output, mirroring
+// printAwsPsTable's shape as closely as Container Apps' own status
+// model allows -- see azure.ServiceStatus's own doc comment for why
+// its columns don't line up one-to-one with AWS's.
+func printAzurePsTable(w io.Writer, statuses []azure.ServiceStatus) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tSTATUS\tREPLICAS\tHEALTH")
+	for _, s := range statuses {
+		fmt.Fprintln(tw, azurePsRow(s))
+	}
+	tw.Flush()
+}
+
+// azurePsRow formats a single azure.ServiceStatus, matching
+// printAzurePsTable's column order. Split out from printAzurePsTable so
+// tests can assert on formatting without capturing writer output.
+func azurePsRow(s azure.ServiceStatus) string {
+	if !s.Found {
+		return fmt.Sprintf("%s\tnot found\t-\t-", s.Name)
+	}
+
+	health := "-"
+	if s.HealthState != "" {
+		health = s.HealthState
+	}
+
+	return fmt.Sprintf("%s\t%s\t%d\t%s", s.Name, s.ProvisioningState, s.Replicas, health)
 }
 
 func init() {

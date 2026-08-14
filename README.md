@@ -162,6 +162,18 @@ for each service's live status — like `docker compose ps`, but for what's
 actually running on the cloud right now, not anything already implied by
 `compose.yml` or Terraform state. AWS only, for now.
 
+### Check the logs
+
+```bash
+cloudcompose logs -f docker-compose.yml -e prod-infrastructure           # every service
+cloudcompose logs -f docker-compose.yml -e prod-infrastructure web       # just "web"
+cloudcompose logs -f docker-compose.yml -e prod-infrastructure --since 1h --tail 500
+```
+
+Fetches recent CloudWatch log output directly, interleaved by timestamp
+across services — like `docker compose logs`. A one-shot fetch for now,
+not a continuous `-f`/`--follow` tail. AWS only, for now.
+
 ---
 
 ## How It Works

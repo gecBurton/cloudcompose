@@ -151,6 +151,17 @@ cloudcompose init
 cloudcompose main -f docker-compose.yml -e prod-infrastructure
 ```
 
+### Check what's running
+
+```bash
+cloudcompose ps -f docker-compose.yml -e prod-infrastructure
+```
+
+Queries AWS directly (ECS service task counts, ALB target group health)
+for each service's live status — like `docker compose ps`, but for what's
+actually running on the cloud right now, not anything already implied by
+`compose.yml` or Terraform state. AWS only, for now.
+
 ---
 
 ## How It Works

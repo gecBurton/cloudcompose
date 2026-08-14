@@ -515,6 +515,64 @@ log "App is live — response contains '$EXPECT'. 🎉"
 echo "----- response -----"
 echo "$body" | head -20
 
+# --- 4a. Assert cloudcompose ps/logs themselves work against the real cloud --
+# Everything above (poll_until_served, show_diagnostics) treats ps/logs as
+# pure diagnostics -- their output is printed but never checked, so a bug
+# in either command could silently print garbage or nothing and this
+# script would still report SUCCESS off the HTTP poll alone. These two
+# checks turn them into something actually under test, using --json output
+# (a stable, cloud-agnostic shape -- see cmd/cloudcompose/ps.go's own
+# psRowJSON/logEventJSON) rather than grepping the human-readable table/log
+# lines, which differ in column layout between AWS and Azure and could
+# reasonably change formatting over time without this script caring.
+#
+# Deliberately NOT a replacement for poll_until_served: an HTTP response
+# already proved routing+TLS+the app's own response end-to-end; ps/logs
+# reporting correctly is an independent, additional thing worth knowing
+# actually works, not a faster or more thorough substitute for the poll.
+log "Asserting cloudcompose ps reports the deployed service as running…"
+"$CLOUDCOMPOSE" ps -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --json | python3 -c "
+import json, sys
+rows = json.load(sys.stdin)
+if not rows:
+    sys.exit('ps --json returned no rows at all -- expected at least one compose service')
+bad = [r for r in rows if not r.get('found') or r.get('running', 0) <= 0]
+if bad:
+    sys.exit(f'ps reports service(s) not running: {bad}')
+print(f'ps OK -- {len(rows)} service(s) found and running: ' + ', '.join(r[\"name\"] for r in rows))
+" || fail "cloudcompose ps did not report the deployed service as running"
+
+log "Asserting cloudcompose logs returns real output…"
+# Log ingestion is not instant (CloudWatch typically has single-digit
+# seconds of delay; Azure Log Analytics' own ingestion latency can run
+# into minutes -- Microsoft's own guidance is "usually under 5 minutes,
+# occasionally longer"), so a single query run the instant the HTTP poll
+# above succeeds can genuinely see zero lines even though the app has
+# been logging the whole time it served that poll. Retry rather than a
+# single shot, bounded rather than open-ended: LOGS_ASSERT_TIMEOUT
+# defaults to 300s, comfortably inside Microsoft's own "occasionally
+# longer" ceiling without being open-ended like FRONTDOOR_POLL_TIMEOUT
+# above needs to be.
+LOGS_ASSERT_TIMEOUT="${LOGS_ASSERT_TIMEOUT:-300}"
+logs_deadline=$(( SECONDS + LOGS_ASSERT_TIMEOUT ))
+logs_ok=0
+while (( SECONDS < logs_deadline )); do
+  if "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 --json | python3 -c "
+import json, sys
+events = json.load(sys.stdin)
+if not events:
+    sys.exit(1)
+print(f'logs OK -- {len(events)} line(s) returned')
+"; then
+    logs_ok=1
+    break
+  fi
+  printf '.'
+  sleep 10
+done
+echo
+(( logs_ok == 1 )) || fail "cloudcompose logs returned no output for the deployed service after ${LOGS_ASSERT_TIMEOUT}s (log ingestion delay, or a real regression -- check the diagnostics above)"
+
 # --- 4b. Front Door: confirm traffic actually flows through the CDN itself ---
 # docs/azure-todo.md's Front Door item: a clean `terraform apply` only ever
 # proved the five Front Door resources exist and reference each other

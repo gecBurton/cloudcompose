@@ -161,7 +161,9 @@ Queries the cloud directly for each service's live status — like `docker
 compose ps`, but for what's actually running right now, not anything
 already implied by `compose.yml` or Terraform state. AWS (ECS service
 task counts, ALB target group health) and Azure (Container App revision
-replica count and health state) are supported; GCP is not yet.
+replica count and health state) are supported; GCP is not yet. Add
+`--json` for a stable, cloud-agnostic JSON array instead of the table
+(handy for scripting — see `scripts/smoke-test.sh`'s own use of it).
 
 ### Check the logs
 
@@ -174,7 +176,8 @@ cloudcompose logs -f docker-compose.yml -e prod-infrastructure --since 1h --tail
 Fetches recent log output directly (CloudWatch Logs on AWS, Log
 Analytics on Azure), interleaved by timestamp across services — like
 `docker compose logs`. A one-shot fetch for now, not a continuous
-`-f`/`--follow` tail. AWS and Azure are supported; GCP is not yet.
+`-f`/`--follow` tail. AWS and Azure are supported; GCP is not yet. Also
+supports `--json` for the same reason as `ps` above.
 
 ---
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,12 +29,23 @@ var logsCmd = &cobra.Command{
 	Run:   runLogs,
 }
 
+// logEventJSON is the cloud-agnostic shape `logs --json` emits -- one
+// entry per log line, regardless of which cloud produced it, mirroring
+// ps.go's own psRowJSON rationale: scripts can assert against this
+// without any cloud-specific parsing.
+type logEventJSON struct {
+	Service   string `json:"service"`
+	Timestamp string `json:"timestamp"` // RFC3339, UTC
+	Message   string `json:"message"`
+}
+
 func runLogs(cmd *cobra.Command, args []string) {
 	composeFile, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
 	since, _ := cmd.Flags().GetDuration("since")
 	tail, _ := cmd.Flags().GetInt("tail")
+	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	if envDir == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
@@ -88,7 +100,11 @@ func runLogs(cmd *cobra.Command, args []string) {
 			printUnexpectedError(err)
 			os.Exit(1)
 		}
-		printAwsLogEvents(os.Stdout, events)
+		if jsonOutput {
+			printLogsJSON(os.Stdout, awsLogEventsJSON(events))
+		} else {
+			printAwsLogEvents(os.Stdout, events)
+		}
 
 	case *models.AzureEnvironment:
 		subscriptionID, err := azure.SubscriptionIDFromResourceID(e.LogAnalyticsWorkspaceID)
@@ -110,7 +126,11 @@ func runLogs(cmd *cobra.Command, args []string) {
 			printUnexpectedError(err)
 			os.Exit(1)
 		}
-		printAzureLogEvents(os.Stdout, events)
+		if jsonOutput {
+			printLogsJSON(os.Stdout, azureLogEventsJSON(events))
+		} else {
+			printAzureLogEvents(os.Stdout, events)
+		}
 
 	default:
 		target, _ := environmentTarget(env)
@@ -137,6 +157,21 @@ func awsLogLine(e aws.LogEvent) string {
 	return fmt.Sprintf("%s  %s  | %s", ts, e.Service, e.Message)
 }
 
+// awsLogEventsJSON converts aws.LogEvent (epoch millis) into the
+// cloud-agnostic logEventJSON shape (RFC3339 string), matching
+// awsLogLine's own timestamp formatting.
+func awsLogEventsJSON(events []aws.LogEvent) []logEventJSON {
+	rows := make([]logEventJSON, 0, len(events))
+	for _, e := range events {
+		rows = append(rows, logEventJSON{
+			Service:   e.Service,
+			Timestamp: time.UnixMilli(e.Timestamp).UTC().Format(time.RFC3339),
+			Message:   e.Message,
+		})
+	}
+	return rows
+}
+
 // printAzureLogEvents mirrors printAwsLogEvents for Azure's own
 // LogEvent shape (a time.Time, not epoch millis).
 func printAzureLogEvents(w io.Writer, events []azure.LogEvent) {
@@ -152,6 +187,32 @@ func azureLogLine(e azure.LogEvent) string {
 	return fmt.Sprintf("%s  %s  | %s", ts, e.Service, e.Message)
 }
 
+// azureLogEventsJSON converts azure.LogEvent into the cloud-agnostic
+// logEventJSON shape, matching azureLogLine's own timestamp formatting.
+func azureLogEventsJSON(events []azure.LogEvent) []logEventJSON {
+	rows := make([]logEventJSON, 0, len(events))
+	for _, e := range events {
+		rows = append(rows, logEventJSON{
+			Service:   e.Service,
+			Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
+			Message:   e.Message,
+		})
+	}
+	return rows
+}
+
+// printLogsJSON writes rows as a single JSON array to w -- always an
+// array, even for zero/one events, matching ps.go's printPsJSON
+// rationale.
+func printLogsJSON(w io.Writer, rows []logEventJSON) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(rows); err != nil {
+		printUnexpectedError(err)
+		os.Exit(1)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(logsCmd)
 
@@ -160,4 +221,5 @@ func init() {
 	logsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	logsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")
 	logsCmd.Flags().Int("tail", 200, "Number of log lines to fetch per service")
+	logsCmd.Flags().Bool("json", false, "Output as a JSON array instead of human-readable lines")
 }

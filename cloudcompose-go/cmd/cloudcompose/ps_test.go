@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -138,5 +139,92 @@ func TestMain_PsRequiresEnv(t *testing.T) {
 	}
 	if !contains(string(out), "--env is required") {
 		t.Errorf("expected the error to name --env, got:\n%s", out)
+	}
+}
+
+func TestAwsPsRowsJSON(t *testing.T) {
+	rows := awsPsRowsJSON([]aws.ServiceStatus{
+		{Name: "web", Found: true, Status: "ACTIVE", RunningCount: 2, HasIngress: true, Healthy: 2, Unhealthy: 0},
+		{Name: "worker", Found: false},
+	})
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	if rows[0] != (psRowJSON{Name: "web", Found: true, Status: "ACTIVE", Running: 2, Health: "2 healthy, 0 unhealthy"}) {
+		t.Errorf("got %+v", rows[0])
+	}
+	if rows[1] != (psRowJSON{Name: "worker", Found: false}) {
+		t.Errorf("got %+v", rows[1])
+	}
+}
+
+func TestAzurePsRowsJSON(t *testing.T) {
+	rows := azurePsRowsJSON([]azure.ServiceStatus{
+		{Name: "web", Found: true, ProvisioningState: "Succeeded", Replicas: 3, HealthState: "Healthy"},
+		{Name: "worker", Found: false},
+	})
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	if rows[0] != (psRowJSON{Name: "web", Found: true, Status: "Succeeded", Running: 3, Health: "Healthy"}) {
+		t.Errorf("got %+v", rows[0])
+	}
+	if rows[1] != (psRowJSON{Name: "worker", Found: false}) {
+		t.Errorf("got %+v", rows[1])
+	}
+}
+
+func TestPrintPsJSON_IsValidJSONArray(t *testing.T) {
+	var buf bytes.Buffer
+	printPsJSON(&buf, []psRowJSON{
+		{Name: "web", Found: true, Status: "ACTIVE", Running: 2, Health: "2 healthy, 0 unhealthy"},
+		{Name: "worker", Found: false},
+	})
+
+	var decoded []psRowJSON
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+	if len(decoded) != 2 {
+		t.Fatalf("expected 2 decoded rows, got %d", len(decoded))
+	}
+	if decoded[0].Name != "web" || !decoded[0].Found {
+		t.Errorf("got %+v", decoded[0])
+	}
+	if decoded[1].Name != "worker" || decoded[1].Found {
+		t.Errorf("got %+v", decoded[1])
+	}
+}
+
+// TestPrintPsJSON_EmptyIsStillAnArray confirms `ps --json` against zero
+// services still emits `[]`, not `null` -- a caller (jq/python3) should
+// never need to special-case "no output" vs "empty array".
+func TestPrintPsJSON_EmptyIsStillAnArray(t *testing.T) {
+	var buf bytes.Buffer
+	printPsJSON(&buf, []psRowJSON{})
+
+	if strings.TrimSpace(buf.String()) != "[]" {
+		t.Errorf("got %q, want []", buf.String())
+	}
+}
+
+// TestMain_PsJSONFlag confirms `--json` is a real, wired-up flag (not
+// just present in the two conversion functions above), via the same
+// CLI-level pattern as TestMain_PsRequiresEnv.
+func TestMain_PsJSONFlag(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	// --env is still required even with --json: this only proves the
+	// flag itself parses, not that it does anything meaningful without
+	// a real environment, which needs a real cloud (covered by
+	// scripts/smoke-test.sh instead, not a unit test).
+	cmd := exec.Command(bin, "ps", "--json", "-f", "../../../examples/hello/compose.yml")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
+	}
+	if !contains(string(out), "--env is required") {
+		t.Errorf("expected the error to name --env even with --json set, got:\n%s", out)
 	}
 }

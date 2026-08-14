@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,10 +29,28 @@ var psCmd = &cobra.Command{
 	Run:   runPs,
 }
 
+// psRowJSON is the cloud-agnostic shape `ps --json` emits -- one row
+// per compose service, regardless of which cloud produced it. Scripts
+// (e.g. scripts/smoke-test.sh) can assert against this without any
+// cloud-specific parsing, unlike the human-readable table's columns,
+// which genuinely differ between aws.ServiceStatus and
+// azure.ServiceStatus (see those types' own doc comments for why).
+// "Running" deliberately doesn't distinguish AWS's RunningCount from
+// Azure's Replicas by name -- both mean the same thing to a caller
+// that just wants to know "is at least one instance up".
+type psRowJSON struct {
+	Name    string `json:"name"`
+	Found   bool   `json:"found"`
+	Status  string `json:"status"`
+	Running int32  `json:"running"`
+	Health  string `json:"health,omitempty"`
+}
+
 func runPs(cmd *cobra.Command, args []string) {
 	composeFile, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
+	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	if envDir == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
@@ -82,7 +101,11 @@ func runPs(cmd *cobra.Command, args []string) {
 			printUnexpectedError(err)
 			os.Exit(1)
 		}
-		printAwsPsTable(os.Stdout, statuses)
+		if jsonOutput {
+			printPsJSON(os.Stdout, awsPsRowsJSON(statuses))
+		} else {
+			printAwsPsTable(os.Stdout, statuses)
+		}
 
 	case *models.AzureEnvironment:
 		subscriptionID, err := azure.SubscriptionIDFromResourceID(e.LogAnalyticsWorkspaceID)
@@ -100,7 +123,11 @@ func runPs(cmd *cobra.Command, args []string) {
 			printUnexpectedError(err)
 			os.Exit(1)
 		}
-		printAzurePsTable(os.Stdout, statuses)
+		if jsonOutput {
+			printPsJSON(os.Stdout, azurePsRowsJSON(statuses))
+		} else {
+			printAzurePsTable(os.Stdout, statuses)
+		}
 
 	default:
 		target, _ := environmentTarget(env)
@@ -139,6 +166,27 @@ func psRow(s aws.ServiceStatus) string {
 	return fmt.Sprintf("%s\t%s\t%s\t%s", s.Name, s.Status, tasks, health)
 }
 
+// awsPsRowsJSON converts aws.ServiceStatus into the cloud-agnostic
+// psRowJSON shape -- RunningCount maps to Running, and Health is only
+// populated for services with ingress (aws.ServiceStatus.HasIngress),
+// matching psRow's own "-" placeholder logic for the human-readable
+// table.
+func awsPsRowsJSON(statuses []aws.ServiceStatus) []psRowJSON {
+	rows := make([]psRowJSON, 0, len(statuses))
+	for _, s := range statuses {
+		row := psRowJSON{Name: s.Name, Found: s.Found}
+		if s.Found {
+			row.Status = s.Status
+			row.Running = s.RunningCount
+			if s.HasIngress {
+				row.Health = fmt.Sprintf("%d healthy, %d unhealthy", s.Healthy, s.Unhealthy)
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 // printAzurePsTable renders Azure ps output, mirroring
 // printAwsPsTable's shape as closely as Container Apps' own status
 // model allows -- see azure.ServiceStatus's own doc comment for why
@@ -168,10 +216,42 @@ func azurePsRow(s azure.ServiceStatus) string {
 	return fmt.Sprintf("%s\t%s\t%d\t%s", s.Name, s.ProvisioningState, s.Replicas, health)
 }
 
+// azurePsRowsJSON converts azure.ServiceStatus into the cloud-agnostic
+// psRowJSON shape -- ProvisioningState maps to Status, Replicas to
+// Running, and HealthState to Health (already "-"-free at the source,
+// unlike AWS's health string, which azurePsRow's own "-" fallback
+// otherwise only applies to the table renderer).
+func azurePsRowsJSON(statuses []azure.ServiceStatus) []psRowJSON {
+	rows := make([]psRowJSON, 0, len(statuses))
+	for _, s := range statuses {
+		row := psRowJSON{Name: s.Name, Found: s.Found}
+		if s.Found {
+			row.Status = s.ProvisioningState
+			row.Running = s.Replicas
+			row.Health = s.HealthState
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// printPsJSON writes rows as a single JSON array to w -- always an
+// array, even for zero/one services, so a caller (e.g. jq/python3 in
+// scripts/smoke-test.sh) never needs to special-case object-vs-array.
+func printPsJSON(w io.Writer, rows []psRowJSON) {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(rows); err != nil {
+		printUnexpectedError(err)
+		os.Exit(1)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(psCmd)
 
 	psCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
 	psCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
 	psCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
+	psCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")
 }

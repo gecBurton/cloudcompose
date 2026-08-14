@@ -228,6 +228,20 @@ cleanup() {
   fi
 
   log "Tearing down (exit status $status)…"
+
+  # Capture logs as a permanent CI artifact before anything is destroyed,
+  # regardless of how this run ended -- a crash mid-poll or a failed
+  # apply is exactly when this is most useful, and by definition the
+  # in-flow show_diagnostics calls above never got to run. Best-effort:
+  # requires the app to have actually been deployed ($BUILD_DIR/main.tf.json
+  # exists, i.e. `cloudcompose main` itself ran) and $CLOUDCOMPOSE to have
+  # been built; a run that failed before either of those has nothing to
+  # show logs for, not a new failure to report.
+  if [[ -x "$CLOUDCOMPOSE" && -f "$BUILD_DIR/main.tf.json" ]]; then
+    log "Final logs snapshot before teardown…"
+    "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --tail 500 || true
+  fi
+
   local leaked=0
   if [[ -d "$BUILD_DIR" ]]; then
     (cd "$BUILD_DIR" && eval "$TF destroy -auto-approve") \
@@ -468,16 +482,96 @@ poll_until_served() {
   return $(( served == 1 ? 0 : 1 ))
 }
 
+# show_diagnostics prints `cloudcompose ps`/`logs` output for the app just
+# deployed -- live cloud status and recent stdout/stderr, queried directly
+# rather than inferred from an HTTP response or Terraform state (see
+# internal/compiler/{aws,azure}/status.go and logs.go's own doc comments).
+# Purely diagnostic: poll_until_served above remains the actual pass/fail
+# signal (it alone proves routing+TLS+the app's own response end to end);
+# this only helps explain *why* a poll failed, or gives a live snapshot
+# right after deploy, without ever gating success on what it prints.
+# Failures from ps/logs themselves are swallowed (|| true) -- a transient
+# API hiccup while gathering diagnostics must never mask the real
+# poll_until_served failure this is trying to help explain.
+show_diagnostics() {
+  local label="$1"
+  log "cloudcompose ps ($label)…"
+  "$CLOUDCOMPOSE" ps -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" || true
+  log "cloudcompose logs, last 5m ($label)…"
+  "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 || true
+}
+
+show_diagnostics "just deployed"
+
 if ! poll_until_served "$url" "$POLL_TIMEOUT"; then
   echo
   echo "----- last response (for diagnosis) -----"
   echo "${body:-<no response>}" | head -20
+  show_diagnostics "poll timed out"
   fail "timed out after ${POLL_TIMEOUT}s waiting for '$EXPECT' at $url"
 fi
 
 log "App is live — response contains '$EXPECT'. 🎉"
 echo "----- response -----"
 echo "$body" | head -20
+
+# --- 4a. Assert cloudcompose ps/logs themselves work against the real cloud --
+# Everything above (poll_until_served, show_diagnostics) treats ps/logs as
+# pure diagnostics -- their output is printed but never checked, so a bug
+# in either command could silently print garbage or nothing and this
+# script would still report SUCCESS off the HTTP poll alone. These two
+# checks turn them into something actually under test, using --json output
+# (a stable, cloud-agnostic shape -- see cmd/cloudcompose/ps.go's own
+# psRowJSON/logEventJSON) rather than grepping the human-readable table/log
+# lines, which differ in column layout between AWS and Azure and could
+# reasonably change formatting over time without this script caring.
+#
+# Deliberately NOT a replacement for poll_until_served: an HTTP response
+# already proved routing+TLS+the app's own response end-to-end; ps/logs
+# reporting correctly is an independent, additional thing worth knowing
+# actually works, not a faster or more thorough substitute for the poll.
+log "Asserting cloudcompose ps reports the deployed service as running…"
+"$CLOUDCOMPOSE" ps -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --json | python3 -c "
+import json, sys
+rows = json.load(sys.stdin)
+if not rows:
+    sys.exit('ps --json returned no rows at all -- expected at least one compose service')
+bad = [r for r in rows if not r.get('found') or r.get('running', 0) <= 0]
+if bad:
+    sys.exit(f'ps reports service(s) not running: {bad}')
+print(f'ps OK -- {len(rows)} service(s) found and running: ' + ', '.join(r[\"name\"] for r in rows))
+" || fail "cloudcompose ps did not report the deployed service as running"
+
+log "Asserting cloudcompose logs returns real output…"
+# Log ingestion is not instant (CloudWatch typically has single-digit
+# seconds of delay; Azure Log Analytics' own ingestion latency can run
+# into minutes -- Microsoft's own guidance is "usually under 5 minutes,
+# occasionally longer"), so a single query run the instant the HTTP poll
+# above succeeds can genuinely see zero lines even though the app has
+# been logging the whole time it served that poll. Retry rather than a
+# single shot, bounded rather than open-ended: LOGS_ASSERT_TIMEOUT
+# defaults to 300s, comfortably inside Microsoft's own "occasionally
+# longer" ceiling without being open-ended like FRONTDOOR_POLL_TIMEOUT
+# above needs to be.
+LOGS_ASSERT_TIMEOUT="${LOGS_ASSERT_TIMEOUT:-300}"
+logs_deadline=$(( SECONDS + LOGS_ASSERT_TIMEOUT ))
+logs_ok=0
+while (( SECONDS < logs_deadline )); do
+  if "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 --json | python3 -c "
+import json, sys
+events = json.load(sys.stdin)
+if not events:
+    sys.exit(1)
+print(f'logs OK -- {len(events)} line(s) returned')
+"; then
+    logs_ok=1
+    break
+  fi
+  printf '.'
+  sleep 10
+done
+echo
+(( logs_ok == 1 )) || fail "cloudcompose logs returned no output for the deployed service after ${LOGS_ASSERT_TIMEOUT}s (log ingestion delay, or a real regression -- check the diagnostics above)"
 
 # --- 4b. Front Door: confirm traffic actually flows through the CDN itself ---
 # docs/azure-todo.md's Front Door item: a clean `terraform apply` only ever
@@ -509,6 +603,7 @@ if [[ -n "${CDN_FQDN:-}" ]]; then
     echo
     echo "----- last response (for diagnosis) -----"
     echo "${body:-<no response>}" | head -20
+    show_diagnostics "Front Door poll timed out"
     fail "timed out after ${FRONTDOOR_POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
   fi
   log "Front Door is live — response contains '$EXPECT' through the CDN endpoint too. 🎉"

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gecburton/cloudcompose/internal/compiler/aws"
+	"github.com/gecburton/cloudcompose/internal/compiler/azure"
 )
 
 func TestPsRow_NotFound(t *testing.T) {
@@ -50,10 +51,64 @@ func TestPsRow_RunningWithoutIngress(t *testing.T) {
 	}
 }
 
-func TestPrintPsTable_HeaderAndRows(t *testing.T) {
+func TestPrintAwsPsTable_HeaderAndRows(t *testing.T) {
 	var buf bytes.Buffer
-	printPsTable(&buf, []aws.ServiceStatus{
+	printAwsPsTable(&buf, []aws.ServiceStatus{
 		{Name: "web", Found: true, Status: "ACTIVE", DesiredCount: 1, RunningCount: 1, HasIngress: true, Healthy: 1},
+		{Name: "worker", Found: false},
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "NAME") || !strings.Contains(out, "STATUS") {
+		t.Errorf("expected a header row, got:\n%s", out)
+	}
+	if !strings.Contains(out, "web") || !strings.Contains(out, "worker") {
+		t.Errorf("expected both services listed, got:\n%s", out)
+	}
+	if !strings.Contains(out, "not found") {
+		t.Errorf("expected worker's row to say 'not found', got:\n%s", out)
+	}
+}
+
+func TestAzurePsRow_NotFound(t *testing.T) {
+	row := azurePsRow(azure.ServiceStatus{Name: "web", Found: false})
+	if row != "web\tnot found\t-\t-" {
+		t.Errorf("got %q", row)
+	}
+}
+
+func TestAzurePsRow_Running(t *testing.T) {
+	row := azurePsRow(azure.ServiceStatus{
+		Name:              "web",
+		Found:             true,
+		ProvisioningState: "Succeeded",
+		Replicas:          2,
+		HasIngress:        true,
+		HealthState:       "Healthy",
+	})
+	want := "web\tSucceeded\t2\tHealthy"
+	if row != want {
+		t.Errorf("got %q, want %q", row, want)
+	}
+}
+
+func TestAzurePsRow_NoHealthState(t *testing.T) {
+	row := azurePsRow(azure.ServiceStatus{
+		Name:              "worker",
+		Found:             true,
+		ProvisioningState: "Succeeded",
+		Replicas:          1,
+	})
+	want := "worker\tSucceeded\t1\t-"
+	if row != want {
+		t.Errorf("got %q, want %q", row, want)
+	}
+}
+
+func TestPrintAzurePsTable_HeaderAndRows(t *testing.T) {
+	var buf bytes.Buffer
+	printAzurePsTable(&buf, []azure.ServiceStatus{
+		{Name: "web", Found: true, ProvisioningState: "Succeeded", Replicas: 1, HealthState: "Healthy"},
 		{Name: "worker", Found: false},
 	})
 

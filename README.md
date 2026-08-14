@@ -171,9 +171,10 @@ cloudcompose logs -f docker-compose.yml -e prod-infrastructure web       # just 
 cloudcompose logs -f docker-compose.yml -e prod-infrastructure --since 1h --tail 500
 ```
 
-Fetches recent CloudWatch log output directly, interleaved by timestamp
-across services — like `docker compose logs`. A one-shot fetch for now,
-not a continuous `-f`/`--follow` tail. AWS only, for now.
+Fetches recent log output directly (CloudWatch Logs on AWS, Log
+Analytics on Azure), interleaved by timestamp across services — like
+`docker compose logs`. A one-shot fetch for now, not a continuous
+`-f`/`--follow` tail. AWS and Azure are supported; GCP is not yet.
 
 ---
 

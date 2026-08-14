@@ -10,6 +10,7 @@ import (
 
 	"github.com/gecburton/cloudcompose/internal/compiler"
 	"github.com/gecburton/cloudcompose/internal/compiler/aws"
+	"github.com/gecburton/cloudcompose/internal/compiler/azure"
 	"github.com/gecburton/cloudcompose/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -17,13 +18,13 @@ import (
 // logsCmd shows recent log output for the services in a compose file,
 // the way `docker compose logs` shows container logs -- but for
 // whatever the cloud actually logged, not anything derivable from
-// compose.yml or Terraform state (see aws.FetchLogs's own doc comment
-// for why this is a one-shot fetch, not a --follow tail, in this first
-// version).
+// compose.yml or Terraform state (see aws.FetchLogs/azure.FetchLogs's
+// own doc comments for why this is a one-shot fetch, not a --follow
+// tail, in this first version).
 var logsCmd = &cobra.Command{
 	Use:   "logs [service...]",
 	Short: "Show recent logs for deployed services",
-	Long:  "Fetch recent log output directly from the cloud for one or more compose services (AWS only, for now). Shows every service if none are named, like `docker compose logs`.",
+	Long:  "Fetch recent log output directly from the cloud for one or more compose services (AWS and Azure). Shows every service if none are named, like `docker compose logs`.",
 	Run:   runLogs,
 }
 
@@ -58,13 +59,6 @@ func runLogs(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	awsEnv, ok := env.(*models.AwsEnvironment)
-	if !ok {
-		target, _ := environmentTarget(env)
-		fmt.Fprintf(os.Stderr, "Error: `cloudcompose logs` only supports AWS environments so far (got %s)\n", target)
-		os.Exit(1)
-	}
-
 	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {
 		printUnexpectedError(err)
@@ -77,41 +71,84 @@ func runLogs(cmd *cobra.Command, args []string) {
 	}
 
 	ctx := context.Background()
-	logsClient, err := aws.NewCloudWatchLogsClient(ctx, awsEnv.Region)
-	if err != nil {
-		printUnexpectedError(err)
+
+	switch e := env.(type) {
+	case *models.AwsEnvironment:
+		logsClient, err := aws.NewCloudWatchLogsClient(ctx, e.Region)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		var sinceMillis int64
+		if since > 0 {
+			sinceMillis = time.Now().Add(-since).UnixMilli()
+		}
+		events, err := aws.FetchLogs(ctx, logsClient, semanticApp, e, args, sinceMillis, int32(tail))
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		printAwsLogEvents(os.Stdout, events)
+
+	case *models.AzureEnvironment:
+		subscriptionID, err := azure.SubscriptionIDFromResourceID(e.LogAnalyticsWorkspaceID)
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		logsClient, err := azure.NewLogsClient()
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		var sinceTime time.Time
+		if since > 0 {
+			sinceTime = time.Now().Add(-since).UTC()
+		}
+		events, err := azure.FetchLogs(ctx, logsClient, subscriptionID, semanticApp, e, args, sinceTime, int32(tail))
+		if err != nil {
+			printUnexpectedError(err)
+			os.Exit(1)
+		}
+		printAzureLogEvents(os.Stdout, events)
+
+	default:
+		target, _ := environmentTarget(env)
+		fmt.Fprintf(os.Stderr, "Error: `cloudcompose logs` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
-
-	var sinceMillis int64
-	if since > 0 {
-		sinceMillis = time.Now().Add(-since).UnixMilli()
-	}
-
-	events, err := aws.FetchLogs(ctx, logsClient, semanticApp, awsEnv, args, sinceMillis, int32(tail))
-	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
-	}
-
-	printLogEvents(os.Stdout, events)
 }
 
-// printLogEvents renders logs output the way `docker compose logs`
+// printAwsLogEvents renders logs output the way `docker compose logs`
 // does when following more than one service: each line prefixed with
 // the service name it came from, events already in chronological order
 // (see aws.FetchLogs's own sort).
-func printLogEvents(w io.Writer, events []aws.LogEvent) {
+func printAwsLogEvents(w io.Writer, events []aws.LogEvent) {
 	for _, e := range events {
-		fmt.Fprintln(w, logLine(e))
+		fmt.Fprintln(w, awsLogLine(e))
 	}
 }
 
-// logLine formats a single LogEvent, matching printLogEvents' format.
-// Split out so tests can assert on formatting without capturing writer
-// output.
-func logLine(e aws.LogEvent) string {
+// awsLogLine formats a single aws.LogEvent, matching
+// printAwsLogEvents' format. Split out so tests can assert on
+// formatting without capturing writer output.
+func awsLogLine(e aws.LogEvent) string {
 	ts := time.UnixMilli(e.Timestamp).UTC().Format(time.RFC3339)
+	return fmt.Sprintf("%s  %s  | %s", ts, e.Service, e.Message)
+}
+
+// printAzureLogEvents mirrors printAwsLogEvents for Azure's own
+// LogEvent shape (a time.Time, not epoch millis).
+func printAzureLogEvents(w io.Writer, events []azure.LogEvent) {
+	for _, e := range events {
+		fmt.Fprintln(w, azureLogLine(e))
+	}
+}
+
+// azureLogLine formats a single azure.LogEvent, matching
+// printAzureLogEvents' format.
+func azureLogLine(e azure.LogEvent) string {
+	ts := e.Timestamp.UTC().Format(time.RFC3339)
 	return fmt.Sprintf("%s  %s  | %s", ts, e.Service, e.Message)
 }
 

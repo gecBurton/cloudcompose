@@ -228,6 +228,20 @@ cleanup() {
   fi
 
   log "Tearing down (exit status $status)…"
+
+  # Capture logs as a permanent CI artifact before anything is destroyed,
+  # regardless of how this run ended -- a crash mid-poll or a failed
+  # apply is exactly when this is most useful, and by definition the
+  # in-flow show_diagnostics calls above never got to run. Best-effort:
+  # requires the app to have actually been deployed ($BUILD_DIR/main.tf.json
+  # exists, i.e. `cloudcompose main` itself ran) and $CLOUDCOMPOSE to have
+  # been built; a run that failed before either of those has nothing to
+  # show logs for, not a new failure to report.
+  if [[ -x "$CLOUDCOMPOSE" && -f "$BUILD_DIR/main.tf.json" ]]; then
+    log "Final logs snapshot before teardown…"
+    "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --tail 500 || true
+  fi
+
   local leaked=0
   if [[ -d "$BUILD_DIR" ]]; then
     (cd "$BUILD_DIR" && eval "$TF destroy -auto-approve") \
@@ -468,10 +482,32 @@ poll_until_served() {
   return $(( served == 1 ? 0 : 1 ))
 }
 
+# show_diagnostics prints `cloudcompose ps`/`logs` output for the app just
+# deployed -- live cloud status and recent stdout/stderr, queried directly
+# rather than inferred from an HTTP response or Terraform state (see
+# internal/compiler/{aws,azure}/status.go and logs.go's own doc comments).
+# Purely diagnostic: poll_until_served above remains the actual pass/fail
+# signal (it alone proves routing+TLS+the app's own response end to end);
+# this only helps explain *why* a poll failed, or gives a live snapshot
+# right after deploy, without ever gating success on what it prints.
+# Failures from ps/logs themselves are swallowed (|| true) -- a transient
+# API hiccup while gathering diagnostics must never mask the real
+# poll_until_served failure this is trying to help explain.
+show_diagnostics() {
+  local label="$1"
+  log "cloudcompose ps ($label)…"
+  "$CLOUDCOMPOSE" ps -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" || true
+  log "cloudcompose logs, last 5m ($label)…"
+  "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 || true
+}
+
+show_diagnostics "just deployed"
+
 if ! poll_until_served "$url" "$POLL_TIMEOUT"; then
   echo
   echo "----- last response (for diagnosis) -----"
   echo "${body:-<no response>}" | head -20
+  show_diagnostics "poll timed out"
   fail "timed out after ${POLL_TIMEOUT}s waiting for '$EXPECT' at $url"
 fi
 
@@ -509,6 +545,7 @@ if [[ -n "${CDN_FQDN:-}" ]]; then
     echo
     echo "----- last response (for diagnosis) -----"
     echo "${body:-<no response>}" | head -20
+    show_diagnostics "Front Door poll timed out"
     fail "timed out after ${FRONTDOOR_POLL_TIMEOUT}s waiting for '$EXPECT' through Front Door at $cdn_url"
   fi
   log "Front Door is live — response contains '$EXPECT' through the CDN endpoint too. 🎉"

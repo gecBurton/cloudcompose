@@ -144,3 +144,61 @@ func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 		t.Fatalf("expected exactly 1 log group queried when filtering to one service, got %d: %v", len(client.seenGroups), client.seenGroups)
 	}
 }
+
+// TestFetchLogs_RealNginxFlaskMysqlExample_DatabaseLogs confirms
+// FetchLogs also covers CapabilityDatabase services (mariadb's "db"
+// service in this real example), querying every RDS log group its
+// engine exports and merging them under one Service name, mirroring
+// the container-log test above's own real-boundary discipline.
+func TestFetchLogs_RealNginxFlaskMysqlExample_DatabaseLogs(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	env := fullMockProdEnv()
+
+	// mariadb's own RDSLogExports list is
+	// ["audit", "error", "general", "slowquery"] -- "/aws/rds/instance/
+	// prod-nginx-flask-mysql-db/<type>" is exactly what
+	// managed.go's inferDatabase + this package's own naming would
+	// produce for the "db" service in this env/app combination.
+	client := &fakeCloudWatchLogsClient{
+		events: map[string][]cwltypes.FilteredLogEvent{
+			"/aws/rds/instance/prod-nginx-flask-mysql-db/error": {
+				{Timestamp: aws.Int64(2000), Message: aws.String("connection refused")},
+			},
+			"/aws/rds/instance/prod-nginx-flask-mysql-db/slowquery": {
+				{Timestamp: aws.Int64(1000), Message: aws.String("slow query detected")},
+			},
+		},
+	}
+
+	events, err := FetchLogs(context.Background(), client, app, &env, []string{"db"}, 0, 200)
+	if err != nil {
+		t.Fatalf("FetchLogs failed: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (one per log type), got %d: %+v", len(events), events)
+	}
+	// Sorted chronologically across log types, not grouped by type.
+	if events[0].Message != "slow query detected" || events[1].Message != "connection refused" {
+		t.Errorf("events not sorted by timestamp across log types: %+v", events)
+	}
+	for _, e := range events {
+		if e.Service != "db" {
+			t.Errorf("expected Service = db for every event regardless of log type, got %q", e.Service)
+		}
+	}
+
+	// mariadb's RDSLogExports has 4 entries; audit/general have no fake
+	// data registered, so they should still be queried (and correctly
+	// treated as "not found", not an error) alongside error/slowquery.
+	if len(client.seenGroups) != 4 {
+		t.Errorf("expected all 4 of mariadb's log types to be queried, got %d: %v", len(client.seenGroups), client.seenGroups)
+	}
+}

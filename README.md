@@ -175,9 +175,12 @@ cloudcompose logs -f docker-compose.yml -e prod-infrastructure --since 1h --tail
 
 Fetches recent log output directly (CloudWatch Logs on AWS, Log
 Analytics on Azure), interleaved by timestamp across services — like
-`docker compose logs`. A one-shot fetch for now, not a continuous
-`-f`/`--follow` tail. AWS and Azure are supported; GCP is not yet. Also
-supports `--json` for the same reason as `ps` above.
+`docker compose logs`. Covers container services (app stdout/stderr)
+and Postgres databases (RDS/Postgres Flexible Server query and error
+logs — MySQL/MariaDB database logs aren't wired up yet). A one-shot
+fetch for now, not a continuous `-f`/`--follow` tail. AWS and Azure are
+supported; GCP is not yet. Also supports `--json` for the same reason
+as `ps` above.
 
 ---
 

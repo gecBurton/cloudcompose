@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -52,28 +53,46 @@ func NewCloudWatchLogsClient(ctx context.Context, region string) (cloudwatchLogs
 	return cloudwatchlogs.NewFromConfig(cfg), nil
 }
 
-// FetchLogs returns recent log events for the given container services
-// (or every container service in app if services is empty, matching
+// FetchLogs returns recent log events for the given services (or every
+// container/database service in app if services is empty, matching
 // `docker compose logs`'s own no-argument behavior of showing
 // everything), across the given cluster's environment.
 //
-// Unlike FetchStatus (status.go), scheduled-task services are not
-// excluded here: a service with a Schedule never gets its own
-// aws_ecs_service (compute.go's "Only create service if not
-// scheduled"), but it still runs as an ECS task on its own schedule and
-// logs to the exact same "/ecs/"+getName(service.Name) log group -- the
-// log group is created unconditionally in compute.go, before the
-// scheduled/unscheduled branch. So logs has no CapabilityContainer-only
-// exclusion beyond that; every container-capability service, scheduled
-// or not, has a log group worth reading.
+// Covers two service capabilities, each with its own log-group naming
+// and behavior:
 //
-// Results are merged across services and sorted by timestamp, so
-// multi-service output naturally interleaves in chronological order
-// (each event still carries its own Service field so the caller can
-// prefix each line). A service whose log group doesn't exist yet (never
-// deployed, or deployed under a since-changed name) is silently
-// skipped, not an error -- the same "not found is not a failure"
-// principle status.go's ServiceStatus.Found follows.
+//   - CapabilityContainer: unlike FetchStatus (status.go),
+//     scheduled-task services are not excluded here: a service with a
+//     Schedule never gets its own aws_ecs_service (compute.go's "Only
+//     create service if not scheduled"), but it still runs as an ECS
+//     task on its own schedule and logs to the exact same
+//     "/ecs/"+getName(service.Name) log group -- the log group is
+//     created unconditionally in compute.go, before the
+//     scheduled/unscheduled branch.
+//   - CapabilityDatabase: RDS exports one log group per engine-specific
+//     log type (managed.go's inferDatabase sets
+//     EnabledCloudwatchLogsExports unconditionally, so every database
+//     this compiler creates has log export on by default -- there is
+//     nothing to opt into at query time). Each log group is named
+//     "/aws/rds/instance/<identifier>/<log-type>"
+//     (AWS's own fixed naming convention for RDS's CloudWatch export,
+//     not something cloudcompose chooses), where identifier is the same
+//     getName(service.Name) inferDatabase itself used for
+//     aws_db_instance.identifier. All of that service's log types are
+//     queried and merged together, tagged with the same Service field
+//     regardless of which log type (e.g. "error" vs "slowquery") they
+//     came from -- a caller wanting to distinguish them can still do so
+//     from the message content itself, but `docker compose logs` has no
+//     concept of "log type" to expose a separate field for.
+//
+// Results are merged across services (and across log types, for
+// databases) and sorted by timestamp, so multi-service output naturally
+// interleaves in chronological order (each event still carries its own
+// Service field so the caller can prefix each line). A service whose
+// log group doesn't exist yet (never deployed, or deployed under a
+// since-changed name) is silently skipped, not an error -- the same
+// "not found is not a failure" principle status.go's ServiceStatus.Found
+// follows.
 func FetchLogs(ctx context.Context, client cloudwatchLogsClient, app *models.Application, env *models.AwsEnvironment, services []string, since int64, limit int32) ([]LogEvent, error) {
 	getName := func(resourceName string) string {
 		return env.Name + "-" + app.Name + "-" + resourceName
@@ -87,59 +106,114 @@ func FetchLogs(ctx context.Context, client cloudwatchLogsClient, app *models.App
 	var events []LogEvent
 	for i := range app.Services {
 		service := &app.Services[i]
-		if service.Capability != models.CapabilityContainer {
-			continue
-		}
 		if len(wanted) > 0 && !wanted[service.Name] {
 			continue
 		}
 
-		logGroupName := "/ecs/" + getName(service.Name)
-		// The bare service name is also the container name inside the
-		// task definition (compute.go's container.Name = service.Name,
-		// not getName-prefixed) and therefore the awslogs driver's own
-		// stream-name segment, given awslogs-stream-prefix = "ecs"
-		// (shared.AWSLogsStreamPrefix): streams look like
-		// "ecs/<service.Name>/<task-id>". Filtering by that prefix
-		// means a shared log group (if one were ever reused across
-		// services, which it currently isn't) couldn't leak another
-		// service's lines into this one's output.
-		streamPrefix := shared.AWSLogsStreamPrefix + "/" + service.Name + "/"
-
-		input := &cloudwatchlogs.FilterLogEventsInput{
-			LogGroupName:        aws.String(logGroupName),
-			LogStreamNamePrefix: aws.String(streamPrefix),
-			Limit:               aws.Int32(limit),
-		}
-		if since > 0 {
-			input.StartTime = aws.Int64(since)
-		}
-
-		var nextToken *string
-		for {
-			input.NextToken = nextToken
-			out, err := client.FilterLogEvents(ctx, input)
+		switch service.Capability {
+		case models.CapabilityContainer:
+			serviceEvents, err := fetchContainerLogs(ctx, client, service, getName, since, limit)
 			if err != nil {
-				if isLogGroupNotFound(err) {
-					break
-				}
-				return nil, fmt.Errorf("filter log events for %s: %w", service.Name, err)
+				return nil, err
 			}
-			for _, e := range out.Events {
-				events = append(events, LogEvent{
-					Service:   service.Name,
-					Timestamp: aws.ToInt64(e.Timestamp),
-					Message:   aws.ToString(e.Message),
-				})
+			events = append(events, serviceEvents...)
+
+		case models.CapabilityDatabase:
+			serviceEvents, err := fetchDatabaseLogs(ctx, client, service, getName, since, limit)
+			if err != nil {
+				return nil, err
 			}
-			if out.NextToken == nil || len(out.Events) == 0 {
-				break
-			}
-			nextToken = out.NextToken
+			events = append(events, serviceEvents...)
 		}
 	}
 
 	sort.Slice(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	return events, nil
+}
+
+// fetchContainerLogs queries the single ECS log group a container
+// service logs to. Split out of FetchLogs so that function's own
+// per-capability switch stays a plain dispatch, matching
+// fetchDatabaseLogs' own shape below.
+func fetchContainerLogs(ctx context.Context, client cloudwatchLogsClient, service *models.Service, getName func(string) string, since int64, limit int32) ([]LogEvent, error) {
+	logGroupName := "/ecs/" + getName(service.Name)
+	// The bare service name is also the container name inside the task
+	// definition (compute.go's container.Name = service.Name, not
+	// getName-prefixed) and therefore the awslogs driver's own
+	// stream-name segment, given awslogs-stream-prefix = "ecs"
+	// (shared.AWSLogsStreamPrefix): streams look like
+	// "ecs/<service.Name>/<task-id>". Filtering by that prefix means a
+	// shared log group (if one were ever reused across services, which
+	// it currently isn't) couldn't leak another service's lines into
+	// this one's output.
+	streamPrefix := shared.AWSLogsStreamPrefix + "/" + service.Name + "/"
+	return fetchLogGroupEvents(ctx, client, service.Name, logGroupName, &streamPrefix, since, limit)
+}
+
+// fetchDatabaseLogs queries every RDS log group this service's engine
+// exports (see FetchLogs's own doc comment for the naming convention
+// and why there's one log group per log type, not one for the whole
+// database).
+func fetchDatabaseLogs(ctx context.Context, client cloudwatchLogsClient, service *models.Service, getName func(string) string, since int64, limit int32) ([]LogEvent, error) {
+	engine := "postgres"
+	imageLower := strings.ToLower(service.Image)
+	if strings.Contains(imageLower, "mysql") {
+		engine = "mysql"
+	} else if strings.Contains(imageLower, "mariadb") {
+		engine = "mariadb"
+	}
+
+	identifier := getName(service.Name)
+	var events []LogEvent
+	for _, logType := range shared.RDSLogExports[engine] {
+		logGroupName := fmt.Sprintf("/aws/rds/instance/%s/%s", identifier, logType)
+		logTypeEvents, err := fetchLogGroupEvents(ctx, client, service.Name, logGroupName, nil, since, limit)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, logTypeEvents...)
+	}
+	return events, nil
+}
+
+// fetchLogGroupEvents runs FilterLogEvents against one log group,
+// paginating until exhausted, tagging every result with serviceName --
+// the shared plumbing both fetchContainerLogs and fetchDatabaseLogs
+// build on. streamNamePrefix is optional (nil for RDS, which has no
+// stream-prefix concept the way awslogs-stream-prefix gives ECS one).
+func fetchLogGroupEvents(ctx context.Context, client cloudwatchLogsClient, serviceName, logGroupName string, streamNamePrefix *string, since int64, limit int32) ([]LogEvent, error) {
+	input := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName:        aws.String(logGroupName),
+		LogStreamNamePrefix: streamNamePrefix,
+		Limit:               aws.Int32(limit),
+	}
+	if since > 0 {
+		input.StartTime = aws.Int64(since)
+	}
+
+	var events []LogEvent
+	var nextToken *string
+	for {
+		input.NextToken = nextToken
+		out, err := client.FilterLogEvents(ctx, input)
+		if err != nil {
+			if isLogGroupNotFound(err) {
+				break
+			}
+			return nil, fmt.Errorf("filter log events for %s: %w", serviceName, err)
+		}
+		for _, e := range out.Events {
+			events = append(events, LogEvent{
+				Service:   serviceName,
+				Timestamp: aws.ToInt64(e.Timestamp),
+				Message:   aws.ToString(e.Message),
+			})
+		}
+		if out.NextToken == nil || len(out.Events) == 0 {
+			break
+		}
+		nextToken = out.NextToken
+	}
 	return events, nil
 }
 

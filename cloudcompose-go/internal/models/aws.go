@@ -158,21 +158,35 @@ type IamRolePolicy struct {
 // and every call site sets them explicitly from the environment rather
 // than leaving either unset.
 type DbInstance struct {
-	Identifier              string            `json:"identifier"`
-	Engine                  string            `json:"engine"`
-	DbName                  string            `json:"db_name"`
-	InstanceClass           string            `json:"instance_class"`
-	AllocatedStorage        int               `json:"allocated_storage"`
-	DbSubnetGroupName       string            `json:"db_subnet_group_name"`
-	VpcSecurityGroupIds     []string          `json:"vpc_security_group_ids"`
-	SkipFinalSnapshot       bool              `json:"skip_final_snapshot"`
-	FinalSnapshotIdentifier *string           `json:"final_snapshot_identifier,omitempty"`
-	PubliclyAccessible      bool              `json:"publicly_accessible"`
-	MultiAz                 bool              `json:"multi_az"`
-	BackupRetentionPeriod   int               `json:"backup_retention_period"`
-	Username                *string           `json:"username,omitempty"`
-	Password                *string           `json:"password,omitempty"`
-	Tags                    map[string]string `json:"tags,omitempty"`
+	Identifier              string   `json:"identifier"`
+	Engine                  string   `json:"engine"`
+	DbName                  string   `json:"db_name"`
+	InstanceClass           string   `json:"instance_class"`
+	AllocatedStorage        int      `json:"allocated_storage"`
+	DbSubnetGroupName       string   `json:"db_subnet_group_name"`
+	VpcSecurityGroupIds     []string `json:"vpc_security_group_ids"`
+	SkipFinalSnapshot       bool     `json:"skip_final_snapshot"`
+	FinalSnapshotIdentifier *string  `json:"final_snapshot_identifier,omitempty"`
+	PubliclyAccessible      bool     `json:"publicly_accessible"`
+	MultiAz                 bool     `json:"multi_az"`
+	BackupRetentionPeriod   int      `json:"backup_retention_period"`
+	Username                *string  `json:"username,omitempty"`
+	Password                *string  `json:"password,omitempty"`
+	// EnabledCloudwatchLogsExports opts this instance's own log types
+	// into CloudWatch Logs -- RDS exports no logs at all by default;
+	// this is the only Terraform-side switch that turns it on
+	// (`aws_db_instance.enabled_cloudwatch_logs_exports`, a
+	// `list(string)` of engine-specific log-type names, e.g.
+	// `["postgresql", "upgrade"]` for Postgres or
+	// `["audit", "error", "general", "slowquery"]` for MySQL/MariaDB --
+	// see EngineLogExports in aws/managed.go for the exact per-engine
+	// mapping used to populate this field). Always set (never nil) by
+	// inferDatabase: `cloudcompose logs` has nothing to query for a
+	// database whose logs were never exported in the first place, so
+	// log export is on by default for every database this compiler
+	// creates, not an opt-in the user has to know to ask for.
+	EnabledCloudwatchLogsExports []string          `json:"enabled_cloudwatch_logs_exports"`
+	Tags                         map[string]string `json:"tags,omitempty"`
 }
 
 func NewDbInstance() DbInstance {

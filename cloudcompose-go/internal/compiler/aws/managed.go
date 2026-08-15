@@ -132,6 +132,12 @@ func inferDatabase(
 	passwordRef := fmt.Sprintf("${random_password.%s.result}", passwordKey)
 	dbInstance.Password = &passwordRef
 	dbInstance.Tags = tags
+	// Log export is on by default, not an opt-in: `cloudcompose logs`
+	// (aws/logs.go) has nothing to query for a database whose logs were
+	// never exported in the first place. shared.RDSLogExports is keyed
+	// by exactly the three engine strings this function itself picks
+	// from above, so this lookup cannot miss.
+	dbInstance.EnabledCloudwatchLogsExports = shared.RDSLogExports[engine]
 	resources.DbInstance[dbKey] = dbInstance
 
 	port := shared.DefaultPortForDatabase(engine)

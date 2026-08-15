@@ -162,3 +162,114 @@ func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 		t.Fatalf("expected exactly 1 resource queried when filtering to one service, got %d: %v", len(client.seenResourceIDs), client.seenResourceIDs)
 	}
 }
+
+// pgLogsTable builds a fake PGSQLServerLogs result table with the
+// TimeGenerated/Message columns FetchLogs looks for -- deliberately
+// using "Message" rather than consoleLogsTable's own "Log_s", matching
+// the real column-name difference between the two resource types this
+// file queries.
+func pgLogsTable(rows ...azquery.Row) *azquery.Table {
+	name := "PrimaryResult"
+	timeCol, msgCol := "TimeGenerated", "Message"
+	return &azquery.Table{
+		Name: &name,
+		Columns: []*azquery.Column{
+			{Name: &timeCol},
+			{Name: &msgCol},
+		},
+		Rows: rows,
+	}
+}
+
+// TestFetchLogs_RealDoctorExample_PostgresLogs confirms FetchLogs also
+// covers CapabilityDatabase services using Postgres (doctor's own "db"
+// service), querying PGSQLServerLogs against the shared Postgres
+// Flexible Server's own resource ID -- mirroring the container-log
+// test above's own real-boundary discipline.
+func TestFetchLogs_RealDoctorExample_PostgresLogs(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/doctor/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "doctor")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	env := mockAzureProdEnv()
+
+	// "prod-doctor-pg" is exactly what managed.go's own
+	// serverName := getName("pg") would produce for this env/app
+	// combination -- inferDatabasesAzure creates one shared Postgres
+	// server per app, not one per service.
+	resourceID := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/prod-doctor-pg"
+	t1 := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
+
+	client := &fakeLogsClient{
+		tables: map[string][]*azquery.Table{
+			resourceID: {
+				pgLogsTable(azquery.Row{t1, "connection authorized"}),
+			},
+		},
+	}
+
+	events, err := FetchLogs(context.Background(), client, "00000000-0000-0000-0000-000000000000", app, &env, []string{"db"}, time.Time{}, 200)
+	if err != nil {
+		t.Fatalf("FetchLogs failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d: %+v", len(events), events)
+	}
+	if events[0].Message != "connection authorized" {
+		t.Errorf("Message = %q, want %q", events[0].Message, "connection authorized")
+	}
+	if events[0].Service != "db" {
+		t.Errorf("Service = %q, want db", events[0].Service)
+	}
+
+	if len(client.seenResourceIDs) != 1 || client.seenResourceIDs[0] != resourceID {
+		t.Errorf("QueryResource called with resource IDs %v, want exactly [%s]", client.seenResourceIDs, resourceID)
+	}
+}
+
+// TestFetchLogs_MySQLDatabaseIsSkipped confirms MySQL/MariaDB database
+// services are silently skipped, not queried and not an error --
+// MySQL Flexible Server logging is deferred to a follow-up (see
+// FetchLogs's own doc comment for why: it needs its own server
+// parameters turned on before there's anything to export).
+func TestFetchLogs_MySQLDatabaseIsSkipped(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	env := mockAzureProdEnv()
+
+	var dbService string
+	for i := range app.Services {
+		if app.Services[i].Capability == models.CapabilityDatabase {
+			dbService = app.Services[i].Name
+			break
+		}
+	}
+	if dbService == "" {
+		t.Fatal("expected at least one database-capability service in nginx-flask-mysql")
+	}
+
+	client := &fakeLogsClient{tables: map[string][]*azquery.Table{}}
+
+	events, err := FetchLogs(context.Background(), client, "00000000-0000-0000-0000-000000000000", app, &env, []string{dbService}, time.Time{}, 200)
+	if err != nil {
+		t.Fatalf("FetchLogs failed: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("expected no events for a MySQL database service, got %d: %+v", len(events), events)
+	}
+	if len(client.seenResourceIDs) != 0 {
+		t.Errorf("expected no QueryResource calls for a MySQL database service, got %v", client.seenResourceIDs)
+	}
+}

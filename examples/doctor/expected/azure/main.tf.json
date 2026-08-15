@@ -255,6 +255,18 @@
         "sku_name": "Balanced_B0"
       }
     },
+    "azurerm_monitor_diagnostic_setting": {
+      "pg_diag": {
+        "enabled_log": [
+          {
+            "category": "PostgreSQLLogs"
+          }
+        ],
+        "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
+        "name": "prod-doctor-pg-diag",
+        "target_resource_id": "${azurerm_postgresql_flexible_server.main.id}"
+      }
+    },
     "azurerm_postgresql_flexible_server": {
       "main": {
         "administrator_login": "cloudcompose",

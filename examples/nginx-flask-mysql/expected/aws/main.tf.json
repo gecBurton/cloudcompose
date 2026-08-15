@@ -21,6 +21,12 @@
         "backup_retention_period": 7,
         "db_name": "example",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
+        "enabled_cloudwatch_logs_exports": [
+          "audit",
+          "error",
+          "general",
+          "slowquery"
+        ],
         "engine": "mariadb",
         "final_snapshot_identifier": "prod-nginx-flask-mysql-db-final-${random_id.db_snapshot.hex}",
         "identifier": "prod-nginx-flask-mysql-db",
@@ -98,7 +104,7 @@
     },
     "aws_ecs_task_definition": {
       "backend_td": {
-        "container_definitions": "[{\"name\": \"backend\", \"image\": \"flask-backend:latest\", \"essential\": true, \"portMappings\": [{\"containerPort\": 8000, \"hostPort\": 8000, \"protocol\": \"tcp\"}], \"environment\": [{\"name\": \"DATABASE_HOST\", \"value\": \"${aws_db_instance.db_db.address}\"}], \"secrets\": [{\"name\": \"DB_PASSWORD\", \"valueFrom\": \"${aws_secretsmanager_secret.db_db_secret.arn}:password::\"}, {\"name\": \"DB_USERNAME\", \"valueFrom\": \"${aws_secretsmanager_secret.db_db_secret.arn}:username::\"}], \"logConfiguration\": {\"logDriver\": \"awslogs\", \"options\": {\"awslogs-group\": \"${aws_cloudwatch_log_group.backend_lg.name}\", \"awslogs-region\": \"us-east-1\", \"awslogs-stream-prefix\": \"ecs\"}}}]",
+        "container_definitions": "[{\"environment\":[{\"name\":\"DATABASE_HOST\",\"value\":\"${aws_db_instance.db_db.address}\"}],\"essential\":true,\"image\":\"flask-backend:latest\",\"logConfiguration\":{\"logDriver\":\"awslogs\",\"options\":{\"awslogs-group\":\"${aws_cloudwatch_log_group.backend_lg.name}\",\"awslogs-region\":\"us-east-1\",\"awslogs-stream-prefix\":\"ecs\"}},\"name\":\"backend\",\"portMappings\":[{\"containerPort\":8000,\"hostPort\":8000,\"protocol\":\"tcp\"}],\"secrets\":[{\"name\":\"DB_PASSWORD\",\"valueFrom\":\"${aws_secretsmanager_secret.db_db_secret.arn}:password::\"},{\"name\":\"DB_USERNAME\",\"valueFrom\":\"${aws_secretsmanager_secret.db_db_secret.arn}:username::\"}]}]",
         "cpu": "256",
         "execution_role_arn": "${aws_iam_role.backend_exec_role.arn}",
         "family": "prod-nginx-flask-mysql-backend",
@@ -110,7 +116,7 @@
         "task_role_arn": "${aws_iam_role.backend_task_role.arn}"
       },
       "proxy_td": {
-        "container_definitions": "[{\"name\": \"proxy\", \"image\": \"nginx-proxy:latest\", \"essential\": true, \"portMappings\": [{\"containerPort\": 80, \"hostPort\": 80, \"protocol\": \"tcp\"}], \"environment\": [], \"secrets\": [], \"logConfiguration\": {\"logDriver\": \"awslogs\", \"options\": {\"awslogs-group\": \"${aws_cloudwatch_log_group.proxy_lg.name}\", \"awslogs-region\": \"us-east-1\", \"awslogs-stream-prefix\": \"ecs\"}}}]",
+        "container_definitions": "[{\"environment\":[],\"essential\":true,\"image\":\"nginx-proxy:latest\",\"logConfiguration\":{\"logDriver\":\"awslogs\",\"options\":{\"awslogs-group\":\"${aws_cloudwatch_log_group.proxy_lg.name}\",\"awslogs-region\":\"us-east-1\",\"awslogs-stream-prefix\":\"ecs\"}},\"name\":\"proxy\",\"portMappings\":[{\"containerPort\":80,\"hostPort\":80,\"protocol\":\"tcp\"}],\"secrets\":[]}]",
         "cpu": "256",
         "execution_role_arn": "${aws_iam_role.proxy_exec_role.arn}",
         "family": "prod-nginx-flask-mysql-proxy",
@@ -124,36 +130,36 @@
     },
     "aws_iam_role": {
       "backend_exec_role": {
-        "assume_role_policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": \"sts:AssumeRole\", \"Effect\": \"Allow\", \"Principal\": {\"Service\": \"ecs-tasks.amazonaws.com\"}}]}",
+        "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
         "name": "prod-nginx-flask-mysql-backend-exec-role"
       },
       "backend_task_role": {
-        "assume_role_policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": \"sts:AssumeRole\", \"Effect\": \"Allow\", \"Principal\": {\"Service\": \"ecs-tasks.amazonaws.com\"}}]}",
+        "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
         "name": "prod-nginx-flask-mysql-backend-task-role"
       },
       "proxy_exec_role": {
-        "assume_role_policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": \"sts:AssumeRole\", \"Effect\": \"Allow\", \"Principal\": {\"Service\": \"ecs-tasks.amazonaws.com\"}}]}",
+        "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
         "name": "prod-nginx-flask-mysql-proxy-exec-role"
       },
       "proxy_task_role": {
-        "assume_role_policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": \"sts:AssumeRole\", \"Effect\": \"Allow\", \"Principal\": {\"Service\": \"ecs-tasks.amazonaws.com\"}}]}",
+        "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
         "name": "prod-nginx-flask-mysql-proxy-task-role"
       }
     },
     "aws_iam_role_policy": {
       "backend_exec_log_policy": {
         "name": "prod-nginx-flask-mysql-backend-exec-log-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"logs:CreateLogStream\", \"logs:PutLogEvents\"], \"Resource\": [\"${aws_cloudwatch_log_group.backend_lg.arn}:*\"]}]}",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"logs:CreateLogStream\",\"logs:PutLogEvents\"],\"Resource\":[\"${aws_cloudwatch_log_group.backend_lg.arn}:*\"]}]}",
         "role": "${aws_iam_role.backend_exec_role.name}"
       },
       "backend_to_db_rds_secret": {
         "name": "prod-nginx-flask-mysql-backend-db-rds-secret",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"secretsmanager:GetSecretValue\"], \"Resource\": [\"${aws_secretsmanager_secret.db_db_secret.arn}\"]}]}",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"secretsmanager:GetSecretValue\"],\"Resource\":[\"${aws_secretsmanager_secret.db_db_secret.arn}\"]}]}",
         "role": "${aws_iam_role.backend_exec_role.name}"
       },
       "proxy_exec_log_policy": {
         "name": "prod-nginx-flask-mysql-proxy-exec-log-policy",
-        "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"logs:CreateLogStream\", \"logs:PutLogEvents\"], \"Resource\": [\"${aws_cloudwatch_log_group.proxy_lg.arn}:*\"]}]}",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"logs:CreateLogStream\",\"logs:PutLogEvents\"],\"Resource\":[\"${aws_cloudwatch_log_group.proxy_lg.arn}:*\"]}]}",
         "role": "${aws_iam_role.proxy_exec_role.name}"
       }
     },
@@ -202,7 +208,7 @@
     "aws_secretsmanager_secret_version": {
       "db_db_secret_v1": {
         "secret_id": "${aws_secretsmanager_secret.db_db_secret.id}",
-        "secret_string": "{\"username\": \"cloudcompose\", \"password\": \"${random_password.db_password.result}\", \"engine\": \"mariadb\"}"
+        "secret_string": "{\"engine\":\"mariadb\",\"password\":\"${random_password.db_password.result}\",\"username\":\"cloudcompose\"}"
       }
     },
     "aws_security_group": {

@@ -288,6 +288,26 @@ func inferDatabasesAzure(
 
 		resources.PostgreSQLFlexibleServer["main"] = server
 
+		// Log export is on by default, not an opt-in: `cloudcompose logs`
+		// (azure/logs.go) has nothing to query for a database whose logs
+		// were never exported in the first place. Unlike MySQL/MariaDB
+		// (which additionally needs audit_log_enabled/slow_query_log
+		// server parameters turned on before there's anything to export
+		// at all -- deferred to a follow-up), Postgres logs its own
+		// error/notice output by default, so a diagnostic setting alone
+		// is enough here. "PostgreSQLLogs" is the category name
+		// Microsoft's own docs confirm for
+		// Microsoft.DBforPostgreSQL/flexibleServers (concepts-monitoring:
+		// "Category name: PostgreSQLLogs").
+		resources.DiagnosticSetting["pg_diag"] = models.DiagnosticSetting{
+			Name:                    getName("pg-diag"),
+			TargetResourceID:        "${azurerm_postgresql_flexible_server.main.id}",
+			LogAnalyticsWorkspaceID: env.LogAnalyticsWorkspaceID,
+			EnabledLog: []models.DiagnosticSettingEnabledLog{
+				{Category: "PostgreSQLLogs"},
+			},
+		}
+
 		for _, service := range pgServices {
 			dbName := service.Name
 			if service.DatabaseName != nil && *service.DatabaseName != "" {

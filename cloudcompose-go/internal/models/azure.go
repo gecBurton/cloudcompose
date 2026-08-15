@@ -299,6 +299,38 @@ func NewPostgreSQLFlexibleServer() PostgreSQLFlexibleServer {
 	}
 }
 
+// DiagnosticSetting mirrors azurerm_monitor_diagnostic_setting. Routes
+// a resource's own logs to the shared Log Analytics workspace every
+// Container App in this environment already logs to
+// (env.LogAnalyticsWorkspaceID) -- log export is on by default for
+// every database this compiler creates (see managed.go's
+// inferDatabase), not an opt-in the user has to know to ask for,
+// mirroring AWS's EnabledCloudwatchLogsExports on DbInstance.
+//
+// EnabledLog is a Go slice, not a bare struct, because
+// azurerm_monitor_diagnostic_setting's own enabled_log block has
+// nesting_mode "set" (confirmed against the real provider schema via
+// `terraform providers schema -json`) -- genuinely repeatable, no
+// max_items cap, so a bare-object field would be silently wrong the
+// way cmd/schema-check exists to catch (see AGENTS.md's own note on
+// this class of bug).
+type DiagnosticSetting struct {
+	Name                    string                        `json:"name"`
+	TargetResourceID        string                        `json:"target_resource_id"`
+	LogAnalyticsWorkspaceID string                        `json:"log_analytics_workspace_id"`
+	EnabledLog              []DiagnosticSettingEnabledLog `json:"enabled_log"`
+}
+
+// DiagnosticSettingEnabledLog is one entry of the `enabled_log` set --
+// just a log category name (e.g. "PostgreSQLLogs"). No retention_policy
+// block: that attribute is deprecated by the provider in favour of a
+// separate azurerm_storage_management_policy resource, and this model
+// has no storage-account log destination to apply one to regardless
+// (log_analytics_workspace_id only).
+type DiagnosticSettingEnabledLog struct {
+	Category string `json:"category"`
+}
+
 type PostgreSQLFlexibleDatabase struct {
 	Name      string `json:"name"`
 	ServerID  string `json:"server_id"`
@@ -861,6 +893,7 @@ type AzureResources struct {
 	CdnFrontdoorRoute                map[string]FrontDoorRoute                   `json:"azurerm_cdn_frontdoor_route,omitempty"`
 	CdnFrontdoorFirewallPolicy       map[string]FrontDoorFirewallPolicy          `json:"azurerm_cdn_frontdoor_firewall_policy,omitempty"`
 	CdnFrontdoorSecurityPolicy       map[string]FrontDoorSecurityPolicy          `json:"azurerm_cdn_frontdoor_security_policy,omitempty"`
+	DiagnosticSetting                map[string]DiagnosticSetting                `json:"azurerm_monitor_diagnostic_setting,omitempty"`
 
 	// Docker provider resources (same models as AWS: build locally, push
 	// to ACR instead of ECR). See handleBuildContext in
@@ -908,6 +941,7 @@ func NewAzureResources() *AzureResources {
 		CdnFrontdoorRoute:                map[string]FrontDoorRoute{},
 		CdnFrontdoorFirewallPolicy:       map[string]FrontDoorFirewallPolicy{},
 		CdnFrontdoorSecurityPolicy:       map[string]FrontDoorSecurityPolicy{},
+		DiagnosticSetting:                map[string]DiagnosticSetting{},
 		DockerImage:                      map[string]DockerImage{},
 		DockerRegistryImage:              map[string]DockerRegistryImage{},
 		RandomPassword:                   map[string]RandomPassword{},

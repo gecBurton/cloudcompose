@@ -16,7 +16,7 @@ account, no credentials, and no `cloudcompose init` step:
 
 ```bash
 cd cloudcompose-go
-go run ./cmd/cloudcompose main -f ../examples/hello/compose.yml -d aws
+go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml -d aws
 ```
 
 `-d aws`/`-d azure`/`-d gcp` swaps in a built-in synthetic environment
@@ -26,7 +26,7 @@ as-is — it's for evaluation only. See
 `docs/authored-environment-config.md`'s "Evaluating without a live
 environment" section for the full design.
 
-## The two-step flow: `init` once, `main` many times
+## The two-step flow: `init` once, `compile` many times
 
 Deploying any of these examples for real is a two-step process — bootstrap
 a shared environment once, then deploy one or more apps into it:
@@ -37,22 +37,40 @@ cd cloudcompose-go
 # Step 1: bootstrap the shared platform infrastructure -- VPC + ECS
 # cluster on AWS; resource group + Log Analytics workspace + VNet on
 # Azure (no Container Apps Environment: that's per-app now, created by
-# `main` below, not shared -- see docs/azure-app-isolation-design.md
+# `compile` below, not shared -- see docs/azure-app-isolation-design.md
 # for why Azure's isolation boundary doesn't work the same way AWS's
 # does). Run once per environment, typically by whoever owns the cloud
 # account, not by every developer.
-go run ./cmd/cloudcompose init -f ../examples/hello/environment.yaml -o /tmp/demo-infrastructure
-cd /tmp/demo-infrastructure && terraform init && terraform apply
+#
+# Neither init nor compile take an output-location flag: init always
+# writes to <dir of -f>/env-<name> (here, next to
+# examples/hello/environment.yaml, so env-demo/ lands in
+# ../examples/hello/, since that file's `name:` is `demo`).
+go run ./cmd/cloudcompose init -f ../examples/hello/environment.yaml
+cd ../examples/hello/env-demo && terraform init && terraform apply
 cd -
 
 # Step 2: deploy an app into that environment -- run as often as you
-# like, by anyone. On AWS this only adds the app's own resources inside
-# the shared cluster/VPC; on Azure this also creates the app's own
-# Container Apps Environment and delegated subnets (real, per-app
-# infrastructure, not just app-level resources) -- pass --subnet-index
-# to give it a distinct, non-overlapping slice of the environment's
-# reserved address space if more than one app shares this environment.
-go run ./cmd/cloudcompose main -f ../examples/hello/compose.yml -e /tmp/demo-infrastructure
+# like, by anyone, for as many apps as you want to share this
+# environment (each compile call reads the same, already-applied
+# environment facts independently -- this is the main practical reason
+# to share one environment across apps: fewer NAT Gateways/ALBs paid
+# for, rather than one set per app). On AWS this only adds the app's own
+# resources inside the shared cluster/VPC; on Azure this also creates
+# the app's own Container Apps Environment and delegated subnets (real,
+# per-app infrastructure, not just app-level resources) -- pass
+# --subnet-index to give it a distinct, non-overlapping slice of the
+# environment's reserved address space if more than one app shares this
+# environment.
+#
+# -e must be the applied environment directory -- the one `init` wrote
+# main.tf.json into and you just ran `terraform apply` in above, not
+# environment.yaml itself. compile's own output lands at
+# <dir of -f>/app-<environment name> (here, app-demo/) -- named after
+# the environment so the same compose.yml can be compiled again against
+# a different environment.yaml/env-<name> (e.g. dev vs prod) without
+# overwriting this output.
+go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml -e ../examples/hello/env-demo
 ```
 
 `examples/hello/environment.yaml` (and its `environment.azure.yaml`/
@@ -66,10 +84,11 @@ whichever input file you gave it, written there so the file that
 produced a given environment is always visible next to it — not
 something to hand-edit) — and neither is the same thing as an
 environment's *facts* (its actual VPC ID, ALB ARN, etc. once Terraform
-creates them), which are never written to a file at all: `cloudcompose main
--e <dir>` reads those live via `terraform output -json` against the
-applied environment directory. See `docs/authored-environment-config.md`
-for the full design and the reasoning behind that split.
+creates them), which are never written to a file at all: `cloudcompose
+compile -e <dir>` reads those live via `terraform output -json` against
+the applied environment directory. See
+`docs/authored-environment-config.md` for the full design and the
+reasoning behind that split.
 
 To try a different example, or a different cloud, swap `hello`/`aws` for
 any other example directory and the sibling `environment.<cloud>.yaml`

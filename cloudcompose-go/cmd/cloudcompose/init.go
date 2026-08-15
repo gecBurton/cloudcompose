@@ -17,9 +17,9 @@ import (
 // initCmd bootstraps shared platform infrastructure (VPC, ALB/Container
 // Apps Environment, ECS Cluster, etc.) that multiple applications deploy
 // to. Typically run once by a platform team, then developers deploy apps
-// with `cloudcompose main --env <output>` (the environment directory
-// itself, once `terraform apply` has run in it -- cloudcompose main reads
-// the resulting facts directly via `terraform output -json`, not a
+// with `cloudcompose compile --env <output>` (the environment directory
+// itself, once `terraform apply` has run in it -- cloudcompose compile
+// reads the resulting facts directly via `terraform output -json`, not a
 // generated file).
 //
 // Reads an authored `environment.yaml` -- the decisions (region, VPC
@@ -45,7 +45,7 @@ var initCmd = &cobra.Command{
 		"Creates the VPC, subnets, ALB/Container Apps Environment, and other " +
 		"shared resources that multiple applications can use. This is typically " +
 		"run once by a platform team, and then developers deploy apps with " +
-		"`cloudcompose main`.\n\n" +
+		"`cloudcompose compile`.\n\n" +
 		"Reads an authored environment.yaml -- there are no decision flags; " +
 		"to change a decision, edit the file. See docs/authored-environment-config.md " +
 		"for the schema and examples/hello/environment.yaml for a starting point.",
@@ -54,7 +54,6 @@ var initCmd = &cobra.Command{
 
 func runInit(cmd *cobra.Command, args []string) {
 	configFile, _ := cmd.Flags().GetString("file")
-	output, _ := cmd.Flags().GetString("output")
 
 	fileConfig, err := initconfig.Load(configFile)
 	if err != nil {
@@ -96,9 +95,12 @@ func runInit(cmd *cobra.Command, args []string) {
 		logRetentionDays = *fileConfig.LogRetentionDays
 	}
 
-	if output == "" {
-		output = name + "-infrastructure"
+	absConfigFile, err := filepath.Abs(configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
+	output := filepath.Join(filepath.Dir(absConfigFile), "env-"+name)
 
 	fmt.Printf("Initializing %s environment: %s\n", fileConfig.Provider, name)
 	fmt.Printf("Region: %s\n", region)
@@ -203,7 +205,7 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println("  3. terraform apply")
 	fmt.Println()
 	fmt.Println("Deploy an app:")
-	fmt.Printf("  cloudcompose main --env %s\n", output)
+	fmt.Printf("  cloudcompose compile --env %s\n", output)
 }
 
 func lowerASCII(s string) string {
@@ -220,5 +222,4 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 
 	initCmd.Flags().StringP("file", "f", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md)")
-	initCmd.Flags().StringP("output", "o", "", "Output directory for generated files (default: <name>-infrastructure)")
 }

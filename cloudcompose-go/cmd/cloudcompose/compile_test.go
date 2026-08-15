@@ -218,7 +218,7 @@ func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "main", "-f", "../../../examples/hello/compose.yml", "-o", t.TempDir())
+	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when neither --env nor --demo is given, got success:\n%s", out)
@@ -234,11 +234,10 @@ func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "main",
+	cmd := exec.Command(bin, "compile",
 		"-f", "../../../examples/hello/compose.yml",
 		"-e", "../../../examples/hello",
-		"-d", "aws",
-		"-o", t.TempDir())
+		"-d", "aws")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when both --env and --demo are given, got success:\n%s", out)
@@ -255,7 +254,7 @@ func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "main", "-f", "../../../examples/hello/compose.yml", "-d", "nonsense", "-o", t.TempDir())
+	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-d", "nonsense")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit for an unrecognised --demo cloud, got success:\n%s", out)
@@ -268,21 +267,33 @@ func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
 // TestMain_DemoWritesTerraformWithNoEnvironment is the real end-to-end
 // path: --demo alone, no --env, no environment directory anywhere,
 // should still produce a compilable main.tf.json plus the demo-mode
-// warning banner on stderr.
+// warning banner on stderr. Output now has no --out override -- it's
+// always written to <dir of --file>/terraform -- so this copies
+// compose.yml into a scratch directory rather than writing into the
+// real examples/hello directory.
 func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
-	outDir := t.TempDir()
+	composeDir := t.TempDir()
 
-	cmd := exec.Command(bin, "main", "-f", "../../../examples/hello/compose.yml", "-d", "aws", "-o", outDir)
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose main --demo aws failed: %v\n%s", err, out)
+		t.Fatalf("cloudcompose compile --demo aws failed: %v\n%s", err, out)
 	}
 	if !contains(string(out), "DEMO MODE") {
 		t.Errorf("expected a demo-mode warning, got:\n%s", out)
 	}
-	if _, statErr := os.Stat(filepath.Join(outDir, "main.tf.json")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
 	}
 }

@@ -51,7 +51,7 @@ func TestInit_MissingFileFailsWithHelpfulMessage(t *testing.T) {
 }
 
 // TestInit_NoDecisionFlags confirms cloudcompose init's flag set really is
-// just -f/-o now -- a regression test for the flag removal described in
+// just -f now -- a regression test for the flag removal described in
 // docs/authored-environment-config.md's "Revision 2: no flags either".
 func TestInit_NoDecisionFlags(t *testing.T) {
 	t.Parallel()
@@ -67,12 +67,13 @@ func TestInit_NoDecisionFlags(t *testing.T) {
 		"--provider", "--name", "--region", "--vpc-cidr", "--az-count",
 		"--create-alb", "--certificate-arn", "--aws-endpoint",
 		"--project-id", "--domain", "--retain-data", "--tags",
+		"--output", "-o,",
 	} {
 		if contains(string(out), removedFlag) {
 			t.Errorf("expected %s to have been removed from cloudcompose init, but it's still in --help output:\n%s", removedFlag, out)
 		}
 	}
-	for _, keptFlag := range []string{"-f, --file", "-o, --output"} {
+	for _, keptFlag := range []string{"-f, --file"} {
 		if !contains(string(out), keptFlag) {
 			t.Errorf("expected %s in cloudcompose init --help output, got:\n%s", keptFlag, out)
 		}
@@ -85,26 +86,29 @@ func TestInit_NoDecisionFlags(t *testing.T) {
 // the resulting main.tf.json is well-formed. Does not run `terraform
 // validate` here (that's covered manually/in CI smoke tests against real
 // cloud credentials); this only confirms cloudcompose init itself succeeds
-// and writes both expected files.
+// and writes both expected files, into <dir of -f>/env-<name>
+// since there is no --output override anymore.
 func TestInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
-	outDir := t.TempDir()
 
-	envFile, err := filepath.Abs("../../../examples/hello/environment.yaml")
+	envSrc, err := os.ReadFile("../../../examples/hello/environment.yaml")
 	if err != nil {
-		t.Fatalf("resolve path: %v", err)
+		t.Fatalf("read examples/hello/environment.yaml: %v", err)
 	}
-	if _, err := os.Stat(envFile); err != nil {
-		t.Fatalf("examples/hello/environment.yaml not found: %v", err)
+	scratchDir := t.TempDir()
+	envFile := filepath.Join(scratchDir, "environment.yaml")
+	if err := os.WriteFile(envFile, envSrc, 0644); err != nil {
+		t.Fatalf("write environment.yaml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "init", "-f", envFile, "-o", outDir)
+	cmd := exec.Command(bin, "init", "-f", envFile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloudcompose init failed: %v\n%s", err, out)
 	}
 
+	outDir := filepath.Join(scratchDir, "env-demo")
 	for _, want := range []string{"main.tf.json", "environment.yaml"} {
 		if _, err := os.Stat(filepath.Join(outDir, want)); err != nil {
 			t.Errorf("expected %s to be written, got: %v", want, err)

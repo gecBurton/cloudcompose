@@ -30,7 +30,7 @@ cd cloudcompose-go
 go build -o cloudcompose ./cmd/cloudcompose
 
 # Run the compiler
-./cloudcompose main -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
+./cloudcompose compile -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
 
 # Run tests
 go test ./...
@@ -351,8 +351,8 @@ library).
 cd cloudcompose-go
 
 # Show inference decisions without compiling
-./cloudcompose main -f compose.yml --explain
+./cloudcompose compile -f compose.yml --explain
 
 # Debug with a full Go panic/stack trace on error
-CLOUDCOMPOSE_DEBUG=1 ./cloudcompose main -f compose.yml -e env.yaml
+CLOUDCOMPOSE_DEBUG=1 ./cloudcompose compile -f compose.yml -e env.yaml
 ```

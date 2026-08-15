@@ -12,7 +12,7 @@
 docker compose up
 
 # Production deployment (same file!)
-cloudcompose main -f docker-compose.yml -e prod-infrastructure
+cloudcompose compile -f docker-compose.yml -e env-prod
 ```
 
 ---
@@ -118,16 +118,16 @@ Apps Environment, ECS cluster, etc.), created once by a platform team.
 
 ```bash
 cp examples/hello/environment.yaml ./environment.yaml
-# edit name/region/vpc_cidr etc. to taste
+# edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
 cloudcompose init
-cd prod-infrastructure && terraform init && terraform apply
+cd env-prod && terraform init && terraform apply
 ```
 
 `environment.yaml` holds the authored decisions that produce the
 infrastructure (region, VPC CIDR, whether to create an ALB — review and
 commit this like you would `docker-compose.yml`). `cloudcompose init` writes
 a copy of it into the output directory alongside `main.tf.json`. Once
-`terraform apply` runs, `cloudcompose main` reads the resulting facts (VPC
+`terraform apply` runs, `cloudcompose compile` reads the resulting facts (VPC
 ID, ALB ARN) directly from Terraform's own state via `terraform output
 -json` — no separate generated file to keep in sync. See
 `docs/authored-environment-config.md` for the full schema, or
@@ -137,7 +137,7 @@ ID, ALB ARN) directly from Terraform's own state via `terraform output
 ### Deploy to AWS
 
 ```bash
-cloudcompose main -f docker-compose.yml -e prod-infrastructure
+cloudcompose compile -f docker-compose.yml -e env-prod
 ```
 
 That's it. Your app is live behind the shared load balancer / Container App
@@ -148,13 +148,13 @@ ingress / Cloud Run URL.
 ```bash
 cp examples/hello/environment.azure.yaml ./environment.yaml  # or environment.gcp.yaml for GCP
 cloudcompose init
-cloudcompose main -f docker-compose.yml -e prod-infrastructure
+cloudcompose compile -f docker-compose.yml -e env-prod
 ```
 
 ### Check what's running
 
 ```bash
-cloudcompose ps -f docker-compose.yml -e prod-infrastructure
+cloudcompose ps -f docker-compose.yml -e env-prod
 ```
 
 Queries the cloud directly for each service's live status — like `docker
@@ -168,9 +168,9 @@ replica count and health state) are supported; GCP is not yet. Add
 ### Check the logs
 
 ```bash
-cloudcompose logs -f docker-compose.yml -e prod-infrastructure           # every service
-cloudcompose logs -f docker-compose.yml -e prod-infrastructure web       # just "web"
-cloudcompose logs -f docker-compose.yml -e prod-infrastructure --since 1h --tail 500
+cloudcompose logs -f docker-compose.yml -e env-prod           # every service
+cloudcompose logs -f docker-compose.yml -e env-prod web       # just "web"
+cloudcompose logs -f docker-compose.yml -e env-prod --since 1h --tail 500
 ```
 
 Fetches recent log output directly (CloudWatch Logs on AWS, Log
@@ -225,7 +225,7 @@ services:
 
 **Deploy to AWS:**
 ```bash
-cloudcompose main -f docker-compose.yml -e prod-infrastructure
+cloudcompose compile -f docker-compose.yml -e env-prod
 ```
 
 **What gets created:**
@@ -279,7 +279,7 @@ idiomatic for the target cloud.
 ### 🔍 See What Was Inferred
 
 ```bash
-cloudcompose main -f docker-compose.yml --explain
+cloudcompose compile -f docker-compose.yml --explain
 ```
 
 ```
@@ -382,7 +382,7 @@ No cloud account needed — see what any example compiles to with
 
 ```bash
 # From the cloudcompose-go directory
-./cloudcompose main -f ../examples/hello/compose.yml -d aws
+./cloudcompose compile -f ../examples/hello/compose.yml -d aws
 ```
 
 Swap `-d aws` for `-d azure`/`-d gcp` to see the same compose file
@@ -394,9 +394,9 @@ To actually deploy:
 ```bash
 # From the cloudcompose-go directory
 ./cloudcompose init -f ../examples/hello/environment.yaml
-(cd demo-infrastructure && terraform init && terraform apply)
+(cd env-demo && terraform init && terraform apply)
 
-./cloudcompose main -f ../examples/hello/compose.yml -e demo-infrastructure
+./cloudcompose compile -f ../examples/hello/compose.yml -e env-demo
 ```
 
 ---

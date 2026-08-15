@@ -18,7 +18,7 @@ import (
 // explain), compile, and write Terraform JSON to disk, plus copying any
 // Docker build contexts alongside the manifest.
 var mainCmd = &cobra.Command{
-	Use:   "main",
+	Use:   "compile",
 	Short: "Compile a Docker Compose file into deterministic Terraform JSON",
 	Long:  "Compile a Docker Compose file into deterministic Terraform JSON.",
 	Run:   runMain,
@@ -34,7 +34,6 @@ func runMain(cmd *cobra.Command, args []string) {
 	envDir, _ := cmd.Flags().GetString("env")
 	demoCloud, _ := cmd.Flags().GetString("demo")
 	projectName, _ := cmd.Flags().GetString("project")
-	outputDir, _ := cmd.Flags().GetString("out")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
 	subnetIndex, _ := cmd.Flags().GetInt("subnet-index")
 
@@ -109,6 +108,19 @@ func runMain(cmd *cobra.Command, args []string) {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
+
+	// Output lands in <dir of -f>/app-<environment name>, not a fixed
+	// "terraform" directory: the same compose.yml compiled against two
+	// different environments (e.g. dev vs prod) must not overwrite each
+	// other's output. Named to pair with init's own env-<name> output
+	// directory -- app-<name> is this app's slice of that same
+	// environment name.
+	envName, err := environmentName(env)
+	if err != nil {
+		printUnexpectedError(err)
+		os.Exit(1)
+	}
+	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName)
 
 	// --subnet-index only means something on Azure -- see
 	// AzureEnvironment.SubnetIndex's own doc comment for why it's a
@@ -193,6 +205,25 @@ func environmentTarget(env any) (string, error) {
 		return "azure", nil
 	case *models.GcpEnvironment:
 		return "gcp", nil
+	default:
+		return "", fmt.Errorf("unsupported environment type %T", env)
+	}
+}
+
+// environmentName reports the environment's own name (the same `name:`
+// authored in environment.yaml, or "demo" for --demo's synthetic
+// environments), used to build compile's own output directory
+// (app-<name>) -- see that call site's own comment for why this needs
+// to vary per environment rather than being a fixed "terraform"
+// directory.
+func environmentName(env any) (string, error) {
+	switch e := env.(type) {
+	case *models.AwsEnvironment:
+		return e.Name, nil
+	case *models.AzureEnvironment:
+		return e.Name, nil
+	case *models.GcpEnvironment:
+		return e.Name, nil
 	default:
 		return "", fmt.Errorf("unsupported environment type %T", env)
 	}
@@ -340,7 +371,6 @@ func init() {
 	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
 	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
 	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
-	mainCmd.Flags().StringP("out", "o", "terraform", "Directory to write the generated Terraform JSON")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
 	mainCmd.Flags().BoolP("version", "v", false, "Show the version and exit")
 	mainCmd.Flags().Int("subnet-index", 0, "Azure only: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")

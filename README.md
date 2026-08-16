@@ -424,7 +424,7 @@ To actually deploy:
 
 ```bash
 # From the cloudcompose-go directory
-./cloudcompose init -f ../examples/hello/environment.yaml
+./cloudcompose init -e ../examples/hello/environment.yaml
 (cd env-demo && terraform init && terraform apply)
 
 ./cloudcompose compile -f ../examples/hello/compose.yml -e env-demo

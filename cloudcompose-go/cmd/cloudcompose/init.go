@@ -38,6 +38,16 @@ import (
 // itself to take per-field override flags for compose.yml, and there's
 // no reason environment.yaml should be different now that a real,
 // copyable example exists (examples/hello/environment.yaml).
+//
+// Uses -e/--env for this file, not -f/--file: init is the one command
+// with no compose file at all, so -f/--file's inherited persistent
+// meaning (see main.go's own doc comment) is never relevant here, and
+// giving environment.yaml the same -e/--env name `up` uses for its own
+// identical input (see up.go's own doc comment on that) keeps "the
+// environment" meaning one consistent flag across every command that
+// has one -- a file pre-apply (init, up), or a directory post-apply
+// (compile/ps/logs/down) -- rather than -f overloaded to mean two
+// unrelated kinds of file depending which command it's given to.
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a shared infrastructure environment",
@@ -53,7 +63,7 @@ var initCmd = &cobra.Command{
 }
 
 func runInit(cmd *cobra.Command, args []string) {
-	configFile, _ := cmd.Flags().GetString("file")
+	configFile, _ := cmd.Flags().GetString("env")
 
 	output, err := initEnvironment(configFile)
 	if err != nil {
@@ -87,7 +97,7 @@ func initEnvironment(configFile string) (string, error) {
 			"%s not found.\n\ncloudcompose init reads an authored environment.yaml -- there are no\n"+
 				"decision flags. Create one (see examples/hello/environment.yaml for\n"+
 				"a starting point, or docs/authored-environment-config.md for the full\n"+
-				"schema), then run:\n\n  cloudcompose init -f %s",
+				"schema), then run:\n\n  cloudcompose init -e %s",
 			configFile, configFile,
 		)
 	}
@@ -229,5 +239,5 @@ func lowerASCII(s string) string {
 func init() {
 	rootCmd.AddCommand(initCmd)
 
-	initCmd.Flags().StringP("file", "f", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md)")
+	initCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). Unlike --env on compile/ps/logs/down (an already-applied environment directory), this is the input file init itself applies.")
 }

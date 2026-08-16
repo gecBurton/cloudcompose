@@ -94,7 +94,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # docs/authored-environment-config.md's "no -o/--output flag" note).
 # Both are instead derived here to exactly match what init/compile derive
 # themselves, so this script can still cd/destroy/reference them: init
-# always writes to <dir of its -f>/env-<name>, so ENV_DIR is
+# always writes to <dir of its -e>/env-<name>, so ENV_DIR is
 # computed from ENV_CONFIG_DIR (below, where the generated environment.yaml
 # lives) and NAME the same way. compile always writes to
 # <dir of its -f>/app-<environment name>-<project name>, so the app's
@@ -340,7 +340,7 @@ else:
 with open('$GENERATED_ENV_CONFIG', 'w') as f:
     f.write(content)
 "
-"$CLOUDCOMPOSE" init -f "$GENERATED_ENV_CONFIG"
+"$CLOUDCOMPOSE" init -e "$GENERATED_ENV_CONFIG"
 
 write_backend "$ENV_DIR" "acceptance/$NAME/environment.tfstate"
 cd "$ENV_DIR"

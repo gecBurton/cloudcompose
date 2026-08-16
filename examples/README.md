@@ -34,9 +34,10 @@ one command, stopping to show you each `terraform apply`'s plan and
 prompt for confirmation exactly as it would if you ran the four steps by
 hand (no `-auto-approve` anywhere). Note that `--env` means something
 different here than it does on `compile`/`ps`/`logs`/`down` below: on
-`up`, it's the authored environment.yaml file `up` itself applies; on
-the others, it's the already-applied environment *directory* `init`
-wrote (see the two-step flow's own note on this below).
+`up` (and `init`, which `up` calls internally), it's the authored
+environment.yaml file being applied; on the others, it's the
+already-applied environment *directory* `init`/`up` wrote (see the
+two-step flow's own note on this below).
 
 ```bash
 cd cloudcompose-go
@@ -68,10 +69,10 @@ cd cloudcompose-go
 # account, not by every developer.
 #
 # Neither init nor compile take an output-location flag: init always
-# writes to <dir of -f>/env-<name> (here, next to
+# writes to <dir of -e>/env-<name> (here, next to
 # examples/hello/environment.yaml, so env-demo/ lands in
 # ../examples/hello/, since that file's `name:` is `demo`).
-go run ./cmd/cloudcompose init -f ../examples/hello/environment.yaml
+go run ./cmd/cloudcompose init -e ../examples/hello/environment.yaml
 cd ../examples/hello/env-demo && terraform init && terraform apply
 cd -
 
@@ -90,8 +91,9 @@ cd -
 #
 # -e must be the applied environment directory -- the one `init` wrote
 # main.tf.json into and you just ran `terraform apply` in above, not
-# environment.yaml itself (that's what `up`'s own --env means instead --
-# see this file's "fast path" section above). compile's own output lands at
+# environment.yaml itself (that's what `init`'s/`up`'s own --env means
+# instead -- see this file's "fast path" section above). compile's own
+# output lands at
 # <dir of -f>/app-<environment name>-<project name> (here, app-demo-hello/,
 # "hello" being -f's own containing directory name, compile's default
 # --project) -- named after both the environment and the project so the
@@ -159,7 +161,7 @@ per run (on Azure, this also means `--subnet-index` is never passed —
 see `scripts/smoke-test.sh`'s own comment at that call site for why
 defaulting to `0` is correct here).
 Each run substitutes a unique `name:` into a generated copy of that
-shared file before calling `cloudcompose init -f <generated file>` — see
+shared file before calling `cloudcompose init -e <generated file>` — see
 the comments in the smoke-test script for exactly how.
 
 ## Running the golden tests yourself

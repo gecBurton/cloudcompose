@@ -94,9 +94,7 @@ func NewCloudWatchLogsClient(ctx context.Context, region string) (cloudwatchLogs
 // "not found is not a failure" principle status.go's ServiceStatus.Found
 // follows.
 func FetchLogs(ctx context.Context, client cloudwatchLogsClient, app *models.Application, env *models.AwsEnvironment, services []string, since int64, limit int32) ([]LogEvent, error) {
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 
 	wanted := make(map[string]bool, len(services))
 	for _, s := range services {

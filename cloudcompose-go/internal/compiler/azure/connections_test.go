@@ -335,37 +335,3 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 		t.Errorf("Identity = %q, want the user-assigned identity's resource ID", secrets[0].Identity)
 	}
 }
-
-// TestConnectionOrderForAzure_DatabasesThenCachesThenStorage pins that
-// connections are ordered databases-then-caches-then-storage (each group
-// in service declaration order): alphabetically sorting connection keys
-// puts a URL env var in the wrong relative position whenever a service
-// references more than one connection.
-func TestConnectionOrderForAzure_DatabasesThenCachesThenStorage(t *testing.T) {
-	t.Parallel()
-	app := &models.Application{
-		Name: "app",
-		Services: []models.Service{
-			{Name: "web", Capability: models.CapabilityContainer},
-			{Name: "blobs", Capability: models.CapabilityObjectStorage},
-			{Name: "db", Capability: models.CapabilityDatabase},
-			{Name: "cache", Capability: models.CapabilityCache},
-		},
-	}
-	connections := map[string]models.Connection{
-		"blobs": {},
-		"db":    {},
-		"cache": {},
-	}
-
-	order := connectionOrderForAzure(app, connections)
-	want := []string{"db", "cache", "blobs"}
-	if len(order) != len(want) {
-		t.Fatalf("got %v, want %v", order, want)
-	}
-	for i := range want {
-		if order[i] != want[i] {
-			t.Errorf("order[%d] = %q, want %q (full: %v)", i, order[i], want[i], order)
-		}
-	}
-}

@@ -16,6 +16,7 @@ import (
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -108,9 +109,7 @@ func NewAWSClients(ctx context.Context, region string) (ecsClient, elbClient, er
 // guard against (see handleIngress's tg.Name = getName(service.Name +
 // "-tg")).
 func FetchStatus(ctx context.Context, ecsC ecsClient, elbC elbClient, app *models.Application, env *models.AwsEnvironment) ([]ServiceStatus, error) {
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 
 	var containerServices []*models.Service
 	for i := range app.Services {

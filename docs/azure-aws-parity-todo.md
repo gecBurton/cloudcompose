@@ -47,7 +47,13 @@ Azure has reached feature parity with AWS on all major fronts:
   groups). Deliberately deferred — GCP has lighter verification overall
   (see below).
 - **GCP has no size-ceiling rejection** equivalent to Azure's
-  Consumption-tier cap enforcement. Not attempted.
+  Consumption-tier cap enforcement. Not attempted. (Separately: GCP's
+  own size-to-resources table was found, during a later codebase
+  review, to have drifted from AWS/Azure's `shared.SizeMappings` the
+  same way Azure's once had before this doc's Priority 4 item fixed it
+  -- GCP's own table has since been fixed to derive from
+  `shared.SizeMappings` too, the same consolidation Azure got; this
+  ceiling-rejection gap is what's left, not the table itself.)
 - **Backup/HA settings not wired for GCP** — Cloud SQL has its own
   equivalent settings; left for a follow-up.
 - **`log_retention_days` placement**: currently a common-envelope field

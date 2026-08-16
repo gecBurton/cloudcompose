@@ -114,13 +114,41 @@ Each cloud target needs a one-time shared environment (VPC, ALB/Container
 Apps Environment, ECS cluster, etc.), created once by a platform team.
 `cloudcompose init` takes no decision flags — it reads an authored
 `environment.yaml` you write yourself (the same way you'd write
-`docker-compose.yml`), not a set of `--flag`s:
+`docker-compose.yml`), not a set of `--flag`s.
+
+You'll also need a `docker-compose.yml` for the app itself — any valid
+one works; every command below auto-discovers `compose.yaml`/
+`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current
+directory if you don't pass `-f` explicitly, the same way `docker
+compose` itself does.
+
+From here there are two ways to deploy, not one followed by the other
+-- pick whichever fits:
+
+**Fast path — `cloudcompose up`** does `init` + `terraform apply` +
+`compile` + `terraform apply` in one command, for the common
+one-app-one-environment case. Every `apply` still shows its plan and
+prompts for confirmation interactively, exactly as if you ran the four
+steps yourself:
+
+```bash
+cp examples/hello/environment.yaml ./environment.yaml
+# edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
+cloudcompose up --env environment.yaml
+```
+
+That's it — your app is live behind the shared load balancer / Container
+App ingress / Cloud Run URL. Skip ahead to "Check what's running" below.
+
+**Two-step path** — use this if you're deploying more than one app into
+the same environment, or want to see each generated Terraform manifest
+before running `terraform apply` at all:
 
 ```bash
 cp examples/hello/environment.yaml ./environment.yaml
 # edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
 cloudcompose init
-cd env-prod && terraform init && terraform apply
+cd env-prod && terraform init && terraform apply && cd ..
 ```
 
 `environment.yaml` holds the authored decisions that produce the
@@ -134,24 +162,10 @@ ID, ALB ARN) directly from Terraform's own state via `terraform output
 `examples/README.md` for a real, runnable walkthrough using
 `examples/hello`.
 
-For the common one-app-one-environment case, `cloudcompose up` runs
-`init`, `terraform apply`, `compile`, and `terraform apply` in one
-command — every `apply` still shows its plan and prompts for
-confirmation interactively, exactly as if you ran the four steps
-yourself. Like `docker compose`, `-f`/`--file` is optional: with no
-`-f` given, `cloudcompose` looks for `compose.yaml`, `compose.yml`,
-`docker-compose.yaml`, or `docker-compose.yml` (in that order) in the
-current directory, so it's only needed for a nonstandard name/location:
-
-```bash
-cloudcompose up --env environment.yaml
-```
-
-### Deploy to AWS
+Then deploy your app into the environment `init` just created:
 
 ```bash
 cloudcompose compile -e env-prod
-
 ```
 
 That's it. Your app is live behind the shared load balancer / Container App
@@ -159,10 +173,13 @@ ingress / Cloud Run URL.
 
 ### Deploy to Azure or GCP
 
+Same two-step path, just with a different `environment.yaml`:
+
 ```bash
 cp examples/hello/environment.azure.yaml ./environment.yaml  # or environment.gcp.yaml for GCP
 cloudcompose init
-cloudcompose compile -f docker-compose.yml -e env-prod
+cd env-prod && terraform init && terraform apply && cd ..
+cloudcompose compile -e env-prod
 ```
 
 ### Check what's running

@@ -80,6 +80,14 @@ func runPs(cmd *cobra.Command, args []string) {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
+	// Check target support immediately after loading the environment,
+	// before doing any further work (parsing/normalizing compose.yml) --
+	// see requireAwsOrAzure's own doc comment for why this can't just
+	// wait for the type switch below to reject GCP.
+	if err := requireAwsOrAzure(cmd.Name(), env); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {
@@ -135,6 +143,11 @@ func runPs(cmd *cobra.Command, args []string) {
 		}
 
 	default:
+		// Unreachable in practice: requireAwsOrAzure above already
+		// rejected anything but AWS/Azure. Kept as a defensive default
+		// rather than a panic, in case a future environment type is
+		// added to LoadEnvironment's own return type without this
+		// switch being updated to match.
 		target, _ := environmentTarget(env)
 		fmt.Fprintf(os.Stderr, "Error: `cloudcompose ps` does not support %s environments yet\n", target)
 		os.Exit(1)

@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -228,5 +230,34 @@ func TestMain_PsJSONFlag(t *testing.T) {
 	}
 	if !contains(string(out), "--env is required") {
 		t.Errorf("expected the error to name --env even with --json set, got:\n%s", out)
+	}
+}
+
+// TestPs_RejectsGcpBeforeParsingCompose is a regression test: `ps`
+// used to only reject a GCP environment after also parsing/normalizing
+// compose.yml (a real, if harmless, waste of work -- LoadEnvironment
+// itself has nothing to reject for GCP, since GCP is a real,
+// supported cloudcompose target elsewhere). This confirms `ps` fails
+// with the "does not support gcp" message even against a compose.yml
+// with invalid YAML -- if `ps` were still trying to parse it first,
+// this test would see a YAML parse error instead of the target
+// rejection.
+func TestPs_RejectsGcpBeforeParsingCompose(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	envDir := writeGcpEnvironmentFixture(t, "demo")
+	invalidComposeFile := filepath.Join(t.TempDir(), "compose.yml")
+	if err := os.WriteFile(invalidComposeFile, []byte("not: [valid, yaml: at all"), 0644); err != nil {
+		t.Fatalf("write invalid compose.yml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "ps", "-f", invalidComposeFile, "-e", envDir)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected cloudcompose ps to fail for a gcp environment, got:\n%s", out)
+	}
+	if !contains(string(out), "does not support gcp") {
+		t.Errorf("expected the gcp rejection message, got:\n%s", out)
 	}
 }

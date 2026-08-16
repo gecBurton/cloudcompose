@@ -18,36 +18,30 @@ func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	target, _ := raw["target"].(string)
-	if target == "" {
-		target = "aws"
-	}
-	if target != "aws" {
-		return nil, fmt.Errorf(
-			"%s declares target %q; this loader only supports \"aws\"",
-			dir, target,
-		)
+	if err := shared.RequireTarget(raw, dir, "aws"); err != nil {
+		return nil, err
 	}
 
 	env := models.NewAwsEnvironment()
-	env.Name, _ = raw["name"].(string)
-	if region, ok := raw["region"].(string); ok && region != "" {
-		env.Region = region
+	common := shared.DecodeCommonEnvelope(raw)
+	env.Name = common.Name
+	if common.Region != nil {
+		env.Region = *common.Region
 	}
-	if logRetentionDays, ok := raw["log_retention_days"].(float64); ok {
-		env.LogRetentionDays = int(logRetentionDays)
+	if common.LogRetentionDays != nil {
+		env.LogRetentionDays = *common.LogRetentionDays
 	}
-	if retainData, ok := raw["retain_data_on_destroy"].(bool); ok {
-		env.RetainDataOnDestroy = retainData
+	if common.RetainDataOnDestroy != nil {
+		env.RetainDataOnDestroy = *common.RetainDataOnDestroy
 	}
-	if highAvailability, ok := raw["high_availability_enabled"].(bool); ok {
-		env.HighAvailabilityEnabled = highAvailability
+	if common.HighAvailabilityEnabled != nil {
+		env.HighAvailabilityEnabled = *common.HighAvailabilityEnabled
 	}
-	if backupRetentionDays, ok := raw["backup_retention_days"].(float64); ok {
-		env.BackupRetentionDays = int(backupRetentionDays)
+	if common.BackupRetentionDays != nil {
+		env.BackupRetentionDays = *common.BackupRetentionDays
 	}
-	env.Tags = shared.ToStringMap(raw["tags"])
+	env.Tags = common.Tags
+
 	env.VpcID, _ = raw["vpc_id"].(string)
 	env.PublicSubnets = shared.ToStringSlice(raw["public_subnets"])
 	env.PrivateSubnets = shared.ToStringSlice(raw["private_subnets"])

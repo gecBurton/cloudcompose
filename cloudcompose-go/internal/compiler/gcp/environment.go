@@ -1,8 +1,6 @@
 package gcp
 
 import (
-	"fmt"
-
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
@@ -17,30 +15,29 @@ func LoadGcpEnvironment(dir string) (*models.GcpEnvironment, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	target, _ := raw["target"].(string)
-	if target == "" {
-		target = "gcp"
-	}
-	if target != "gcp" {
-		return nil, fmt.Errorf(
-			"%s declares target %q; this loader only supports \"gcp\"",
-			dir, target,
-		)
+	if err := shared.RequireTarget(raw, dir, "gcp"); err != nil {
+		return nil, err
 	}
 
 	env := models.NewGcpEnvironment()
-	env.Name, _ = raw["name"].(string)
-	if region, ok := raw["region"].(string); ok && region != "" {
-		env.Region = region
+	common := shared.DecodeCommonEnvelope(raw)
+	env.Name = common.Name
+	if common.Region != nil {
+		env.Region = *common.Region
 	}
-	if logRetentionDays, ok := raw["log_retention_days"].(float64); ok {
-		env.LogRetentionDays = int(logRetentionDays)
+	if common.LogRetentionDays != nil {
+		env.LogRetentionDays = *common.LogRetentionDays
 	}
-	if retainData, ok := raw["retain_data_on_destroy"].(bool); ok {
-		env.RetainDataOnDestroy = retainData
+	if common.RetainDataOnDestroy != nil {
+		env.RetainDataOnDestroy = *common.RetainDataOnDestroy
 	}
-	env.Tags = shared.ToStringMap(raw["tags"])
+	// GcpEnvironment has no HighAvailabilityEnabled/BackupRetentionDays
+	// fields (see docs/azure-aws-parity-todo.md's "Backup/HA settings
+	// not wired for GCP" item -- Cloud SQL has its own equivalent
+	// settings, left for a follow-up), so common.HighAvailabilityEnabled/
+	// BackupRetentionDays are decoded but deliberately never copied here.
+	env.Tags = common.Tags
+
 	env.ProjectID, _ = raw["project_id"].(string)
 	env.VpcID = shared.ToStringPtr(raw["vpc_id"])
 	env.SubnetIDs = shared.ToStringSlice(raw["subnet_ids"])

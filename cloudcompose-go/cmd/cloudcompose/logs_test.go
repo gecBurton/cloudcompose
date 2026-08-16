@@ -122,7 +122,7 @@ func TestAzureLogEventsJSON(t *testing.T) {
 
 func TestPrintLogsJSON_IsValidJSONArray(t *testing.T) {
 	var buf bytes.Buffer
-	printLogsJSON(&buf, []logEventJSON{
+	printJSONArray(&buf, []logEventJSON{
 		{Service: "web", Timestamp: "2026-01-01T00:00:00Z", Message: "hello"},
 	})
 
@@ -137,10 +137,12 @@ func TestPrintLogsJSON_IsValidJSONArray(t *testing.T) {
 
 // TestPrintLogsJSON_EmptyIsStillAnArray mirrors ps_test.go's own
 // TestPrintPsJSON_EmptyIsStillAnArray rationale: `logs --json` against
-// zero events should still emit `[]`, not `null`.
+// zero events should still emit `[]`, not `null`. Exercised via
+// printJSONArray directly (ps.go/logs.go's shared JSON printer) rather
+// than a since-removed printLogsJSON wrapper.
 func TestPrintLogsJSON_EmptyIsStillAnArray(t *testing.T) {
 	var buf bytes.Buffer
-	printLogsJSON(&buf, []logEventJSON{})
+	printJSONArray(&buf, []logEventJSON{})
 
 	if strings.TrimSpace(buf.String()) != "[]" {
 		t.Errorf("got %q, want []", buf.String())

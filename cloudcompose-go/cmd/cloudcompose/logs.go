@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -111,7 +110,7 @@ func runLogs(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		if jsonOutput {
-			printLogsJSON(os.Stdout, awsLogEventsJSON(events))
+			printJSONArray(os.Stdout, awsLogEventsJSON(events))
 		} else {
 			printAwsLogEvents(os.Stdout, events)
 		}
@@ -137,7 +136,7 @@ func runLogs(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		if jsonOutput {
-			printLogsJSON(os.Stdout, azureLogEventsJSON(events))
+			printJSONArray(os.Stdout, azureLogEventsJSON(events))
 		} else {
 			printAzureLogEvents(os.Stdout, events)
 		}
@@ -209,18 +208,6 @@ func azureLogEventsJSON(events []azure.LogEvent) []logEventJSON {
 		})
 	}
 	return rows
-}
-
-// printLogsJSON writes rows as a single JSON array to w -- always an
-// array, even for zero/one events, matching ps.go's printPsJSON
-// rationale.
-func printLogsJSON(w io.Writer, rows []logEventJSON) {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(rows); err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
-	}
 }
 
 func init() {

@@ -47,8 +47,12 @@ func TestInit_MissingFileFailsWithHelpfulMessage(t *testing.T) {
 }
 
 // TestInit_NoDecisionFlags confirms cloudcompose init's flag set really is
-// just -f now -- a regression test for the flag removal described in
-// docs/authored-environment-config.md's "Revision 2: no flags either".
+// just -e/--env now -- a regression test for the flag removal described
+// in docs/authored-environment-config.md's "Revision 2: no flags
+// either". -f/--file is deliberately absent from init (unlike every
+// other command that has one): init is the one command with no compose
+// file at all, so its own environment.yaml input uses -e/--env instead,
+// matching up's identical flag for the same kind of input.
 func TestInit_NoDecisionFlags(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -69,7 +73,7 @@ func TestInit_NoDecisionFlags(t *testing.T) {
 			t.Errorf("expected %s to have been removed from cloudcompose init, but it's still in --help output:\n%s", removedFlag, out)
 		}
 	}
-	for _, keptFlag := range []string{"-f, --file"} {
+	for _, keptFlag := range []string{"-e, --env"} {
 		if !contains(string(out), keptFlag) {
 			t.Errorf("expected %s in cloudcompose init --help output, got:\n%s", keptFlag, out)
 		}
@@ -82,7 +86,7 @@ func TestInit_NoDecisionFlags(t *testing.T) {
 // the resulting main.tf.json is well-formed. Does not run `terraform
 // validate` here (that's covered manually/in CI smoke tests against real
 // cloud credentials); this only confirms cloudcompose init itself succeeds
-// and writes both expected files, into <dir of -f>/env-<name>
+// and writes both expected files, into <dir of -e>/env-<name>
 // since there is no --output override anymore.
 func TestInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 	t.Parallel()
@@ -98,7 +102,7 @@ func TestInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 		t.Fatalf("write environment.yaml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "init", "-f", envFile)
+	cmd := exec.Command(bin, "init", "-e", envFile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloudcompose init failed: %v\n%s", err, out)

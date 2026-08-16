@@ -128,7 +128,7 @@ at `examples/hello/environment.yaml` (AWS),
 | `project_id` | **required** — GCP inference depends on it throughout `gcp/infer.go` |
 
 `init` and `compile` take no output-location flag at all: `init` always
-writes to `<dir of -f>/env-<name>`, and `compile` always writes to
+writes to `<dir of -e>/env-<name>`, and `compile` always writes to
 `<dir of -f (compose.yml)>/app-<environment name>-<project name>` —
 both derived from the input file's own location, not the shell's
 current directory, so output never depends on where a command happens
@@ -182,7 +182,7 @@ schema change once it's built, not because anything consumes it yet.
 - `internal/compiler/initconfig` — `Load` (reads `environment.yaml`,
   returns `(nil, nil)` if missing) and `Validate` (strict/discriminated
   checks).
-- `cmd/cloudcompose/init.go` — `-f`/`--file` (default
+- `cmd/cloudcompose/init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
 - `internal/compiler/{aws,azure,gcp}/environment_generator.go` — each
   declares a plain `output "environment"` block; no `local_file`
@@ -196,5 +196,5 @@ schema change once it's built, not because anything consumes it yet.
 - CI note: `scripts/ci-environment.{aws,azure}.yaml` are shared,
   committed environment configs; `scripts/smoke-test.sh` substitutes a
   per-run `name:`/`region:` into a generated copy under `build/` before
-  passing it to `cloudcompose init -f`, since a single committed file
+  passing it to `cloudcompose init -e`, since a single committed file
   can't express a unique name per CI run.

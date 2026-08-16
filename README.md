@@ -1,12 +1,10 @@
 # Cloud Compose Compiler: Docker Compose for the Cloud
 
 > [!CAUTION]
-> **Project Status: PRE-ALPHA**
-> This project is in early development. APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.
+> **Project Status: PRE-ALPHA** — APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.
 
-**The Mission**: Running services locally via Docker Compose is easy. Running them on the cloud is unnecessarily hard. Cloud Compose Compiler bridges that gap.
+Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform — VPCs, load balancers, IAM policies, auto-scaling rules. Cloud Compose Compiler reads your existing `docker-compose.yml` and compiles it straight to deployable Terraform for AWS, Azure, or GCP:
 
-**The Experience**:
 ```bash
 # Local development
 docker compose up
@@ -15,92 +13,23 @@ docker compose up
 cloudcompose compile -f docker-compose.yml -e env-prod
 ```
 
+No `--flags` describing your infrastructure, no new config format to learn — it infers what it can (`image: postgres` → a managed database) and lets you override the rest with a small `x-cloud:` block when you need to.
+
 ---
 
-## The Problem
+## Install
 
-### Local Development (Easy)
+Download a prebuilt binary from the
+[Releases page](https://github.com/gecBurton/cloudcompose/releases) —
+archives are published for Linux, macOS, and Windows (amd64 and arm64):
+
 ```bash
-docker compose up
+curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloudcompose_<version>_darwin_arm64.tar.gz
+tar -xzf cloudcompose_<version>_darwin_arm64.tar.gz
+chmod +x cloudcompose
 ```
 
-That's it. Everything just works:
-- Services can reach each other
-- Ports are exposed
-- Data persists
-- No networking configuration
-- No load balancer setup
-- No IAM policies
-
-### Cloud Deployment (Hard)
-```hcl
-# 500+ lines of Terraform for the same thing
-resource "aws_vpc" "main" { ... }
-resource "aws_subnet" "public" { ... }
-resource "aws_lb" "main" { ... }
-resource "aws_ecs_cluster" "main" { ... }
-resource "aws_iam_role" "web" { ... }
-# ... and so on
-```
-
-You need to understand:
-- VPCs, subnets, CIDR blocks
-- Load balancers, target groups, listeners
-- IAM roles, policies, trust relationships
-- Auto-scaling policies
-- Security groups and rules
-
-**Why should cloud deployment be 100x more complex than local?**
-
----
-
-## The Solution
-
-Cloud Compose Compiler takes your Docker Compose file and deploys it to the cloud—optimized for each provider, but with zero additional configuration.
-
-### What You Write
-
-```yaml
-services:
-  web:
-    image: myapp
-    ports:
-      - "80:8080"
-    depends_on:
-      - db
-
-  db:
-    image: postgres:15
-```
-
-### What Cloud Compose Compiler Does
-
-**On AWS**: ECS Fargate + RDS + ALB + Auto-scaling + HTTPS  
-**On Azure**: Container Apps + Flexible Server + Built-in ingress  
-**On GCP**: Cloud Run + Cloud SQL + Global load balancing
-
-**You never see:**
-- VPCs or subnets
-- Load balancer configuration
-- IAM policies
-- Certificate management
-- Auto-scaling rules
-
----
-
-## Core Principles
-
-1. **Docker Compose compatibility** — Valid `docker-compose.yml` just works
-2. **Zero config for simple cases** — Same file works locally and in production
-3. **Inference over configuration** — Detect postgres → create managed database
-4. **Cloud-agnostic by default** — Same file works on AWS, Azure, or GCP
-5. **Sensible defaults** — Optimized for cost and performance automatically
-
----
-
-## Quick Start
-
-### Installation
+Or build from source (requires Go 1.26+):
 
 ```bash
 git clone https://github.com/gecBurton/cloudcompose.git
@@ -108,228 +37,22 @@ cd cloudcompose/cloudcompose-go
 go build -o cloudcompose ./cmd/cloudcompose
 ```
 
-### Set Up an Environment
+You'll also need the **Terraform CLI**, **Docker** (only if a service has a `build:` section), and credentials for whichever cloud you're deploying to.
 
-Each cloud target needs a one-time shared environment (VPC, ALB/Container
-Apps Environment, ECS cluster, etc.), created once by a platform team.
-`cloudcompose init` takes no decision flags — it reads an authored
-`environment.yaml` you write yourself (the same way you'd write
-`docker-compose.yml`), not a set of `--flag`s.
+### Try it with no cloud account
 
-You'll also need a `docker-compose.yml` for the app itself — any valid
-one works; every command below auto-discovers `compose.yaml`/
-`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current
-directory if you don't pass `-f` explicitly, the same way `docker
-compose` itself does.
-
-From here there are two ways to deploy, not one followed by the other
--- pick whichever fits:
-
-**Fast path — `cloudcompose up`** does `init` + `terraform apply` +
-`compile` + `terraform apply` in one command, for the common
-one-app-one-environment case. Every `apply` still shows its plan and
-prompts for confirmation interactively, exactly as if you ran the four
-steps yourself:
+`--demo` compiles any example against placeholder resource IDs — real, valid Terraform JSON, just not deployable as-is:
 
 ```bash
-cp examples/hello/environment.yaml ./environment.yaml
-# edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
-cloudcompose up --env environment.yaml
+# From the cloudcompose-go directory
+./cloudcompose compile -f ../examples/hello/compose.yml -d aws   # or -d azure / -d gcp
 ```
 
-That's it — your app is live behind the shared load balancer / Container
-App ingress / Cloud Run URL. Skip ahead to "Check what's running" below.
-
-**Two-step path** — use this if you're deploying more than one app into
-the same environment, or want to see each generated Terraform manifest
-before running `terraform apply` at all:
-
-```bash
-cp examples/hello/environment.yaml ./environment.yaml
-# edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
-cloudcompose init
-cd env-prod && terraform init && terraform apply && cd ..
-```
-
-`environment.yaml` holds the authored decisions that produce the
-infrastructure (region, VPC CIDR, whether to create an ALB — review and
-commit this like you would `docker-compose.yml`). `cloudcompose init` writes
-a copy of it into the output directory alongside `main.tf.json`. Once
-`terraform apply` runs, `cloudcompose compile` reads the resulting facts (VPC
-ID, ALB ARN) directly from Terraform's own state via `terraform output
--json` — no separate generated file to keep in sync. See
-`docs/authored-environment-config.md` for the full schema, or
-`examples/README.md` for a real, runnable walkthrough using
-`examples/hello`.
-
-Then deploy your app into the environment `init` just created:
-
-```bash
-cloudcompose compile -e env-prod
-```
-
-That's it. Your app is live behind the shared load balancer / Container App
-ingress / Cloud Run URL.
-
-### Deploy to Azure or GCP
-
-Same two-step path, just with a different `environment.yaml`:
-
-```bash
-cp examples/hello/environment.azure.yaml ./environment.yaml  # or environment.gcp.yaml for GCP
-cloudcompose init
-cd env-prod && terraform init && terraform apply && cd ..
-cloudcompose compile -e env-prod
-```
-
-### Check what's running
-
-```bash
-cloudcompose ps -f docker-compose.yml -e env-prod
-```
-
-Queries the cloud directly for each service's live status — like `docker
-compose ps`, but for what's actually running right now, not anything
-already implied by `compose.yml` or Terraform state. AWS (ECS service
-task counts, ALB target group health) and Azure (Container App revision
-replica count and health state) are supported; GCP is not yet. Add
-`--json` for a stable, cloud-agnostic JSON array instead of the table
-(handy for scripting — see `scripts/smoke-test.sh`'s own use of it).
-
-### Check the logs
-
-```bash
-cloudcompose logs -f docker-compose.yml -e env-prod           # every service
-cloudcompose logs -f docker-compose.yml -e env-prod web       # just "web"
-cloudcompose logs -f docker-compose.yml -e env-prod --since 1h --tail 500
-```
-
-Fetches recent log output directly (CloudWatch Logs on AWS, Log
-Analytics on Azure), interleaved by timestamp across services — like
-`docker compose logs`. Covers container services (app stdout/stderr)
-and Postgres databases (RDS/Postgres Flexible Server query and error
-logs — MySQL/MariaDB database logs aren't wired up yet). A one-shot
-fetch for now, not a continuous `-f`/`--follow` tail. AWS and Azure are
-supported; GCP is not yet. Also supports `--json` for the same reason
-as `ps` above.
-
-### Tear down an app
-
-```bash
-cloudcompose down -f docker-compose.yml -e env-prod
-```
-
-Runs `terraform destroy` in the app's own Terraform directory — the
-inverse of `compile` — like `docker compose down`. This only ever
-destroys the app; it never touches the shared environment `cloudcompose
-init` created, since other apps may still depend on it. Tear down an
-environment itself the same way you created it: `terraform destroy` by
-hand in its own `env-<name>` directory. Stays interactive by default —
-no `-auto-approve` — like every other command that runs Terraform;
-pass `--auto-approve` for non-interactive callers (CI, scripts) that
-have already decided not to have a human review the plan (`up` takes
-the same flag).
-
----
-
-## How It Works
-
-### The Magic: Inference
-
-Cloud Compose Compiler reads your Docker Compose file and infers what you need:
-
-| You Write | Cloud Compose Compiler Infers |
-|-----------|-----------------|
-| `image: postgres` | Managed database (RDS, Cloud SQL, etc.) |
-| `image: redis` | Managed cache (ElastiCache, Redis Cache) |
-| `image: minio` | Object storage (S3, Blob Storage, GCS) |
-| `ports:` | Public HTTPS endpoint with load balancing |
-| `depends_on:` | Private service discovery |
-| No `ports:` | Internal service only |
-
-### Example: Full-Stack App
-
-```yaml
-services:
-  web:
-    image: myapp/web
-    ports:
-      - "80:3000"
-    depends_on:
-      - api
-
-  api:
-    image: myapp/api
-    depends_on:
-      - db
-      - cache
-
-  db:
-    image: postgres:15
-
-  cache:
-    image: redis:7
-```
-
-**Deploy to AWS:**
-```bash
-cloudcompose compile -f docker-compose.yml -e env-prod
-```
-
-**What gets created:**
-- ECS Fargate services for web and api
-- RDS PostgreSQL database
-- ElastiCache Redis cluster
-- Application Load Balancer with HTTPS
-- Auto-scaling policies
-- VPC, subnets, security groups
-- IAM roles and policies
-
-**You write 20 lines, Cloud Compose Compiler generates 500+ lines of optimized Terraform.**
-
----
-
-## Features
-
-### 🔒 HTTPS Automatically
-
-Every public service gets HTTPS with automatic certificate management.
-
-### 🗄 Managed Services
-
-Standard images are automatically upgraded to managed services:
-- `postgres` → Managed database
-- `redis` → Managed cache
-- `minio` → Object storage
-
-### 📈 Autoscaling
-
-Set how many instances a service should keep running, and scale on CPU,
-memory, or request count:
-
-```yaml
-services:
-  api:
-    image: myapp
-    x-cloud:
-      min_scale: 2   # Always at least 2 instances
-      max_scale: 10
-      auto_scaling:
-        metrics:
-          - type: cpu
-            target_value: 70
-```
-
-Cloud Compose Compiler translates the same declaration into ECS target-tracking (AWS),
-KEDA scale rules (Azure), or Cloud Run autoscaling (GCP) — whichever is
-idiomatic for the target cloud.
-
-### 🔍 See What Was Inferred
+See exactly what it inferred and why, before compiling anything for real:
 
 ```bash
 cloudcompose compile -f docker-compose.yml --explain
 ```
-
 ```
 api
   inferred  runs as a container
@@ -348,32 +71,95 @@ db
 
 ---
 
-## Configuration (When You Need It)
+## Deploy for real
 
-### Simple is Default
+Every cloud target needs a one-time shared environment (VPC, ALB/Container Apps Environment, ECS cluster, etc.) — created once, then reused by every app deployed into it. You author it the same way you'd author `docker-compose.yml`: a small, reviewable `environment.yaml`, not a pile of `--flags`.
 
-Most apps need zero additional configuration. Just `docker-compose.yml`.
+```bash
+cp examples/hello/environment.yaml ./environment.yaml
+# edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
+```
 
-### Progressive Enhancement
+You'll also need a `docker-compose.yml` for the app itself. Every command below auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass `-f` explicitly — the same way `docker compose` itself does.
 
-Add hints only when you need them:
+From here, pick one:
+
+### Fast path: one command
+
+`cloudcompose up` runs `init` → `terraform apply` → `compile` → `terraform apply` in one go. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the four steps by hand:
+
+```bash
+cloudcompose up --env environment.yaml
+```
+
+That's it — your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
+
+### Two-step path: review each stage
+
+Use this if you're deploying more than one app into the same environment, or want to see the generated Terraform before anything applies.
+
+```bash
+cloudcompose init
+cd env-prod && terraform init && terraform apply && cd ..
+cloudcompose compile -e env-prod
+```
+
+`cloudcompose init` writes a copy of `environment.yaml` alongside the generated `main.tf.json`. Once `terraform apply` runs, `cloudcompose compile` reads the resulting facts (VPC ID, ALB ARN, …) directly from Terraform's own state — no separate generated file to keep in sync. Deploying to Azure or GCP instead just means starting from `environment.azure.yaml`/`environment.gcp.yaml`.
+
+See `docs/authored-environment-config.md` for the full `environment.yaml` schema, or `examples/README.md` for a real, runnable walkthrough.
+
+---
+
+## Operate it like `docker compose`
+
+```bash
+# Live status of each service -- ECS/ALB on AWS, Container Apps on Azure
+cloudcompose ps -e env-prod
+
+# Recent logs, one service or every service, interleaved by timestamp
+cloudcompose logs -e env-prod
+cloudcompose logs -e env-prod web --since 1h --tail 500
+
+# Tear the app down again (never touches the shared environment)
+cloudcompose down -e env-prod
+```
+
+`ps`/`logs` query the cloud directly, not anything already implied by `compose.yml` or Terraform state — AWS and Azure are supported; GCP is not yet. Both take `--json` for scripting. Every command that runs Terraform (`up`, `down`) stays interactive by default; pass `--auto-approve` for non-interactive callers like CI.
+
+---
+
+## What it infers
+
+| You write | Cloud Compose Compiler infers |
+|-----------|-----------------|
+| `image: postgres` | A managed database (RDS, Cloud SQL, Flexible Server) |
+| `image: redis` | A managed cache (ElastiCache, Memorystore, Cache for Redis) |
+| `image: minio` | Object storage (S3, GCS, Blob Storage) |
+| `ports:` | A public HTTPS endpoint with load balancing and a certificate |
+| `depends_on:` | Private service discovery between containers |
+| No `ports:` | An internal-only service |
+
+Most apps need nothing beyond this. When you do need to override a decision — instance size, autoscaling, a specific database engine — add a small `x-cloud:` hint:
 
 ```yaml
 services:
   api:
     image: myapp
     x-cloud:
-      size: large  # More resources
-      min_scale: 2  # Always keep 2 instances warm
+      size: large       # more CPU/memory
+      min_scale: 2      # always keep 2 instances warm
+      max_scale: 10
+      auto_scaling:
+        metrics:
+          - type: cpu
+            target_value: 70
 ```
 
-Unknown keys under `x-cloud` are a hard error rather than silently
-ignored, so a typo in one of these hints fails at compile time, not at
-runtime.
+The same declaration becomes ECS target-tracking on AWS, KEDA scale rules on Azure, or Cloud Run autoscaling on GCP — whichever is idiomatic for that cloud. Unknown keys under `x-cloud` are a hard compile-time error rather than silently ignored, so a typo fails immediately instead of surfacing later at deploy time.
 
 ---
 
-## Supported Clouds
+## Supported clouds
 
 | Cloud | Status | Compute | Database | Cache | Storage | Scheduled tasks | CDN |
 |-------|--------|---------|----------|-------|---------|------------------|-----|
@@ -381,106 +167,18 @@ runtime.
 | **Azure** | ✅ Verified against real deployments (see [`docs/azure-todo.md`](docs/azure-todo.md)) | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
 | **GCP** | ⚠️ Compiles and passes structural tests; not yet verified against a real deployment or covered by golden-file regression tests | Cloud Run | Cloud SQL | Memorystore | Cloud Storage | ❌ not implemented | ❌ not implemented |
 
-GCP support is intentionally less mature than AWS/Azure — see
-`AGENTS.md`'s "GCP has no committed golden
-files" note for the testing gap specifically.
-
-Azure has closed most of its feature/security gaps with AWS (RBAC and
-Key Vault-backed secrets, compose `secrets:`/platform `config:` support,
-database sizing, autoscaling) — see
-[`docs/azure-aws-parity-todo.md`](docs/azure-aws-parity-todo.md) for the
-full, actively-maintained tracker of what's done and what's still open
-(a WAF equivalent and a couple of smaller items remain).
-
----
-
-## Installation
-
-### Requirements
-- Go 1.26+ (to build)
-- Docker (for services with a `build:` section)
-- Terraform CLI
-- Cloud credentials (AWS, Azure, or GCP)
-
-### Install
-
-Download a prebuilt binary from the
-[Releases page](https://github.com/gecBurton/cloudcompose/releases) —
-archives are published for Linux, macOS, and Windows (amd64 and arm64).
-For example, on macOS (Apple Silicon):
-
-```bash
-curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloudcompose_<version>_darwin_arm64.tar.gz
-tar -xzf cloudcompose_<version>_darwin_arm64.tar.gz
-chmod +x cloudcompose
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/gecBurton/cloudcompose.git
-cd cloudcompose/cloudcompose-go
-go build -o cloudcompose ./cmd/cloudcompose
-```
-
-### Quick Test
-
-No cloud account needed — see what any example compiles to with
-`--demo`:
-
-```bash
-# From the cloudcompose-go directory
-./cloudcompose compile -f ../examples/hello/compose.yml -d aws
-```
-
-Swap `-d aws` for `-d azure`/`-d gcp` to see the same compose file
-compiled for a different cloud. The output is real, valid Terraform
-JSON, but uses placeholder resource IDs — not deployable as-is.
-
-To actually deploy:
-
-```bash
-# From the cloudcompose-go directory
-./cloudcompose init -e ../examples/hello/environment.yaml
-(cd env-demo && terraform init && terraform apply)
-
-./cloudcompose compile -f ../examples/hello/compose.yml -e env-demo
-```
+GCP is intentionally less mature than AWS/Azure — see `AGENTS.md`'s "GCP has no committed golden files" note for the testing gap specifically. Azure has closed most of its feature/security gaps with AWS (RBAC and Key Vault-backed secrets, compose `secrets:`/platform `config:` support, database sizing, autoscaling) — see [`docs/azure-aws-parity-todo.md`](docs/azure-aws-parity-todo.md) for what's still open.
 
 ---
 
 ## Documentation
 
+- [Authored environment.yaml schema](docs/authored-environment-config.md)
 - [Azure deployment status](docs/azure-todo.md)
 - [Azure/AWS feature parity gap analysis](docs/azure-aws-parity-todo.md)
-- [Design docs and spikes](docs/)
+- [More design docs and spikes](docs/)
 - [Examples](examples/)
-
----
-
-## Philosophy
-
-> **Docker Compose simplicity + Cloud scale**
-
-We believe deploying to the cloud should be as easy as running locally. No networking expertise required. No infrastructure boilerplate. Just your services, running at scale.
-
----
 
 ## Contributing
 
-See `AGENTS.md` for architecture, package layout, and development
-workflow. There is no `CONTRIBUTING.md` yet.
-
----
-
-## License
-
-No license file has been added to this repository yet.
-
----
-
-## Project Status
-
-**Current Phase:** Pre-alpha. All parsing, normalization, inference, generation, and CLI logic run in `cloudcompose-go`.
-
-**Installation:** Build the `cloudcompose` binary with Go 1.26+ (see Installation above). Prebuilt cross-platform binaries and a package-manager install path are not yet available.
+See `AGENTS.md` for architecture, package layout, and development workflow. There is no `CONTRIBUTING.md` yet, and no license file has been added to this repository yet.

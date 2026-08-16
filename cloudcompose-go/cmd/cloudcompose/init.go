@@ -55,20 +55,41 @@ var initCmd = &cobra.Command{
 func runInit(cmd *cobra.Command, args []string) {
 	configFile, _ := cmd.Flags().GetString("file")
 
-	fileConfig, err := initconfig.Load(configFile)
+	output, err := initEnvironment(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Printf("  1. cd %s\n", output)
+	fmt.Println("  2. terraform init")
+	fmt.Println("  3. terraform apply")
+	fmt.Println()
+	fmt.Println("Deploy an app:")
+	fmt.Printf("  cloudcompose compile --env %s\n", output)
+}
+
+// initEnvironment does everything `cloudcompose init` does -- load
+// configFile, generate the environment's Terraform JSON, and write it
+// (plus a copy of the resolved config) to <dir of configFile>/env-<name>
+// -- and returns that output directory. Extracted from runInit so
+// `cloudcompose up` (see up.go) can call the exact same logic directly,
+// rather than duplicating it or shelling out to itself.
+func initEnvironment(configFile string) (string, error) {
+	fileConfig, err := initconfig.Load(configFile)
+	if err != nil {
+		return "", err
+	}
 	if fileConfig == nil {
-		fmt.Fprintf(os.Stderr, "Error: %s not found.\n\n", configFile)
-		fmt.Fprintln(os.Stderr, "cloudcompose init reads an authored environment.yaml -- there are no")
-		fmt.Fprintln(os.Stderr, "decision flags. Create one (see examples/hello/environment.yaml for")
-		fmt.Fprintln(os.Stderr, "a starting point, or docs/authored-environment-config.md for the full")
-		fmt.Fprintln(os.Stderr, "schema), then run:")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintf(os.Stderr, "  cloudcompose init -f %s\n", configFile)
-		os.Exit(1)
+		return "", fmt.Errorf(
+			"%s not found.\n\ncloudcompose init reads an authored environment.yaml -- there are no\n"+
+				"decision flags. Create one (see examples/hello/environment.yaml for\n"+
+				"a starting point, or docs/authored-environment-config.md for the full\n"+
+				"schema), then run:\n\n  cloudcompose init -f %s",
+			configFile, configFile,
+		)
 	}
 
 	providerLower := lowerASCII(fileConfig.Provider)
@@ -97,8 +118,7 @@ func runInit(cmd *cobra.Command, args []string) {
 
 	absConfigFile, err := filepath.Abs(configFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
 	output := filepath.Join(filepath.Dir(absConfigFile), "env-"+name)
 
@@ -159,22 +179,18 @@ func runInit(cmd *cobra.Command, args []string) {
 		// initconfig.Validate already rejects an unsupported provider
 		// before Load ever returns, so this is unreachable in practice --
 		// kept as a defensive default rather than a panic.
-		fmt.Fprintf(os.Stderr, "Error: provider %q is not supported. Supported: aws, azure, gcp\n", fileConfig.Provider)
-		os.Exit(1)
+		return "", fmt.Errorf("provider %q is not supported. Supported: aws, azure, gcp", fileConfig.Provider)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
 
 	if err := os.MkdirAll(output, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Unexpected error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
 	tfFile := filepath.Join(output, "main.tf.json")
 	if err := os.WriteFile(tfFile, []byte(terraformJSON), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Unexpected error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
 
 	// Write a copy of the authored config back out next to main.tf.json
@@ -185,12 +201,10 @@ func runInit(cmd *cobra.Command, args []string) {
 	resolvedYAMLPath := filepath.Join(output, "environment.yaml")
 	resolvedYAML, err := yaml.Marshal(fileConfig)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unexpected error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
 	if err := os.WriteFile(resolvedYAMLPath, resolvedYAML, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Unexpected error: %v\n", err)
-		os.Exit(1)
+		return "", err
 	}
 
 	fmt.Println("Success! Environment initialized.")
@@ -198,14 +212,8 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println("Generated files:")
 	fmt.Printf("  %s - Terraform manifest for shared infrastructure\n", tfFile)
 	fmt.Printf("  %s - Copy of the authored config that produced it\n", resolvedYAMLPath)
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Printf("  1. cd %s\n", output)
-	fmt.Println("  2. terraform init")
-	fmt.Println("  3. terraform apply")
-	fmt.Println()
-	fmt.Println("Deploy an app:")
-	fmt.Printf("  cloudcompose compile --env %s\n", output)
+
+	return output, nil
 }
 
 func lowerASCII(s string) string {

@@ -47,13 +47,19 @@ type psRowJSON struct {
 }
 
 func runPs(cmd *cobra.Command, args []string) {
-	composeFile, _ := cmd.Flags().GetString("file")
+	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	if envDir == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
+		os.Exit(1)
+	}
+
+	composeFile, err := resolveComposeFile(composeFileFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -250,7 +256,6 @@ func printPsJSON(w io.Writer, rows []psRowJSON) {
 func init() {
 	rootCmd.AddCommand(psCmd)
 
-	psCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
 	psCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
 	psCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	psCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")

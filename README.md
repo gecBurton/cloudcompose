@@ -134,10 +134,24 @@ ID, ALB ARN) directly from Terraform's own state via `terraform output
 `examples/README.md` for a real, runnable walkthrough using
 `examples/hello`.
 
+For the common one-app-one-environment case, `cloudcompose up` runs
+`init`, `terraform apply`, `compile`, and `terraform apply` in one
+command — every `apply` still shows its plan and prompts for
+confirmation interactively, exactly as if you ran the four steps
+yourself. Like `docker compose`, `-f`/`--file` is optional: with no
+`-f` given, `cloudcompose` looks for `compose.yaml`, `compose.yml`,
+`docker-compose.yaml`, or `docker-compose.yml` (in that order) in the
+current directory, so it's only needed for a nonstandard name/location:
+
+```bash
+cloudcompose up --env-config environment.yaml
+```
+
 ### Deploy to AWS
 
 ```bash
-cloudcompose compile -f docker-compose.yml -e env-prod
+cloudcompose compile -e env-prod
+
 ```
 
 That's it. Your app is live behind the shared load balancer / Container App
@@ -181,6 +195,23 @@ logs — MySQL/MariaDB database logs aren't wired up yet). A one-shot
 fetch for now, not a continuous `-f`/`--follow` tail. AWS and Azure are
 supported; GCP is not yet. Also supports `--json` for the same reason
 as `ps` above.
+
+### Tear down an app
+
+```bash
+cloudcompose down -f docker-compose.yml -e env-prod
+```
+
+Runs `terraform destroy` in the app's own Terraform directory — the
+inverse of `compile` — like `docker compose down`. This only ever
+destroys the app; it never touches the shared environment `cloudcompose
+init` created, since other apps may still depend on it. Tear down an
+environment itself the same way you created it: `terraform destroy` by
+hand in its own `env-<name>` directory. Stays interactive by default —
+no `-auto-approve` — like every other command that runs Terraform;
+pass `--auto-approve` for non-interactive callers (CI, scripts) that
+have already decided not to have a human review the plan (`up` takes
+the same flag).
 
 ---
 

@@ -40,6 +40,15 @@ import (
 // that case; this keeps the logic simple and means `up` behaves
 // identically whether an environment is brand new or being reused by a
 // second app.
+//
+// --env here means the authored environment.yaml file `up` itself
+// applies -- not the already-applied environment *directory* --env
+// means on compile/ps/logs/down. Both commands use the same flag name
+// deliberately (so a user reaching for "how do I point this command at
+// my environment" always tries the same flag), but the two really are
+// different things: on those other commands, --env must already exist
+// (created by a previous `init`/`up`); on `up`, this file is the input
+// `up` itself turns into that directory via its own `init` step below.
 var upCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Initialize an environment (if needed) and deploy an app into it, in one command",
@@ -58,7 +67,7 @@ var upCmd = &cobra.Command{
 
 func runUp(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
-	envConfigFile, _ := cmd.Flags().GetString("env-config")
+	envConfigFile, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
 	subnetIndex, _ := cmd.Flags().GetInt("subnet-index")
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
@@ -155,7 +164,7 @@ func terraformInit(dir string) error {
 func init() {
 	rootCmd.AddCommand(upCmd)
 
-	upCmd.Flags().String("env-config", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md)")
+	upCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). Unlike --env on compile/ps/logs/down (an already-applied environment directory), this is the input file up itself applies.")
 	upCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	upCmd.Flags().Int("subnet-index", 0, "Azure only: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
 	upCmd.Flags().Bool("auto-approve", false, "Skip both terraform apply confirmation prompts, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")

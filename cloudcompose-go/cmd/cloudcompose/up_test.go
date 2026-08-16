@@ -10,10 +10,12 @@ import (
 )
 
 // TestUp_Help confirms `cloudcompose up --help` documents the flags this
-// command actually reads (compile.go's -f, plus up's own --env-config,
+// command actually reads (compile.go's -f, plus up's own -e/--env,
 // -p, --subnet-index, --auto-approve) -- see up.go's own doc comment for
 // why --auto-approve exists (non-interactive callers) and is off by
-// default.
+// default, and for why -e/--env means something different here (the
+// authored environment.yaml file) than it does on compile/ps/logs/down
+// (an already-applied environment directory).
 func TestUp_Help(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -24,7 +26,7 @@ func TestUp_Help(t *testing.T) {
 		t.Fatalf("cloudcompose up --help failed: %v\n%s", err, out)
 	}
 
-	for _, want := range []string{"-f, --file", "--env-config", "-p, --project", "--subnet-index", "--auto-approve"} {
+	for _, want := range []string{"-f, --file", "-e, --env", "-p, --project", "--subnet-index", "--auto-approve"} {
 		if !contains(string(out), want) {
 			t.Errorf("expected %s in cloudcompose up --help output, got:\n%s", want, out)
 		}
@@ -36,7 +38,8 @@ func TestUp_Help(t *testing.T) {
 // with exactly the same logic `init` itself uses, so a missing
 // environment.yaml should fail the same clear way, before ever attempting
 // to run terraform (which would otherwise be the more confusing point to
-// fail at).
+// fail at). Uses -e (rather than --env) specifically to confirm the
+// shorthand is wired up too, not just the long form.
 func TestUp_MissingEnvironmentYamlFailsWithHelpfulMessage(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -48,7 +51,7 @@ func TestUp_MissingEnvironmentYamlFailsWithHelpfulMessage(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "up", "-f", composeFile, "--env-config", missingEnvConfig)
+	cmd := exec.Command(bin, "up", "-f", composeFile, "-e", missingEnvConfig)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected cloudcompose up to fail for a missing environment.yaml, got:\n%s", out)
@@ -90,7 +93,7 @@ func TestUp_StopsAfterEnvironmentApplyFails(t *testing.T) {
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "up", "-f", composeFile, "--env-config", envConfig)
+	cmd := exec.Command(bin, "up", "-f", composeFile, "--env", envConfig)
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -144,7 +147,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "up", "-f", composeFile, "--env-config", envConfig, "--auto-approve")
+	cmd := exec.Command(bin, "up", "-f", composeFile, "--env", envConfig, "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// No stdin attached at all -- if `up` incorrectly tried to read a
 	// confirmation prompt in --auto-approve mode, this would hang (or, in

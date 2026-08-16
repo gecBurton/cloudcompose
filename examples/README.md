@@ -32,11 +32,15 @@ For the common case -- one app, one environment -- `cloudcompose up`
 runs the whole init -> apply -> compile -> apply flow described below in
 one command, stopping to show you each `terraform apply`'s plan and
 prompt for confirmation exactly as it would if you ran the four steps by
-hand (no `-auto-approve` anywhere):
+hand (no `-auto-approve` anywhere). Note that `--env` means something
+different here than it does on `compile`/`ps`/`logs`/`down` below: on
+`up`, it's the authored environment.yaml file `up` itself applies; on
+the others, it's the already-applied environment *directory* `init`
+wrote (see the two-step flow's own note on this below).
 
 ```bash
 cd cloudcompose-go
-go run ./cmd/cloudcompose up -f ../examples/hello/compose.yml --env-config ../examples/hello/environment.yaml
+go run ./cmd/cloudcompose up -f ../examples/hello/compose.yml --env ../examples/hello/environment.yaml
 ```
 
 If you're deploying more than one app into the same environment, or want
@@ -86,7 +90,8 @@ cd -
 #
 # -e must be the applied environment directory -- the one `init` wrote
 # main.tf.json into and you just ran `terraform apply` in above, not
-# environment.yaml itself. compile's own output lands at
+# environment.yaml itself (that's what `up`'s own --env means instead --
+# see this file's "fast path" section above). compile's own output lands at
 # <dir of -f>/app-<environment name>-<project name> (here, app-demo-hello/,
 # "hello" being -f's own containing directory name, compile's default
 # --project) -- named after both the environment and the project so the

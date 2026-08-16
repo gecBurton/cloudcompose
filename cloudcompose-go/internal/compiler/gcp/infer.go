@@ -19,9 +19,7 @@ import (
 func InferGcp(app *models.Application, env *models.GcpEnvironment) *models.GcpResources {
 	resources := models.NewGcpResources()
 
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 	var tags map[string]string
 	if len(env.Tags) > 0 {
 		tags = env.Tags
@@ -49,8 +47,9 @@ func InferGcp(app *models.Application, env *models.GcpEnvironment) *models.GcpRe
 	// services appear in app.Services. Iterating a Go map directly diffs
 	// the wrong way whenever a service references more than one
 	// connection type -- the same bug class Azure's implementation hit
-	// and fixed the same way.
-	connectionOrder := connectionOrderForGcp(app, connections)
+	// and fixed the same way (both now share shared.ConnectionOrder,
+	// rather than each having their own copy).
+	connectionOrder := shared.ConnectionOrder(app, connections)
 
 	// Step 5: Create Cloud Run services.
 	inferCloudRunServicesGcp(resources, app, env, getName, vpcConnectorName, connections, connectionOrder)
@@ -60,32 +59,6 @@ func InferGcp(app *models.Application, env *models.GcpEnvironment) *models.GcpRe
 	// there is nothing to do here either.
 
 	return resources
-}
-
-// connectionOrderForGcp returns connection keys in insertion order:
-// database connections first, then cache connections merged in, then
-// storage connections merged in -- producing every database-capability
-// service (declaration order), then every cache-capability service, then
-// every object-storage-capability service, filtered to those with a
-// connection.
-func connectionOrderForGcp(app *models.Application, connections map[string]models.Connection) []string {
-	order := make([]string, 0, len(connections))
-	for _, capability := range []models.Capability{
-		models.CapabilityDatabase,
-		models.CapabilityCache,
-		models.CapabilityObjectStorage,
-	} {
-		for i := range app.Services {
-			name := app.Services[i].Name
-			if app.Services[i].Capability != capability {
-				continue
-			}
-			if _, ok := connections[name]; ok {
-				order = append(order, name)
-			}
-		}
-	}
-	return order
 }
 
 // inferVpcConnectorGcp creates a VPC connector for private networking if
@@ -366,35 +339,53 @@ func inferCloudRunServicesGcp(
 }
 
 // cpuLimitGcp converts service size or explicit CPU to a Cloud Run CPU
-// limit string.
+// limit string (millicores). Size-derived values come from
+// shared.SizeMappings (the same table AWS/Azure use, converted from ECS
+// CPU units to millicores: 1024 units == 1000m, matching Kubernetes'
+// own millicore convention Cloud Run's CPU limit string uses) rather
+// than a separately hardcoded table -- this previously had its own
+// table with a genuinely different CPU:memory ratio per size than AWS/
+// Azure's (medium was 2 vCPU/1Gi here vs. AWS/Azure's 1 vCPU/2Gi, an
+// inverted ratio despite sharing the same size name), the same class of
+// already-drifted duplicate Azure's own getCPUCoresAzure fixed first
+// (see that function's own doc comment) -- found during a codebase
+// review, not by a real deployment: GCP has no golden fixtures pinning
+// these exact strings the way AWS/Azure's own size-table consolidation
+// was caught by.
+//
+// Unlike Azure's getCPUCoresAzure/getMemoryGBAzure, this has no
+// ceiling-rejection against a Cloud Run resource limit -- GCP's own
+// inference remains lighter-verified than AWS/Azure's throughout (see
+// InferGcp's own doc comment), and no real Cloud Run deployment has
+// exercised whether "large" (4 vCPU derived below) ever needs one.
 func cpuLimitGcp(service *models.Service) string {
 	if service.CPU != nil {
 		return fmt.Sprintf("%dm", *service.CPU)
 	}
-	switch service.Size {
-	case models.ServiceSizeMedium:
-		return "2000m"
-	case models.ServiceSizeLarge:
-		return "4000m"
-	default:
-		return "1000m"
+	mapping, ok := shared.SizeMappings[string(service.Size)]
+	if !ok {
+		mapping = shared.SizeMappings["small"]
 	}
+	// mapping.CPU is in ECS CPU units, where 1024 units == 1 vCPU == Cloud
+	// Run's own "1000m" -- the same *1000/1024 conversion Azure's
+	// getCPUCoresAzure divides by 1024 to get cores, just expressed in
+	// millicores instead of a float core count.
+	millicores := mapping.CPU * 1000 / 1024
+	return fmt.Sprintf("%dm", millicores)
 }
 
 // memoryLimitGcp converts service size or explicit memory to a Cloud Run
-// memory limit string.
+// memory limit string. See cpuLimitGcp's own doc comment for the
+// size-table consolidation this mirrors on the memory side.
 func memoryLimitGcp(service *models.Service) string {
 	if service.Memory != nil {
 		return fmt.Sprintf("%dMi", *service.Memory)
 	}
-	switch service.Size {
-	case models.ServiceSizeMedium:
-		return "1Gi"
-	case models.ServiceSizeLarge:
-		return "2Gi"
-	default:
-		return "512Mi"
+	mapping, ok := shared.SizeMappings[string(service.Size)]
+	if !ok {
+		mapping = shared.SizeMappings["small"]
 	}
+	return fmt.Sprintf("%dMi", mapping.Memory)
 }
 
 // buildConnectionURLGcp builds a connection URL string. Unlike Azure's

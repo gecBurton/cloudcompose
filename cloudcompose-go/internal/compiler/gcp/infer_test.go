@@ -129,18 +129,24 @@ func TestInferGcp_VpcConnectorCreatedForDatabase(t *testing.T) {
 }
 
 // TestCpuLimitGcp_SizeMapping and TestMemoryLimitGcp_SizeMapping pin the
-// size-to-limit conversion tables directly, matching _get_cpu_limit/
-// _get_memory_limit.
+// size-to-limit conversion, now derived from shared.SizeMappings (the
+// same table AWS/Azure use) rather than a separately hardcoded table --
+// see cpuLimitGcp's own doc comment for why (a real, already-drifted
+// duplicate: this package's previous table gave "medium" a genuinely
+// different CPU:memory ratio than AWS/Azure's "medium").
+// shared.SizeMappings: small=256/512, medium=1024/2048, large=4096/8192
+// (ECS CPU units/MB) -- CPU converts to millicores at *1000/1024,
+// memory passes straight through as Mi.
 func TestCpuLimitGcp_SizeMapping(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		size models.ServiceSize
 		want string
 	}{
-		{models.ServiceSizeSmall, "1000m"},
-		{models.ServiceSizeMedium, "2000m"},
+		{models.ServiceSizeSmall, "250m"},
+		{models.ServiceSizeMedium, "1000m"},
 		{models.ServiceSizeLarge, "4000m"},
-		{"", "1000m"},
+		{"", "250m"},
 	}
 	for _, tc := range cases {
 		service := &models.Service{Size: tc.size}
@@ -157,8 +163,8 @@ func TestMemoryLimitGcp_SizeMapping(t *testing.T) {
 		want string
 	}{
 		{models.ServiceSizeSmall, "512Mi"},
-		{models.ServiceSizeMedium, "1Gi"},
-		{models.ServiceSizeLarge, "2Gi"},
+		{models.ServiceSizeMedium, "2048Mi"},
+		{models.ServiceSizeLarge, "8192Mi"},
 		{"", "512Mi"},
 	}
 	for _, tc := range cases {
@@ -275,8 +281,8 @@ func TestGcp_MatchesExpectedStructure(t *testing.T) {
 		t.Errorf("image = %v, want nginxdemos/hello:plain-text", container["image"])
 	}
 	limits := container["resources"].(map[string]any)["limits"].(map[string]any)
-	if limits["cpu"] != "1000m" || limits["memory"] != "512Mi" {
-		t.Errorf("limits = %v, want cpu=1000m memory=512Mi", limits)
+	if limits["cpu"] != "250m" || limits["memory"] != "512Mi" {
+		t.Errorf("limits = %v, want cpu=250m memory=512Mi", limits)
 	}
 
 	annotations := template["metadata"].(map[string]any)["annotations"].(map[string]any)

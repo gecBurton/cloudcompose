@@ -25,10 +25,14 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/azquery"
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
@@ -173,12 +177,15 @@ func fetchLogAnalyticsEvents(ctx context.Context, client logsClient, serviceName
 
 	resp, err := client.QueryResource(ctx, resourceID, body, nil)
 	if err != nil {
-		if isNotFound(err) {
+		if isNotFound(err) || isMissingLogTable(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("query logs for %s: %w", serviceName, err)
 	}
 	if resp.Error != nil {
+		if strings.Contains(errorInfoMessage(resp.Error), "Failed to resolve table or column expression") {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("query logs for %s: %s", serviceName, errorInfoMessage(resp.Error))
 	}
 
@@ -210,6 +217,48 @@ func fetchLogAnalyticsEvents(ctx context.Context, client logsClient, serviceName
 	return events, nil
 }
 
+// isMissingLogTable reports whether err is Log Analytics rejecting a
+// query for referencing a custom log table (a "_CL"-suffixed table
+// name, like ContainerAppConsoleLogs_CL/PGSQLServerLogs) that doesn't
+// exist in the workspace yet. Custom log tables are created lazily on
+// first ingestion -- a brand-new environment's very first `cloudcompose
+// logs` call, run before the app has logged anything at all yet (or
+// before Azure has finished creating the table even after it has),
+// hits this every time, and it is functionally identical to "zero
+// events" from a caller's perspective, not a real failure worth
+// surfacing as one -- the same "not yet, not never" rationale
+// isNotFound already applies to a 404 (a Container App/revision that
+// doesn't exist yet).
+//
+// Confirmed against a real Azure smoke-test failure (2026-08-16,
+// francecentral, a brand-new ci65 workspace): Log Analytics returns
+// HTTP 400 (not 404, so isNotFound's own check never catches this) with
+// ErrorCode "BadArgumentError" and a body whose innererror.innererror
+// carries KQL's own SEM0100 code and a message of the literal shape
+// "'order' operator: Failed to resolve table or column expression named
+// 'ContainerAppConsoleLogs_CL'" -- every retry across a full 300s
+// window in that run hit the identical error, since the table
+// genuinely hadn't been created yet, not because of a transient blip a
+// shorter retry would have ridden out.
+//
+// Matches on ErrorCode + a specific substring from the raw response
+// body (via *ResponseError's own Error() rendering, the only place this
+// SDK version exposes the body) rather than just ErrorCode alone:
+// BadArgumentError covers other, genuinely-wrong-query cases too (a
+// real KQL syntax error, a typo'd column name in this file itself),
+// which must still surface as real errors, not be silently swallowed
+// into "zero events" alongside this one specific, expected case.
+func isMissingLogTable(err error) bool {
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+	if respErr.StatusCode != http.StatusBadRequest || respErr.ErrorCode != "BadArgumentError" {
+		return false
+	}
+	return strings.Contains(respErr.Error(), "Failed to resolve table or column expression")
+}
+
 // containerAppResourceID builds the fully-qualified ARM resource ID for
 // a Container App -- the shape azquery.LogsClient.QueryResource
 // expects, and the same shape confirmed against
@@ -239,6 +288,17 @@ func postgresFlexibleServerResourceID(subscriptionID, resourceGroupName, serverN
 // itself (its Error() method renders the full raw error payload), so
 // this just delegates to that rather than re-deriving a message from
 // its own Code field.
+//
+// fetchLogAnalyticsEvents' own check against this message's text for
+// "Failed to resolve table or column expression" (the same
+// missing-log-table signature isMissingLogTable matches on the err !=
+// nil path) exists defensively: the actual failure this whole thing was
+// added for (see isMissingLogTable's own doc comment) surfaced via the
+// err != nil / *azcore.ResponseError path, not this one -- but
+// ErrorInfo is azquery's own documented shape for a query that fails
+// semantically despite a 200 response, and there's no guarantee the SDK
+// never routes the identical KQL semantic error through this path
+// instead in some other circumstance.
 func errorInfoMessage(e *azquery.ErrorInfo) string {
 	if e == nil {
 		return "unknown Log Analytics query error"

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -108,7 +107,7 @@ func runPs(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		if jsonOutput {
-			printPsJSON(os.Stdout, awsPsRowsJSON(statuses))
+			printJSONArray(os.Stdout, awsPsRowsJSON(statuses))
 		} else {
 			printAwsPsTable(os.Stdout, statuses)
 		}
@@ -130,7 +129,7 @@ func runPs(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		if jsonOutput {
-			printPsJSON(os.Stdout, azurePsRowsJSON(statuses))
+			printJSONArray(os.Stdout, azurePsRowsJSON(statuses))
 		} else {
 			printAzurePsTable(os.Stdout, statuses)
 		}
@@ -239,18 +238,6 @@ func azurePsRowsJSON(statuses []azure.ServiceStatus) []psRowJSON {
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-// printPsJSON writes rows as a single JSON array to w -- always an
-// array, even for zero/one services, so a caller (e.g. jq/python3 in
-// scripts/smoke-test.sh) never needs to special-case object-vs-array.
-func printPsJSON(w io.Writer, rows []psRowJSON) {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(rows); err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
-	}
 }
 
 func init() {

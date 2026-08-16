@@ -176,7 +176,7 @@ func TestAzurePsRowsJSON(t *testing.T) {
 
 func TestPrintPsJSON_IsValidJSONArray(t *testing.T) {
 	var buf bytes.Buffer
-	printPsJSON(&buf, []psRowJSON{
+	printJSONArray(&buf, []psRowJSON{
 		{Name: "web", Found: true, Status: "ACTIVE", Running: 2, Health: "2 healthy, 0 unhealthy"},
 		{Name: "worker", Found: false},
 	})
@@ -198,10 +198,12 @@ func TestPrintPsJSON_IsValidJSONArray(t *testing.T) {
 
 // TestPrintPsJSON_EmptyIsStillAnArray confirms `ps --json` against zero
 // services still emits `[]`, not `null` -- a caller (jq/python3) should
-// never need to special-case "no output" vs "empty array".
+// never need to special-case "no output" vs "empty array". Exercised via
+// printJSONArray directly (ps.go/logs.go's shared JSON printer, see its
+// own doc comment) rather than a since-removed printPsJSON wrapper.
 func TestPrintPsJSON_EmptyIsStillAnArray(t *testing.T) {
 	var buf bytes.Buffer
-	printPsJSON(&buf, []psRowJSON{})
+	printJSONArray(&buf, []psRowJSON{})
 
 	if strings.TrimSpace(buf.String()) != "[]" {
 		t.Errorf("got %q, want []", buf.String())

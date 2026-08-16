@@ -21,7 +21,11 @@ import (
 // whatever the cloud actually logged, not anything derivable from
 // compose.yml or Terraform state (see aws.FetchLogs/azure.FetchLogs's
 // own doc comments for why this is a one-shot fetch, not a --follow
-// tail, in this first version).
+// tail, in this first version). If --follow is ever added, its
+// shorthand can be -f without colliding with --file: --file is a
+// *persistent* root flag (see main.go's own doc comment) precisely so
+// a *local* -f/--follow on this command can shadow it, the same
+// relationship real `docker compose logs -f` relies on.
 var logsCmd = &cobra.Command{
 	Use:   "logs [service...]",
 	Short: "Show recent logs for deployed services",
@@ -40,7 +44,7 @@ type logEventJSON struct {
 }
 
 func runLogs(cmd *cobra.Command, args []string) {
-	composeFile, _ := cmd.Flags().GetString("file")
+	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
 	since, _ := cmd.Flags().GetDuration("since")
@@ -49,6 +53,12 @@ func runLogs(cmd *cobra.Command, args []string) {
 
 	if envDir == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
+		os.Exit(1)
+	}
+
+	composeFile, err := resolveComposeFile(composeFileFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -216,7 +226,6 @@ func printLogsJSON(w io.Writer, rows []logEventJSON) {
 func init() {
 	rootCmd.AddCommand(logsCmd)
 
-	logsCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
 	logsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
 	logsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	logsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")

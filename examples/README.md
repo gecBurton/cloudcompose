@@ -26,6 +26,27 @@ as-is — it's for evaluation only. See
 `docs/authored-environment-config.md`'s "Evaluating without a live
 environment" section for the full design.
 
+## The fast path to a real deployment: `cloudcompose up`
+
+For the common case -- one app, one environment -- `cloudcompose up`
+runs the whole init -> apply -> compile -> apply flow described below in
+one command, stopping to show you each `terraform apply`'s plan and
+prompt for confirmation exactly as it would if you ran the four steps by
+hand (no `-auto-approve` anywhere):
+
+```bash
+cd cloudcompose-go
+go run ./cmd/cloudcompose up -f ../examples/hello/compose.yml --env-config ../examples/hello/environment.yaml
+```
+
+If you're deploying more than one app into the same environment, or want
+to see each generated Terraform manifest before running `terraform
+apply` at all, use the two-step flow below instead -- `up` always
+re-runs the environment's own `apply` (Terraform reports "No changes"
+if it's already up to date), which is fine for a single app but means
+running `up` again for a second app re-prompts you on the shared
+environment's plan too, not just the new app's.
+
 ## The two-step flow: `init` once, `compile` many times
 
 Deploying any of these examples for real is a two-step process — bootstrap

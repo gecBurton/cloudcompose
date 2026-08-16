@@ -147,9 +147,20 @@ schema change once it's built, not because anything consumes it yet.
 
 ## Non-goals
 
-- No Cloud Compose Compiler-managed Terraform state or embedded
-  `terraform apply` — `cloudcompose compile` reads outputs, it doesn't run
-  `plan`/`apply` itself.
+- `cloudcompose init`/`compile` themselves still never run `terraform
+  apply`/`destroy` or manage Terraform state — they only ever write
+  `main.tf.json`. `cloudcompose up`/`down` are the exceptions: `up`
+  orchestrates `init` + `terraform apply` + `compile` + `terraform
+  apply` for the common one-app-one-environment case, and `down` runs
+  `terraform destroy` against a single already-compiled app's own
+  directory (never the shared environment). Every `apply`/`destroy`
+  either one runs stays interactive by default (no `-auto-approve`) —
+  the same plan-review checkpoint a human running the steps by hand
+  would see, just without needing to type each command. Both commands
+  offer an opt-in, off-by-default `--auto-approve` for non-interactive
+  callers (CI, scripts) that have already decided not to have a human
+  review the plan for a given run — see `cmd/cloudcompose/up.go`'s and
+  `down.go`'s own doc comments for the reasoning.
 - No multi-environment-per-file support (Terraform-workspace-style) —
   one `environment.yaml` = one directory = one environment.
 - No reverse-generation tooling to produce a starting `environment.yaml`

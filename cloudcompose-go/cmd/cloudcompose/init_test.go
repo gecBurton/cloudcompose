@@ -10,11 +10,7 @@ import (
 // buildCloudComposeBinary builds the cloudcompose CLI once per test run and
 // returns its path, for the integration-style tests below that exercise
 // runInit through the real cobra command (including os.Exit paths),
-// rather than calling runInit directly -- it isn't structured as a pure
-// function, deliberately (see AGENTS.md's "Adding a CLI Command" note:
-// init.go is simple enough not to need the same
-// extract-into-pure-functions treatment compile.go's environmentTarget/
-// compileTerraform got).
+// rather than calling initEnvironment directly.
 func buildCloudComposeBinary(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "cloudcompose")

@@ -30,30 +30,34 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	composeFile, _ := cmd.Flags().GetString("file")
+	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	demoCloud, _ := cmd.Flags().GetString("demo")
 	projectName, _ := cmd.Flags().GetString("project")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
 	subnetIndex, _ := cmd.Flags().GetInt("subnet-index")
 
-	absCompose, err := filepath.Abs(composeFile)
+	composeFile, err := resolveComposeFile(composeFileFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
-	}
-	if _, err := os.Stat(absCompose); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s does not exist or is not readable\n", composeFile)
-		os.Exit(1)
-	}
-
-	if projectName == "" {
-		projectName = filepath.Base(filepath.Dir(absCompose))
 	}
 
 	// Explaining needs no environment: every inference reported here is
 	// made before the target is consulted.
 	if explainOnly {
+		absCompose, err := filepath.Abs(composeFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		if _, err := os.Stat(absCompose); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s does not exist or is not readable\n", composeFile)
+			os.Exit(1)
+		}
+		if projectName == "" {
+			projectName = filepath.Base(filepath.Dir(absCompose))
+		}
 		composeApp, err := compiler.ParseCompose(composeFile)
 		if err != nil {
 			printUnexpectedError(err)
@@ -84,29 +88,56 @@ func runMain(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	outputDir, err := compileApp(composeFile, envDir, demoCloud, projectName, subnetIndex)
+	if err != nil {
+		printUnexpectedError(err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Success! Terraform manifest written to %s\n", filepath.Join(outputDir, "main.tf.json"))
+}
+
+// compileApp does everything `cloudcompose compile` does -- load the
+// environment (from envDir, or synthesize one from demoCloud), parse and
+// normalize composeFile, infer and generate Terraform JSON, and write it
+// (plus copying any Docker build contexts) to <dir of composeFile>/
+// app-<environment name> -- and returns that output directory. Exactly
+// one of envDir/demoCloud must be non-empty; the caller (runMain, or
+// cloudcompose up in up.go) is responsible for enforcing that and for
+// printing the --demo warning banner, since up.go's own messaging
+// differs slightly from runMain's.
+func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex int) (string, error) {
+	absCompose, err := filepath.Abs(composeFile)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(absCompose); err != nil {
+		return "", fmt.Errorf("%s does not exist or is not readable", composeFile)
+	}
+
+	if projectName == "" {
+		projectName = filepath.Base(filepath.Dir(absCompose))
+	}
+
 	var env any
 	if demoCloud != "" {
 		env, err = demoEnvironment(demoCloud)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return "", err
 		}
 		fmt.Fprintln(os.Stderr, "DEMO MODE: using placeholder resource IDs, not a real environment. "+
 			"The generated Terraform is for evaluation only and is not deployable as-is — "+
 			"run `cloudcompose init` to set up a real one.")
 	} else {
-		// 1. Load environment.
 		fmt.Printf("Loading environment: %s\n", envDir)
 		env, err = compiler.LoadEnvironment(envDir)
 		if err != nil {
-			printUnexpectedError(err)
-			os.Exit(1)
+			return "", err
 		}
 	}
 	target, err := environmentTarget(env)
 	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 
 	// Output lands in <dir of -f>/app-<environment name>, not a fixed
@@ -117,8 +148,7 @@ func runMain(cmd *cobra.Command, args []string) {
 	// environment name.
 	envName, err := environmentName(env)
 	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName)
 
@@ -137,13 +167,11 @@ func runMain(cmd *cobra.Command, args []string) {
 
 	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 	semantic, err := compiler.Normalize(composeApp, projectName)
 	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 
 	// Report anything the compiler could not decide.
@@ -170,29 +198,25 @@ func runMain(cmd *cobra.Command, args []string) {
 	// non-trivial, so each cloud's own one-step CLI subcommand design
 	// (compiler/infer_*.go) just re-does the parse/normalize step instead.
 	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 
 	// 3. Write output.
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 	outputFile := filepath.Join(outputDir, "main.tf.json")
 	if err := os.WriteFile(outputFile, []byte(tfJSON), 0644); err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 
 	// Copy any Docker build contexts next to the manifest.
 	composeDir := filepath.Dir(absCompose)
 	if err := copyDockerBuildContexts(tfJSON, composeDir, outputDir); err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
+		return "", err
 	}
 
-	fmt.Printf("Success! Terraform manifest written to %s\n", outputFile)
+	return outputDir, nil
 }
 
 // environmentTarget reports the cloud target name for an environment
@@ -227,6 +251,29 @@ func environmentName(env any) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported environment type %T", env)
 	}
+}
+
+// appDir reports the same app-<environment name> output directory
+// compileApp writes to for composeFile compiled against the environment
+// in envDir, without compiling anything -- used by `cloudcompose down`
+// (down.go) to find an already-compiled app's directory to run
+// `terraform destroy` in. Deliberately takes no --demo option: demo
+// environments never produce real infrastructure, so there is nothing
+// for `down` to destroy against one.
+func appDir(composeFile, envDir string) (string, error) {
+	absCompose, err := filepath.Abs(composeFile)
+	if err != nil {
+		return "", err
+	}
+	env, err := compiler.LoadEnvironment(envDir)
+	if err != nil {
+		return "", err
+	}
+	envName, err := environmentName(env)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(absCompose), "app-"+envName), nil
 }
 
 // demoEnvironment builds a synthetic environment for --demo, one of the
@@ -367,7 +414,6 @@ func copyDir(src, dst string) error {
 func init() {
 	rootCmd.AddCommand(mainCmd)
 
-	mainCmd.Flags().StringP("file", "f", "compose.yml", "Path to the Docker Compose file")
 	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
 	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
 	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")

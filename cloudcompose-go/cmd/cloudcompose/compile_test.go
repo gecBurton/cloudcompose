@@ -297,3 +297,96 @@ func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
 	}
 }
+
+// TestMain_FileFlagWorksBeforeOrAfterSubcommand confirms -f/--file is a
+// persistent root flag, not a local one repeated per-subcommand: it
+// must work both before the subcommand (`cloudcompose -f x.yml
+// compile`) and after it (`cloudcompose compile -f x.yml`), exactly
+// like real `docker compose`'s own -f positioning. This split is
+// deliberate, not cosmetic -- see main.go's own doc comment: it's what
+// lets `cloudcompose logs` define a *local* -f/--follow later (like
+// real `docker compose logs -f`) without colliding with this one.
+func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	composeDir := t.TempDir()
+
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	beforeSubcommand := exec.Command(bin, "-f", composeFile, "compile", "-d", "aws")
+	out, err := beforeSubcommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose -f %s compile failed: %v\n%s", composeFile, err, out)
+	}
+	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+		t.Errorf("expected main.tf.json from -f before the subcommand, got: %v", statErr)
+	}
+	if err := os.RemoveAll(filepath.Join(composeDir, "app-demo")); err != nil {
+		t.Fatalf("cleanup app-demo: %v", err)
+	}
+
+	afterSubcommand := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
+	out, err = afterSubcommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose compile -f %s failed: %v\n%s", composeFile, err, out)
+	}
+	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+		t.Errorf("expected main.tf.json from -f after the subcommand, got: %v", statErr)
+	}
+}
+
+// TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd confirms -f/
+// --file is only required when there's genuine ambiguity, matching
+// `docker compose`'s own behavior: with a compose.yml present in the
+// working directory and no -f given at all, `cloudcompose compile`
+// should still find and use it (see shared.FindComposeFile).
+func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	composeDir := t.TempDir()
+
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(composeDir, "compose.yml"), composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "compile", "-d", "aws")
+	cmd.Dir = composeDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose compile with no -f failed: %v\n%s", err, out)
+	}
+	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
+	}
+}
+
+// TestMain_FileFlagMissingWithNoComposeFileInCwd confirms the absence of
+// any compose file in the working directory (and no -f) fails with a
+// clear message naming every filename that was tried, rather than a
+// generic "file not found" for a literal "compose.yml".
+func TestMain_FileFlagMissingWithNoComposeFileInCwd(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	emptyDir := t.TempDir()
+
+	cmd := exec.Command(bin, "compile", "-d", "aws")
+	cmd.Dir = emptyDir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit with no compose file in cwd, got success:\n%s", out)
+	}
+	if !contains(string(out), "no compose file found") {
+		t.Errorf("expected a 'no compose file found' message, got:\n%s", out)
+	}
+}

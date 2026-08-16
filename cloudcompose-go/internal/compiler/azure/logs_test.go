@@ -1,10 +1,15 @@
 package azure
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/azquery"
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
@@ -15,6 +20,11 @@ import (
 // status_test.go's fakeContainerAppsClient rationale.
 type fakeLogsClient struct {
 	tables map[string][]*azquery.Table
+	// errs lets a test force QueryResource to return a specific error
+	// for a given resourceID -- e.g. missingLogTableError() below, to
+	// exercise isMissingLogTable's own effect on FetchLogs without a
+	// real Azure workspace.
+	errs map[string]error
 	// seenResourceIDs records every resourceID QueryResource was called
 	// with, so tests can assert FetchLogs queried exactly the Container
 	// App resource IDs status.go's own naming would have created.
@@ -23,6 +33,9 @@ type fakeLogsClient struct {
 
 func (f *fakeLogsClient) QueryResource(ctx context.Context, resourceID string, body azquery.Body, options *azquery.LogsClientQueryResourceOptions) (azquery.LogsClientQueryResourceResponse, error) {
 	f.seenResourceIDs = append(f.seenResourceIDs, resourceID)
+	if err, ok := f.errs[resourceID]; ok {
+		return azquery.LogsClientQueryResourceResponse{}, err
+	}
 	tables, ok := f.tables[resourceID]
 	if !ok {
 		return azquery.LogsClientQueryResourceResponse{}, notFoundError()
@@ -271,5 +284,124 @@ func TestFetchLogs_MySQLDatabaseIsSkipped(t *testing.T) {
 	}
 	if len(client.seenResourceIDs) != 0 {
 		t.Errorf("expected no QueryResource calls for a MySQL database service, got %v", client.seenResourceIDs)
+	}
+}
+
+// missingLogTableErrorBody is a trimmed but real copy of the response
+// body Log Analytics actually returned in a live smoke-test failure
+// (2026-08-16, francecentral, a brand-new workspace whose
+// ContainerAppConsoleLogs_CL custom log table hadn't been created yet)
+// -- see isMissingLogTable's own doc comment in logs.go for the full
+// story. Used to build a real *azcore.ResponseError via
+// runtime.NewResponseError, the same constructor the SDK itself uses, so
+// this test exercises isMissingLogTable against the exact same
+// Error()-rendered text the real failure did, not a hand-simplified
+// stand-in that might not match how *ResponseError actually formats a
+// body with a nested innererror.innererror.
+const missingLogTableErrorBody = `{
+  "error": {
+    "message": "The request had some invalid properties",
+    "code": "BadArgumentError",
+    "correlationId": "616e3a05-c697-4ad3-943a-17fdb3d4cce5",
+    "innererror": {
+      "code": "SemanticError",
+      "message": "A semantic error occurred.",
+      "innererror": {
+        "code": "SEM0100",
+        "message": "'order' operator: Failed to resolve table or column expression named 'ContainerAppConsoleLogs_CL'"
+      }
+    }
+  }
+}`
+
+// missingLogTableError builds a real *azcore.ResponseError matching
+// missingLogTableErrorBody, for fakeLogsClient.errs to return.
+func missingLogTableError() error {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Status:     "400 Bad Request",
+		Header:     http.Header{},
+		Body:       io.NopCloser(bytes.NewReader([]byte(missingLogTableErrorBody))),
+		Request:    &http.Request{Method: "POST", URL: &url.URL{Scheme: "https", Host: "api.loganalytics.io", Path: "/v1/query"}},
+	}
+	return runtime.NewResponseError(resp)
+}
+
+// TestIsMissingLogTable_MatchesRealAzureFailure confirms isMissingLogTable
+// recognizes the exact error shape a real Log Analytics "table doesn't
+// exist yet" response produces -- a regression test for the live
+// smoke-test failure this function was added to fix.
+func TestIsMissingLogTable_MatchesRealAzureFailure(t *testing.T) {
+	t.Parallel()
+	if !isMissingLogTable(missingLogTableError()) {
+		t.Error("expected isMissingLogTable to recognize the real missing-table error shape")
+	}
+}
+
+// TestIsMissingLogTable_DoesNotMatchOtherBadArgumentErrors confirms a
+// different BadArgumentError (a genuine KQL problem, not a missing
+// table) is NOT swallowed -- isMissingLogTable's own doc comment
+// explains why matching on ErrorCode alone would be too broad.
+func TestIsMissingLogTable_DoesNotMatchOtherBadArgumentErrors(t *testing.T) {
+	t.Parallel()
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Status:     "400 Bad Request",
+		Header:     http.Header{},
+		Body: io.NopCloser(bytes.NewReader([]byte(`{
+  "error": {
+    "message": "The request had some invalid properties",
+    "code": "BadArgumentError",
+    "innererror": {
+      "code": "SyntaxError",
+      "message": "Query could not be parsed at 'foo': syntax error"
+    }
+  }
+}`))),
+		Request: &http.Request{Method: "POST", URL: &url.URL{Scheme: "https", Host: "api.loganalytics.io", Path: "/v1/query"}},
+	}
+	if isMissingLogTable(runtime.NewResponseError(resp)) {
+		t.Error("expected isMissingLogTable to reject an unrelated BadArgumentError")
+	}
+}
+
+// TestIsMissingLogTable_DoesNotMatchNonResponseErrors confirms a plain
+// Go error (not an *azcore.ResponseError at all) is never treated as a
+// missing table.
+func TestIsMissingLogTable_DoesNotMatchNonResponseErrors(t *testing.T) {
+	t.Parallel()
+	if isMissingLogTable(context.DeadlineExceeded) {
+		t.Error("expected isMissingLogTable to reject a non-ResponseError")
+	}
+}
+
+// TestFetchLogs_TreatsMissingLogTableAsZeroEvents confirms FetchLogs
+// itself (not just isMissingLogTable in isolation) returns zero events
+// and no error when Log Analytics rejects a query for a not-yet-created
+// custom log table -- the actual behavior scripts/smoke-test.sh's own
+// retry loop depends on: before this fix, this same error aborted
+// FetchLogs entirely with a hard error on every single retry, since the
+// table's absence never resolved within any bounded retry window.
+func TestFetchLogs_TreatsMissingLogTableAsZeroEvents(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "hello")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	env := mockAzureProdEnv()
+
+	resourceID := containerAppResourceID("00000000-0000-0000-0000-000000000000", env.ResourceGroupName, "prod-hello-web")
+	client := &fakeLogsClient{errs: map[string]error{resourceID: missingLogTableError()}}
+
+	events, err := FetchLogs(context.Background(), client, "00000000-0000-0000-0000-000000000000", app, &env, nil, time.Time{}, 200)
+	if err != nil {
+		t.Fatalf("expected FetchLogs to treat a missing log table as zero events, not an error, got: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("expected no events, got %d: %+v", len(events), events)
 	}
 }

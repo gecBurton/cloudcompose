@@ -68,7 +68,7 @@ func runMain(cmd *cobra.Command, args []string) {
 			printUnexpectedError(err)
 			os.Exit(1)
 		}
-		fmt.Println(compiler.StripMarkup(compiler.Render(compiler.Explain(nil, semantic))))
+		fmt.Println(compiler.StripMarkup(compiler.Render(compiler.Explain(composeApp, semantic))))
 		return
 	}
 
@@ -115,8 +115,9 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		return "", fmt.Errorf("%s does not exist or is not readable", composeFile)
 	}
 
-	if projectName == "" {
-		projectName = filepath.Base(filepath.Dir(absCompose))
+	projectName, err = resolveProjectName(composeFile, projectName)
+	if err != nil {
+		return "", err
 	}
 
 	var env any
@@ -140,17 +141,23 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		return "", err
 	}
 
-	// Output lands in <dir of -f>/app-<environment name>, not a fixed
-	// "terraform" directory: the same compose.yml compiled against two
-	// different environments (e.g. dev vs prod) must not overwrite each
-	// other's output. Named to pair with init's own env-<name> output
-	// directory -- app-<name> is this app's slice of that same
-	// environment name.
+	// Output lands in <dir of -f>/app-<environment name>-<project name>,
+	// not a fixed "terraform" directory: the same compose.yml compiled
+	// against two different environments (e.g. dev vs prod) must not
+	// overwrite each other's output, and two different --project values
+	// compiled against the *same* environment must not either -- every
+	// resource this compile produces is named env.Name-app.Name-... (see
+	// e.g. aws/infer.go's getName closure), so two different project
+	// names really do produce two different, non-interchangeable sets of
+	// resources; the output directory naming must not imply they're the
+	// same deployment. Named to pair with init's own env-<name> output
+	// directory -- app-<name>-<project> is this app's slice of that
+	// environment's name plus its own identity within it.
 	envName, err := environmentName(env)
 	if err != nil {
 		return "", err
 	}
-	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName)
+	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName)
 
 	// --subnet-index only means something on Azure -- see
 	// AzureEnvironment.SubnetIndex's own doc comment for why it's a
@@ -175,7 +182,7 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 	}
 
 	// Report anything the compiler could not decide.
-	decisions := compiler.Explain(nil, semantic)
+	decisions := compiler.Explain(composeApp, semantic)
 	warningCount := 0
 	for _, d := range decisions {
 		if d.Source == compiler.SourceWarning {
@@ -253,14 +260,17 @@ func environmentName(env any) (string, error) {
 	}
 }
 
-// appDir reports the same app-<environment name> output directory
-// compileApp writes to for composeFile compiled against the environment
-// in envDir, without compiling anything -- used by `cloudcompose down`
-// (down.go) to find an already-compiled app's directory to run
-// `terraform destroy` in. Deliberately takes no --demo option: demo
-// environments never produce real infrastructure, so there is nothing
-// for `down` to destroy against one.
-func appDir(composeFile, envDir string) (string, error) {
+// appDir reports the same app-<environment name>-<project name> output
+// directory compileApp writes to for composeFile compiled against the
+// environment in envDir under projectName, without compiling anything
+// -- used by `cloudcompose down` (down.go) to find an already-compiled
+// app's directory to run `terraform destroy` in. projectName must be
+// resolved (defaulted from the compose file's own directory name, same
+// as compileApp does) by the caller before calling this -- see down.go's
+// own use of resolveProjectName. Deliberately takes no --demo option:
+// demo environments never produce real infrastructure, so there is
+// nothing for `down` to destroy against one.
+func appDir(composeFile, envDir, projectName string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
@@ -273,7 +283,24 @@ func appDir(composeFile, envDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(absCompose), "app-"+envName), nil
+	return filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName), nil
+}
+
+// resolveProjectName returns projectName unchanged if the caller gave
+// one explicitly via -p/--project; otherwise it defaults to
+// composeFile's own containing directory's name, exactly matching
+// compileApp's own default so a caller resolving the project name ahead
+// of compileApp (as down.go must, to reconstruct the same output
+// directory without compiling anything) gets the identical value.
+func resolveProjectName(composeFile, projectName string) (string, error) {
+	if projectName != "" {
+		return projectName, nil
+	}
+	absCompose, err := filepath.Abs(composeFile)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(filepath.Dir(absCompose)), nil
 }
 
 // demoEnvironment builds a synthetic environment for --demo, one of the

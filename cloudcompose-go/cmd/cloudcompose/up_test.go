@@ -68,7 +68,7 @@ func TestUp_MissingEnvironmentYamlFailsWithHelpfulMessage(t *testing.T) {
 // exercised here via a `terraform` on PATH that always fails, since a
 // real apply needs cloud credentials this test suite doesn't have. If
 // `up` incorrectly ignored the environment apply's failure, this test
-// would see app-demo/main.tf.json get written anyway.
+// would see an app-demo-* directory get written anyway.
 func TestUp_StopsAfterEnvironmentApplyFails(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -99,8 +99,8 @@ func TestUp_StopsAfterEnvironmentApplyFails(t *testing.T) {
 	if !contains(string(out), "FAKE TERRAFORM FAILURE") {
 		t.Errorf("expected the fake terraform's failure to surface, got:\n%s", out)
 	}
-	if _, statErr := os.Stat(filepath.Join(scratchDir, "app-demo", "main.tf.json")); statErr == nil {
-		t.Error("expected cloudcompose up to stop before compiling the app when the environment apply fails")
+	if matches, _ := filepath.Glob(filepath.Join(scratchDir, "app-demo-*")); len(matches) > 0 {
+		t.Errorf("expected cloudcompose up to stop before compiling the app when the environment apply fails, got: %v", matches)
 	}
 }
 

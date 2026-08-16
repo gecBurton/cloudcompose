@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -9,9 +10,7 @@ import (
 func InferAWS(app *models.Application, env *models.AwsEnvironment) (*models.AWSResources, error) {
 	resources := models.NewAWSResources()
 
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 	tags := env.Tags
 
 	// Whether tearing the stack down preserves what it holds.

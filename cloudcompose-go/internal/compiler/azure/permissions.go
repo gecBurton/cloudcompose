@@ -58,7 +58,7 @@ const secretsPlaceholderValueAzure = "PLACEHOLDER_VALUE_CHANGE_IN_AZURE_PORTAL"
 // all.
 func referencedServersAzure(app *models.Application, connections map[string]models.Connection) map[string]map[string]bool {
 	referenced := map[string]map[string]bool{}
-	order := connectionOrderForAzure(app, connections)
+	order := shared.ConnectionOrder(app, connections)
 	for i := range app.Services {
 		service := &app.Services[i]
 		for _, value := range service.Env {

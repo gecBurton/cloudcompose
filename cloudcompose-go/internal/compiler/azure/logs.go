@@ -31,6 +31,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/azquery"
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -104,9 +105,7 @@ func NewLogsClient() (logsClient, error) {
 // not an error -- the same "not found is not a failure" principle
 // status.go's ServiceStatus.Found follows.
 func FetchLogs(ctx context.Context, client logsClient, subscriptionID string, app *models.Application, env *models.AzureEnvironment, services []string, since time.Time, limit int32) ([]LogEvent, error) {
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 
 	wanted := make(map[string]bool, len(services))
 	for _, s := range services {

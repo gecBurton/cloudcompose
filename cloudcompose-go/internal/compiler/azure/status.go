@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -148,9 +149,7 @@ func SubscriptionIDFromResourceID(resourceID string) (string, error) {
 // aws.FetchStatus's own choice to skip EventBridge-scheduled ECS tasks
 // for the same reason.
 func FetchStatus(ctx context.Context, appsC containerAppsClient, revC revisionsClient, app *models.Application, env *models.AzureEnvironment) ([]ServiceStatus, error) {
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 
 	var result []ServiceStatus
 	for i := range app.Services {

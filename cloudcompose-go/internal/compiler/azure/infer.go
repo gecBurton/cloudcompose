@@ -3,6 +3,7 @@ package azure
 import (
 	"fmt"
 
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -10,9 +11,7 @@ import (
 func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.AzureResources, error) {
 	resources := models.NewAzureResources()
 
-	getName := func(resourceName string) string {
-		return env.Name + "-" + app.Name + "-" + resourceName
-	}
+	getName := shared.ResourceNamer(env.Name, app.Name)
 	var tags map[string]string
 	if len(env.Tags) > 0 {
 		tags = env.Tags
@@ -89,7 +88,7 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	// matters in practice, not just in theory: alphabetical-key sorting
 	// puts DB_URL/BLOBS_URL and CACHE_URL in the wrong relative position
 	// for some real examples.
-	connectionOrder := connectionOrderForAzure(app, connections)
+	connectionOrder := shared.ConnectionOrder(app, connections)
 
 	// Step 8: Infer container apps.
 	if err := inferContainerApps(resources, app, env, getName, tags, identityID, managedServiceIdentityID, connections, connectionOrder, referenced); err != nil {
@@ -105,33 +104,6 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	inferCdnAzure(resources, app, env, getName, tags)
 
 	return resources, nil
-}
-
-// connectionOrderForAzure returns connection keys in insertion order:
-// database connections first, then cache connections merged in, then
-// storage connections merged in -- each built by iterating app.services in
-// declaration order within its own capability filter -- producing every
-// database-capability service (in declaration order), then every
-// cache-capability service, then every object-storage-capability service,
-// filtered to those with a connection.
-func connectionOrderForAzure(app *models.Application, connections map[string]models.Connection) []string {
-	order := make([]string, 0, len(connections))
-	for _, capability := range []models.Capability{
-		models.CapabilityDatabase,
-		models.CapabilityCache,
-		models.CapabilityObjectStorage,
-	} {
-		for i := range app.Services {
-			name := app.Services[i].Name
-			if app.Services[i].Capability != capability {
-				continue
-			}
-			if _, ok := connections[name]; ok {
-				order = append(order, name)
-			}
-		}
-	}
-	return order
 }
 
 // inferManagedIdentity creates or references a managed identity, mirroring

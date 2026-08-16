@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -162,5 +164,31 @@ func TestMain_LogsJSONFlag(t *testing.T) {
 	}
 	if !contains(string(out), "--env is required") {
 		t.Errorf("expected the error to name --env even with --json set, got:\n%s", out)
+	}
+}
+
+// TestLogs_RejectsGcpBeforeParsingCompose mirrors ps_test.go's own
+// TestPs_RejectsGcpBeforeParsingCompose: `logs` used to only reject a
+// GCP environment after also parsing/normalizing compose.yml. Confirmed
+// via a compose.yml with invalid YAML -- if `logs` were still trying
+// to parse it first, this would see a YAML parse error instead of the
+// target rejection.
+func TestLogs_RejectsGcpBeforeParsingCompose(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	envDir := writeGcpEnvironmentFixture(t, "demo")
+	invalidComposeFile := filepath.Join(t.TempDir(), "compose.yml")
+	if err := os.WriteFile(invalidComposeFile, []byte("not: [valid, yaml: at all"), 0644); err != nil {
+		t.Fatalf("write invalid compose.yml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "logs", "-f", invalidComposeFile, "-e", envDir)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected cloudcompose logs to fail for a gcp environment, got:\n%s", out)
+	}
+	if !contains(string(out), "does not support gcp") {
+		t.Errorf("expected the gcp rejection message, got:\n%s", out)
 	}
 }

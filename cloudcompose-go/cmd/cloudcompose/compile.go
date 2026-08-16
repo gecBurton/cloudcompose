@@ -241,6 +241,31 @@ func environmentTarget(env any) (string, error) {
 	}
 }
 
+// requireAwsOrAzure rejects env if it isn't an AWS or Azure environment,
+// naming cmdName (e.g. "ps", "logs") in the resulting error the same way
+// each command's own type-switch default case already did. Every one of
+// ps/logs/down's own real work (aws.FetchStatus/FetchLogs,
+// azure.FetchStatus/FetchLogs) only exists for AWS/Azure; GCP has no
+// equivalent yet, and unlike an actually-unsupported target,
+// LoadEnvironment itself has nothing to reject for GCP -- it's a real,
+// supported cloudcompose target elsewhere (compile/init), just not for
+// these three commands specifically. Callers use this to fail
+// immediately after LoadEnvironment succeeds, before doing any further
+// work (parsing/normalizing compose.yml, or in ps.go's original bug,
+// even reaching the type switch that would have rejected it anyway) --
+// found during a review as unnecessary wasted work on a GCP environment
+// specifically, not a correctness bug (the command still failed
+// correctly, just later than it needed to).
+func requireAwsOrAzure(cmdName string, env any) error {
+	switch env.(type) {
+	case *models.AwsEnvironment, *models.AzureEnvironment:
+		return nil
+	default:
+		target, _ := environmentTarget(env)
+		return fmt.Errorf("`cloudcompose %s` does not support %s environments yet", cmdName, target)
+	}
+}
+
 // environmentName reports the environment's own name (the same `name:`
 // authored in environment.yaml, or "demo" for --demo's synthetic
 // environments), used to build compile's own output directory

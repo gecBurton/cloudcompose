@@ -47,6 +47,43 @@ func TestDown_RequiresEnv(t *testing.T) {
 	}
 }
 
+// writeGcpEnvironmentFixture mirrors writeAwsEnvironmentFixture, but
+// declares a minimal-but-valid GCP environment instead -- used by
+// ps_test.go/logs_test.go to confirm `ps`/`logs` reject a GCP
+// environment immediately after LoadEnvironment succeeds, not only
+// after also parsing/normalizing compose.yml (see requireAwsOrAzure's
+// own doc comment in compile.go for why that ordering matters).
+func writeGcpEnvironmentFixture(t *testing.T, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	mainTF := fmt.Sprintf(`output "environment" {
+  value = {
+    target     = "gcp"
+    name       = %q
+    project_id = "demo-project-000000"
+  }
+}
+`, name)
+	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(mainTF), 0644); err != nil {
+		t.Fatalf("write main.tf: %v", err)
+	}
+
+	initCmd := exec.Command("terraform", "init", "-input=false")
+	initCmd.Dir = dir
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("terraform init: %v\n%s", err, out)
+	}
+
+	applyCmd := exec.Command("terraform", "apply", "-auto-approve")
+	applyCmd.Dir = dir
+	if out, err := applyCmd.CombinedOutput(); err != nil {
+		t.Fatalf("terraform apply: %v\n%s", err, out)
+	}
+
+	return dir
+}
+
 // writeAwsEnvironmentFixture creates a scratch directory containing
 // only a single `output "environment"` block (no providers, no
 // resources) declaring a minimal-but-valid AWS environment, then runs

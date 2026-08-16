@@ -573,7 +573,24 @@ echo "$body" | head -20
 # Uses $COMPOSE_BUILD_COPY, not $COMPOSE -- see show_diagnostics' own
 # comment above for why.
 log "Asserting cloudcompose ps reports the deployed service as running…"
-"$CLOUDCOMPOSE" ps -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" --json | python3 -c "
+# A single shot here raced a real AWS eventual-consistency gap and failed
+# CI (2026-08-16): RunningCount (from ECS's own DescribeServices) and
+# target health (from a separate ELB DescribeTargetHealth call, see
+# aws/status.go's targetHealth) are two independent APIs that don't
+# necessarily agree the instant a task transitions to RUNNING -- the ALB
+# had already reported the target healthy, and the HTTP poll above had
+# already gotten a real response through it, while ECS's own
+# RunningCount still read 0. Retry rather than a single shot, bounded
+# rather than open-ended, mirroring the logs assertion below --
+# PS_ASSERT_TIMEOUT defaults to 60s: this convergence gap is normally a
+# few seconds on AWS, nowhere near log ingestion's own multi-minute
+# ceiling, so a much shorter budget than LOGS_ASSERT_TIMEOUT is
+# deliberate, not copied from it verbatim.
+PS_ASSERT_TIMEOUT="${PS_ASSERT_TIMEOUT:-60}"
+ps_deadline=$(( SECONDS + PS_ASSERT_TIMEOUT ))
+ps_ok=0
+while (( SECONDS < ps_deadline )); do
+  if "$CLOUDCOMPOSE" ps -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" --json | python3 -c "
 import json, sys
 rows = json.load(sys.stdin)
 if not rows:
@@ -582,7 +599,15 @@ bad = [r for r in rows if not r.get('found') or r.get('running', 0) <= 0]
 if bad:
     sys.exit(f'ps reports service(s) not running: {bad}')
 print(f'ps OK -- {len(rows)} service(s) found and running: ' + ', '.join(r[\"name\"] for r in rows))
-" || fail "cloudcompose ps did not report the deployed service as running"
+"; then
+    ps_ok=1
+    break
+  fi
+  printf '.'
+  sleep 5
+done
+echo
+(( ps_ok == 1 )) || fail "cloudcompose ps did not report the deployed service as running after ${PS_ASSERT_TIMEOUT}s (RunningCount/target-health convergence delay, or a real regression -- check the diagnostics above)"
 
 log "Asserting cloudcompose logs returns real output…"
 # Log ingestion is not instant (CloudWatch typically has single-digit

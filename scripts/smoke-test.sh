@@ -250,10 +250,13 @@ cleanup() {
   # requires the app to have actually been deployed ($BUILD_DIR/main.tf.json
   # exists, i.e. `cloudcompose main` itself ran) and $CLOUDCOMPOSE to have
   # been built; a run that failed before either of those has nothing to
-  # show logs for, not a new failure to report.
+  # show logs for, not a new failure to report. The same guard also
+  # guarantees $COMPOSE_BUILD_COPY is set (compile, which sets it, must
+  # have already run for main.tf.json to exist) -- see show_diagnostics'
+  # own comment below for why that matters, not just $COMPOSE.
   if [[ -x "$CLOUDCOMPOSE" && -f "$BUILD_DIR/main.tf.json" ]]; then
     log "Final logs snapshot before teardown…"
-    "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --tail 500 || true
+    "$CLOUDCOMPOSE" logs -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" --tail 500 || true
   fi
 
   local leaked=0
@@ -518,12 +521,23 @@ poll_until_served() {
 # Failures from ps/logs themselves are swallowed (|| true) -- a transient
 # API hiccup while gathering diagnostics must never mask the real
 # poll_until_served failure this is trying to help explain.
+#
+# Uses $COMPOSE_BUILD_COPY, not $COMPOSE: by this point the script has
+# already `cd`ed into $BUILD_DIR (see step 3, "Deploy the app," above)
+# and never cds back, so $COMPOSE's own relative path (e.g.
+# examples/hello/compose.yml, relative to $ROOT) no longer resolves --
+# $COMPOSE_BUILD_COPY is the absolute path to the same file's copy under
+# build/ that `compile` itself was given. A real bug found in CI: this
+# used to pass $COMPOSE here, and every ps/logs call below failed with
+# "does not exist or is not readable" -- silently for these
+# diagnostics-only calls (|| true), loudly once the strict assertions
+# below were added.
 show_diagnostics() {
   local label="$1"
   log "cloudcompose ps ($label)…"
-  "$CLOUDCOMPOSE" ps -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" || true
+  "$CLOUDCOMPOSE" ps -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" || true
   log "cloudcompose logs, last 5m ($label)…"
-  "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 || true
+  "$CLOUDCOMPOSE" logs -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 || true
 }
 
 show_diagnostics "just deployed"
@@ -555,8 +569,11 @@ echo "$body" | head -20
 # already proved routing+TLS+the app's own response end-to-end; ps/logs
 # reporting correctly is an independent, additional thing worth knowing
 # actually works, not a faster or more thorough substitute for the poll.
+#
+# Uses $COMPOSE_BUILD_COPY, not $COMPOSE -- see show_diagnostics' own
+# comment above for why.
 log "Asserting cloudcompose ps reports the deployed service as running…"
-"$CLOUDCOMPOSE" ps -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --json | python3 -c "
+"$CLOUDCOMPOSE" ps -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" --json | python3 -c "
 import json, sys
 rows = json.load(sys.stdin)
 if not rows:
@@ -582,7 +599,7 @@ LOGS_ASSERT_TIMEOUT="${LOGS_ASSERT_TIMEOUT:-300}"
 logs_deadline=$(( SECONDS + LOGS_ASSERT_TIMEOUT ))
 logs_ok=0
 while (( SECONDS < logs_deadline )); do
-  if "$CLOUDCOMPOSE" logs -f "$COMPOSE" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 --json | python3 -c "
+  if "$CLOUDCOMPOSE" logs -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR" -p "$PROJECT" --since 5m --tail 200 --json | python3 -c "
 import json, sys
 events = json.load(sys.stdin)
 if not events:

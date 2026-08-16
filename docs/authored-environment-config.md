@@ -129,14 +129,23 @@ at `examples/hello/environment.yaml` (AWS),
 
 `init` and `compile` take no output-location flag at all: `init` always
 writes to `<dir of -f>/env-<name>`, and `compile` always writes to
-`<dir of -f (compose.yml)>/app-<environment name>` — both derived from
-the input file's own location, not the shell's current directory, so
-output never depends on where a command happens to be run from.
-`compile`'s output directory name includes the environment's name
-specifically so the same compose.yml can be compiled against more than
-one environment (e.g. dev and prod) without one overwriting the
-other's output — `app-<name>` pairs with `init`'s own `env-<name>`,
-naming both halves of one environment's deployment consistently.
+`<dir of -f (compose.yml)>/app-<environment name>-<project name>` —
+both derived from the input file's own location, not the shell's
+current directory, so output never depends on where a command happens
+to be run from. `compile`'s output directory name includes both the
+environment's name and the project's name specifically so the same
+compose.yml can be compiled against more than one environment (e.g. dev
+and prod), or under more than one `--project`, without one overwriting
+another's output — every actual Terraform resource `compile` produces
+is named `env.Name-app.Name-...` (see e.g. `aws/infer.go`'s `getName`
+closure), so a different `--project` really does produce a different,
+non-interchangeable deployment, not a re-compile of the same one; the
+output directory naming must not imply otherwise. `app-<env>-<project>`
+pairs with `init`'s own `env-<name>`, naming both halves of one
+deployment consistently. `cloudcompose down` (see its own doc comment)
+must be given the same `--project` value `compile` used to find the
+matching output directory to destroy — there is nowhere else `down` can
+recover it from.
 
 ## Known gap: GCP CDN inference
 

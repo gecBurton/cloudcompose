@@ -10,9 +10,10 @@ import (
 
 // TestDown_Help confirms `cloudcompose down --help` documents the flags
 // this command actually reads (compose_file.go's global -f, plus
-// down's own -e/--env and --auto-approve) -- see down.go's own doc
-// comment for why --auto-approve exists (non-interactive callers) and
-// is off by default.
+// down's own -e/--env, -p/--project, and --auto-approve) -- see down.go's
+// own doc comment for why --auto-approve exists (non-interactive
+// callers) and is off by default, and appDir's own doc comment for why
+// -p/--project must match whatever `compile` used.
 func TestDown_Help(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -23,7 +24,7 @@ func TestDown_Help(t *testing.T) {
 		t.Fatalf("cloudcompose down --help failed: %v\n%s", err, out)
 	}
 
-	for _, want := range []string{"-f, --file", "-e, --env", "--auto-approve"} {
+	for _, want := range []string{"-f, --file", "-e, --env", "-p, --project", "--auto-approve"} {
 		if !contains(string(out), want) {
 			t.Errorf("expected %s in cloudcompose down --help output, got:\n%s", want, out)
 		}
@@ -128,9 +129,9 @@ func TestDown_RunsTerraformDestroyInAppDir(t *testing.T) {
 	bin := buildCloudComposeBinary(t)
 
 	envDir := writeAwsEnvironmentFixture(t, "demo")
-	appDir := filepath.Join(filepath.Dir(envDir), "app-demo")
+	appDir := filepath.Join(filepath.Dir(envDir), "app-demo-hello")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
-		t.Fatalf("mkdir app-demo: %v", err)
+		t.Fatalf("mkdir app-demo-hello: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "main.tf.json"), []byte(`{}`), 0644); err != nil {
 		t.Fatalf("write main.tf.json: %v", err)
@@ -144,10 +145,11 @@ func TestDown_RunsTerraformDestroyInAppDir(t *testing.T) {
 	logFile := filepath.Join(fakeTerraformDir, "invocations.log")
 	fakeTerraform := filepath.Join(fakeTerraformDir, "terraform")
 	// down also needs to resolve envDir's own `environment` output (to
-	// learn its name, "demo", and build app-demo) before it ever runs
-	// terraform in appDir -- since the fake terraform below intercepts
-	// every invocation on PATH, including that one, it has to answer
-	// `terraform output -json` for real rather than just logging it.
+	// learn its name, "demo", and build app-demo-hello) before it ever
+	// runs terraform in appDir -- since the fake terraform below
+	// intercepts every invocation on PATH, including that one, it has to
+	// answer `terraform output -json` for real rather than just logging
+	// it.
 	fakeTerraformScript := fmt.Sprintf(`#!/bin/sh
 echo "$PWD $@" >> %s
 if [ "$1" = "output" ]; then
@@ -159,7 +161,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir)
+	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir, "-p", "hello")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -190,9 +192,9 @@ func TestDown_AutoApprovePassesFlagToTerraform(t *testing.T) {
 	bin := buildCloudComposeBinary(t)
 
 	envDir := writeAwsEnvironmentFixture(t, "demo")
-	appDir := filepath.Join(filepath.Dir(envDir), "app-demo")
+	appDir := filepath.Join(filepath.Dir(envDir), "app-demo-hello")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
-		t.Fatalf("mkdir app-demo: %v", err)
+		t.Fatalf("mkdir app-demo-hello: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "main.tf.json"), []byte(`{}`), 0644); err != nil {
 		t.Fatalf("write main.tf.json: %v", err)
@@ -216,7 +218,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir, "--auto-approve")
+	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir, "-p", "hello", "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// No stdin attached at all -- see up_test.go's identical note on why
 	// this matters for --auto-approve specifically.

@@ -285,7 +285,7 @@ func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", "hello")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloudcompose compile --demo aws failed: %v\n%s", err, out)
@@ -293,7 +293,7 @@ func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 	if !contains(string(out), "DEMO MODE") {
 		t.Errorf("expected a demo-mode warning, got:\n%s", out)
 	}
-	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo-hello", "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
 	}
 }
@@ -325,11 +325,15 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cloudcompose -f %s compile failed: %v\n%s", composeFile, err, out)
 	}
-	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+	// compile defaults --project to composeDir's own basename, so the
+	// output directory is app-demo-<composeDir's basename> here rather
+	// than a fixed name.
+	appDirName := "app-demo-" + filepath.Base(composeDir)
+	if _, statErr := os.Stat(filepath.Join(composeDir, appDirName, "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json from -f before the subcommand, got: %v", statErr)
 	}
-	if err := os.RemoveAll(filepath.Join(composeDir, "app-demo")); err != nil {
-		t.Fatalf("cleanup app-demo: %v", err)
+	if err := os.RemoveAll(filepath.Join(composeDir, appDirName)); err != nil {
+		t.Fatalf("cleanup %s: %v", appDirName, err)
 	}
 
 	afterSubcommand := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
@@ -337,7 +341,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cloudcompose compile -f %s failed: %v\n%s", composeFile, err, out)
 	}
-	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(composeDir, appDirName, "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json from -f after the subcommand, got: %v", statErr)
 	}
 }
@@ -360,13 +364,13 @@ func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-d", "aws")
+	cmd := exec.Command(bin, "compile", "-d", "aws", "-p", "hello")
 	cmd.Dir = composeDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloudcompose compile with no -f failed: %v\n%s", err, out)
 	}
-	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo", "main.tf.json")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo-hello", "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
 	}
 }
@@ -388,5 +392,99 @@ func TestMain_FileFlagMissingWithNoComposeFileInCwd(t *testing.T) {
 	}
 	if !contains(string(out), "no compose file found") {
 		t.Errorf("expected a 'no compose file found' message, got:\n%s", out)
+	}
+}
+
+// TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide is a
+// regression test for a real bug found in review: compileApp's output
+// directory used to be app-<environment name> alone, so two different
+// --project values compiled against the same compose.yml/environment
+// pair silently overwrote each other's main.tf.json on disk, even
+// though every actual Terraform resource they produce is genuinely
+// different (every resource name is env.Name-app.Name-..., so a
+// different --project really is a different deployment, not a
+// re-compile of the same one). The fix folds --project into the output
+// directory (app-<environment name>-<project name>); this test compiles
+// the same compose file against the same environment under two
+// different --project values and asserts both outputs exist
+// side-by-side with different content, neither overwriting the other.
+func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	composeDir := t.TempDir()
+
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	for _, project := range []string{"appA", "appB"} {
+		cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", project)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cloudcompose compile -p %s failed: %v\n%s", project, err, out)
+		}
+	}
+
+	appADir := filepath.Join(composeDir, "app-demo-appA", "main.tf.json")
+	appBDir := filepath.Join(composeDir, "app-demo-appB", "main.tf.json")
+	appAContent, err := os.ReadFile(appADir)
+	if err != nil {
+		t.Fatalf("expected %s to exist: %v", appADir, err)
+	}
+	appBContent, err := os.ReadFile(appBDir)
+	if err != nil {
+		t.Fatalf("expected %s to exist: %v", appBDir, err)
+	}
+	if string(appAContent) == string(appBContent) {
+		t.Error("expected appA's and appB's manifests to differ (different project names produce different resource names), got identical content")
+	}
+	if !contains(string(appAContent), "appA") {
+		t.Error("expected appA's manifest to reference its own project name")
+	}
+	if !contains(string(appBContent), "appB") {
+		t.Error("expected appB's manifest to reference its own project name")
+	}
+}
+
+// TestMain_ExplainReportsDroppedPortsFromRealComposeModel is a
+// regression test for a real bug found in review: both call sites of
+// compiler.Explain in runMain/compileApp used to pass nil for the raw
+// compose model even though a real one was already parsed and sitting
+// in scope, silently disabling every Decision (like portDecisions'
+// "ports N are not exposed" warning below) that depends on comparing
+// the raw compose.yml against the normalized semantic model rather than
+// the normalized model alone. A service that publishes two ports (only
+// the first of which cloudcompose actually uses) is the simplest way to
+// reproduce it: this warning must appear in --explain output, and must
+// be counted into a normal `compile`'s own warning count.
+func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	composeDir := t.TempDir()
+
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	composeContent := "services:\n  backend:\n    image: nginx\n    ports:\n      - \"3000:3000\"\n      - \"3001:3001\"\n"
+	if err := os.WriteFile(composeFile, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	explainOut, err := exec.Command(bin, "compile", "-f", composeFile, "--explain").CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose compile --explain failed: %v\n%s", err, explainOut)
+	}
+	if !contains(string(explainOut), "3001") || !contains(string(explainOut), "not exposed") {
+		t.Errorf("expected --explain to report ports 3001 are not exposed, got:\n%s", explainOut)
+	}
+
+	compileOut, err := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", "portstest").CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose compile failed: %v\n%s", err, compileOut)
+	}
+	if !contains(string(compileOut), "3001") {
+		t.Errorf("expected a normal compile's own warning summary to also report the dropped port, got:\n%s", compileOut)
 	}
 }

@@ -144,7 +144,7 @@ yourself. Like `docker compose`, `-f`/`--file` is optional: with no
 current directory, so it's only needed for a nonstandard name/location:
 
 ```bash
-cloudcompose up --env-config environment.yaml
+cloudcompose up --env environment.yaml
 ```
 
 ### Deploy to AWS

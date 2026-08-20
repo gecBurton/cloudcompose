@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
+	"github.com/gecburton/cloudcompose/internal/models"
 )
 
 // GenerateAwsEnvironment generates Terraform JSON for a shared AWS
@@ -23,6 +24,16 @@ import (
 // docs/authored-environment-config.md for why: a generated file
 // duplicated exactly what `terraform output` already tracks, and reading
 // live state instead means there's nothing that can go stale.
+//
+// backend, if non-nil, is emitted both as this environment's own
+// `terraform { backend "s3" {...} }` block (state key derived from name
+// via shared.BackendKeyForEnvironment -- never authored) and as a plain
+// `output "backend"` block, so LoadAwsEnvironment can hand the same
+// bucket/region/lock-table facts back to `cloudcompose compile`, which
+// derives its own, app-specific key under that same bucket for every
+// app compiled against this environment. Nil means today's behavior:
+// an ordinary local terraform.tfstate file, with no backend block
+// emitted at all. See docs/multi-user-state.md.
 func GenerateAwsEnvironment(
 	name, region, vpcCIDR string,
 	azCount int,
@@ -34,6 +45,7 @@ func GenerateAwsEnvironment(
 	highAvailabilityEnabled bool,
 	backupRetentionDays int,
 	logRetentionDays int,
+	backend *models.BackendConfig,
 ) (string, error) {
 	tfn := shared.TfName(name)
 	envTag := map[string]string{"Environment": name}
@@ -69,6 +81,36 @@ func GenerateAwsEnvironment(
 		"aws": map[string]any{"source": "hashicorp/aws", "version": "~> 5.0"},
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
+
+	// backendConfig, if set, is also emitted verbatim into the
+	// generated `output "backend"` block below (see this file's own
+	// doc comment on why environment facts are exposed only via plain
+	// Terraform outputs, never a side-effect file) so
+	// LoadAwsEnvironment can hand it back to `cloudcompose compile`,
+	// which reuses it -- under a different, app-specific key -- for
+	// every app compiled against this environment. See
+	// docs/multi-user-state.md.
+	var backendConfig map[string]any
+	if backend != nil && backend.AWS != nil {
+		s3Backend := map[string]any{
+			"bucket":  backend.AWS.Bucket,
+			"key":     shared.BackendKeyForEnvironment(name),
+			"region":  backend.AWS.Region,
+			"encrypt": true,
+		}
+		if backend.AWS.DynamoDBTable != "" {
+			s3Backend["dynamodb_table"] = backend.AWS.DynamoDBTable
+		}
+		terraform["backend"] = map[string]any{"s3": s3Backend}
+
+		backendConfig = map[string]any{
+			"bucket": backend.AWS.Bucket,
+			"region": backend.AWS.Region,
+		}
+		if backend.AWS.DynamoDBTable != "" {
+			backendConfig["dynamodb_table"] = backend.AWS.DynamoDBTable
+		}
+	}
 
 	awsProvider := map[string]any{"region": region}
 	if awsEndpoint != nil {
@@ -311,6 +353,12 @@ func GenerateAwsEnvironment(
 		outputs["alb_dns_name"] = map[string]any{
 			"description": "DNS name of the shared ALB.",
 			"value":       fmt.Sprintf("${aws_lb.%s.dns_name}", tfn),
+		}
+	}
+	if backendConfig != nil {
+		outputs["backend"] = map[string]any{
+			"description": "This environment's own backend config (provider name plus bucket/region/lock table), so every app compiled against this environment can derive its own backend under the same bucket. See docs/multi-user-state.md.",
+			"value":       map[string]any{"provider": "aws", "aws": backendConfig},
 		}
 	}
 

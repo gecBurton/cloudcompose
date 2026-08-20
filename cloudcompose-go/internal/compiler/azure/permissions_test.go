@@ -216,7 +216,7 @@ func TestGenerateAzure_TimeProviderOnlyDeclaredWhenNeeded(t *testing.T) {
 	env := mockAzureProdEnv()
 
 	withoutSleep := models.NewAzureResources()
-	out, err := GenerateAzure(withoutSleep, &env)
+	out, err := GenerateAzure(withoutSleep, &env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAzure failed: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestGenerateAzure_TimeProviderOnlyDeclaredWhenNeeded(t *testing.T) {
 	withSleep := models.NewAzureResources()
 	granted := false
 	grantKeyVaultAccessOnce(withSleep, &granted, principalIDRefForIdentity())
-	out, err = GenerateAzure(withSleep, &env)
+	out, err = GenerateAzure(withSleep, &env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAzure failed: %v", err)
 	}

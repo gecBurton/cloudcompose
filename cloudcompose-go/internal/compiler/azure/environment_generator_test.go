@@ -3,6 +3,8 @@ package azure
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/gecburton/cloudcompose/internal/models"
 )
 
 // TestGenerateAzureEnvironment_ValidStructure checks Azure's generator
@@ -19,7 +21,7 @@ func TestGenerateAzureEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAzureEnvironment(
 		"prod", "eastus", "10.0.0.0/16",
-		map[string]string{"Team": "platform"}, true, false, 7, 7,
+		map[string]string{"Team": "platform"}, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
@@ -57,7 +59,7 @@ func TestGenerateAzureEnvironment_LogRetentionDaysFlowsIntoWorkspaceAndOutput(t 
 	t.Parallel()
 	out, err := GenerateAzureEnvironment(
 		"prod", "eastus", "10.0.0.0/16",
-		nil, true, false, 7, 90,
+		nil, true, false, 7, 90, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
@@ -90,7 +92,7 @@ func TestGenerateAzureEnvironment_LogRetentionDaysClampedToAzureMinimum(t *testi
 	t.Parallel()
 	out, err := GenerateAzureEnvironment(
 		"prod", "eastus", "10.0.0.0/16",
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
@@ -121,7 +123,7 @@ func TestGenerateAzureEnvironment_LogRetentionDaysClampedToAzureMinimum(t *testi
 // TestGenerateAzureEnvironment_ValidStructure's own updated doc comment.
 func TestGenerateAzureEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7)
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, nil)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
 	}
@@ -162,7 +164,7 @@ func TestGenerateAzureEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 // happen to produce a same-sized but differently-placed range.
 func TestGenerateAzureEnvironment_AppsCIDRIsUpperHalfOfVnet(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7)
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, nil)
 	if err != nil {
 		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
 	}
@@ -173,5 +175,173 @@ func TestGenerateAzureEnvironment_AppsCIDRIsUpperHalfOfVnet(t *testing.T) {
 	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
 	if envConfig["apps_cidr"] != "10.0.128.0/17" {
 		t.Errorf("apps_cidr = %v, want 10.0.128.0/17 (the upper half of 10.0.0.0/16)", envConfig["apps_cidr"])
+	}
+}
+
+// --- Backend coverage (docs/multi-user-state.md) --------------------------
+
+// TestGenerateAzureEnvironment_NilBackendOmitsBackendBlock mirrors
+// aws.TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock: today's
+// default (no backend: configured) emits no terraform.backend block and
+// no output.backend block.
+func TestGenerateAzureEnvironment_NilBackendOmitsBackendBlock(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, nil)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	terraform := parsed["terraform"].(map[string]any)
+	if _, ok := terraform["backend"]; ok {
+		t.Errorf("did not expect terraform.backend when backend config is nil")
+	}
+	output := parsed["output"].(map[string]any)
+	if _, ok := output["backend"]; ok {
+		t.Errorf("did not expect output.backend when backend config is nil")
+	}
+}
+
+// TestGenerateAzureEnvironment_BackendEmitsAzurermBlockWithDerivedKey
+// confirms a configured backend.azure produces a
+// `terraform { backend "azurerm" {} }` block whose key is mechanically
+// derived from the environment's own name, never authored -- mirroring
+// aws.TestGenerateAwsEnvironment_BackendEmitsS3BlockWithDerivedKey.
+func TestGenerateAzureEnvironment_BackendEmitsAzurermBlockWithDerivedKey(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		Azure: &models.AzureBackendConfig{
+			ResourceGroupName:  "my-org-tfstate-rg",
+			StorageAccountName: "myorgtfstate",
+			ContainerName:      "tfstate",
+		},
+	}
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, backend)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	azurermBackend, ok := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["azurerm"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend.azurerm, got %v", parsed["terraform"])
+	}
+	if azurermBackend["resource_group_name"] != "my-org-tfstate-rg" {
+		t.Errorf("resource_group_name = %v, want my-org-tfstate-rg", azurermBackend["resource_group_name"])
+	}
+	if azurermBackend["storage_account_name"] != "myorgtfstate" {
+		t.Errorf("storage_account_name = %v, want myorgtfstate", azurermBackend["storage_account_name"])
+	}
+	if azurermBackend["container_name"] != "tfstate" {
+		t.Errorf("container_name = %v, want tfstate", azurermBackend["container_name"])
+	}
+	if azurermBackend["key"] != "cloudcompose/prod/environment.tfstate" {
+		t.Errorf("key = %v, want cloudcompose/prod/environment.tfstate", azurermBackend["key"])
+	}
+}
+
+// TestGenerateAzureEnvironment_UseAzureADAuthDefaultsToTrue confirms
+// UseAzureADAuth defaults to true when not explicitly set -- matching
+// scripts/smoke-test.sh's own convention of disabling shared-key
+// storage-account access (see AzureBackendConfig's own doc comment in
+// internal/models/init_config.go).
+func TestGenerateAzureEnvironment_UseAzureADAuthDefaultsToTrue(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		Azure: &models.AzureBackendConfig{
+			ResourceGroupName:  "rg",
+			StorageAccountName: "acct",
+			ContainerName:      "tfstate",
+		},
+	}
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, backend)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	azurermBackend := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["azurerm"].(map[string]any)
+	if azurermBackend["use_azuread_auth"] != true {
+		t.Errorf("use_azuread_auth = %v, want true (the default)", azurermBackend["use_azuread_auth"])
+	}
+}
+
+// TestGenerateAzureEnvironment_UseAzureADAuthExplicitFalseIsRespected
+// confirms an explicit `use_azuread_auth: false` is distinguishable
+// from "not set" (hence *bool on AzureBackendConfig) and is honored,
+// not silently overridden by the default.
+func TestGenerateAzureEnvironment_UseAzureADAuthExplicitFalseIsRespected(t *testing.T) {
+	t.Parallel()
+	useAzureADAuth := false
+	backend := &models.BackendConfig{
+		Azure: &models.AzureBackendConfig{
+			ResourceGroupName:  "rg",
+			StorageAccountName: "acct",
+			ContainerName:      "tfstate",
+			UseAzureADAuth:     &useAzureADAuth,
+		},
+	}
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, backend)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	azurermBackend := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["azurerm"].(map[string]any)
+	if azurermBackend["use_azuread_auth"] != false {
+		t.Errorf("use_azuread_auth = %v, want false (explicitly set)", azurermBackend["use_azuread_auth"])
+	}
+}
+
+// TestGenerateAzureEnvironment_BackendOutputSurfacesFactsForApps mirrors
+// aws.TestGenerateAwsEnvironment_BackendOutputSurfacesFactsForApps: the
+// output.backend block carries the same resource group/storage
+// account/container facts LoadAzureEnvironment will hand back to
+// `cloudcompose compile` for every app compiled against this
+// environment, but deliberately not the key -- apps must derive their
+// own via shared.BackendKeyForApp, not reuse this environment's.
+func TestGenerateAzureEnvironment_BackendOutputSurfacesFactsForApps(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		Azure: &models.AzureBackendConfig{
+			ResourceGroupName:  "my-org-tfstate-rg",
+			StorageAccountName: "myorgtfstate",
+			ContainerName:      "tfstate",
+		},
+	}
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, backend)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	backendOutput, ok := parsed["output"].(map[string]any)["backend"].(map[string]any)["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected output.backend.value, got %v", parsed["output"])
+	}
+	if backendOutput["provider"] != "azure" {
+		t.Errorf("provider = %v, want azure", backendOutput["provider"])
+	}
+	azureBackendOutput, ok := backendOutput["azure"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected output.backend.value.azure, got %v", backendOutput)
+	}
+	if azureBackendOutput["resource_group_name"] != "my-org-tfstate-rg" ||
+		azureBackendOutput["storage_account_name"] != "myorgtfstate" ||
+		azureBackendOutput["container_name"] != "tfstate" {
+		t.Errorf("unexpected backend output: %v", azureBackendOutput)
+	}
+	if _, ok := azureBackendOutput["key"]; ok {
+		t.Errorf("did not expect output.backend.value.azure.key -- apps must derive their own key, not reuse this environment's")
 	}
 }

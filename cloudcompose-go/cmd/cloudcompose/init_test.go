@@ -116,6 +116,85 @@ func TestInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 	}
 }
 
+// TestInit_WarnsWhenNoBackendConfigured confirms `cloudcompose init`
+// prints initconfig.BackendWarnings' own "no backend configured"
+// warning when environment.yaml has no backend: block -- see
+// docs/multi-user-state.md's own "no backend configured" default:
+// "Never silently assume a backend; local state must stay an explicit,
+// visible choice, not a trap." Regression test for that warning never
+// actually being wired into the CLI despite existing and being unit
+// tested on its own (initconfig_test.go).
+func TestInit_WarnsWhenNoBackendConfigured(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	scratchDir := t.TempDir()
+
+	envFile := filepath.Join(scratchDir, "environment.yaml")
+	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\n"
+	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
+		t.Fatalf("write environment.yaml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "init", "-e", envFile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose init failed: %v\n%s", err, out)
+	}
+	if !contains(string(out), "no backend configured") {
+		t.Errorf("expected a 'no backend configured' warning, got:\n%s", out)
+	}
+}
+
+// TestInit_WarnsWhenAwsBackendHasNoLockTable mirrors
+// TestInit_WarnsWhenNoBackendConfigured for the other BackendWarnings
+// case: an AWS backend configured without dynamodb_table.
+func TestInit_WarnsWhenAwsBackendHasNoLockTable(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	scratchDir := t.TempDir()
+
+	envFile := filepath.Join(scratchDir, "environment.yaml")
+	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\n" +
+		"backend:\n  aws:\n    bucket: my-org-tfstate\n    region: us-east-1\n"
+	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
+		t.Fatalf("write environment.yaml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "init", "-e", envFile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose init failed: %v\n%s", err, out)
+	}
+	if !contains(string(out), "no dynamodb_table configured") {
+		t.Errorf("expected a 'no dynamodb_table configured' warning, got:\n%s", out)
+	}
+}
+
+// TestInit_NoWarningWhenBackendFullyConfigured confirms a fully
+// configured AWS backend (bucket, region, and a lock table) produces
+// neither BackendWarnings case.
+func TestInit_NoWarningWhenBackendFullyConfigured(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	scratchDir := t.TempDir()
+
+	envFile := filepath.Join(scratchDir, "environment.yaml")
+	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\n" +
+		"backend:\n  aws:\n    bucket: my-org-tfstate\n    region: us-east-1\n    dynamodb_table: my-org-tflocks\n"
+	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
+		t.Fatalf("write environment.yaml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "init", "-e", envFile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloudcompose init failed: %v\n%s", err, out)
+	}
+	if contains(string(out), "Warning:") {
+		t.Errorf("expected no warning for a fully configured backend, got:\n%s", out)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
 }

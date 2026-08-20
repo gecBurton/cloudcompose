@@ -15,6 +15,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 	yaml "go.yaml.in/yaml/v4"
 )
@@ -33,6 +34,7 @@ var knownTopLevelKeys = map[string]bool{
 	"high_availability_enabled": true, "backup_retention_days": true,
 	"log_retention_days": true,
 	"aws":                true, "azure": true, "gcp": true,
+	"backend": true,
 }
 
 // Load reads and validates an environment.yaml file at path. Returns
@@ -92,6 +94,18 @@ func Validate(config *models.InitConfig) error {
 	if config.Name == "" {
 		return fmt.Errorf("name is required")
 	}
+	// Enforced here, not just structurally by BackendKeyForEnvironment's
+	// own "apps/" nesting -- see shared.ValidateBackendName's own doc
+	// comment for the concrete collision this closes (a name containing
+	// "/" can otherwise make one environment's own backend key collide
+	// with a completely different environment's app). This applies
+	// regardless of whether backend: is even configured, since name is
+	// also cloudcompose init's own env-<name> output directory name --
+	// consistent with resolveProjectName's identical check in
+	// cmd/cloudcompose/compile.go for --project.
+	if err := shared.ValidateBackendName("name", config.Name); err != nil {
+		return err
+	}
 	if !supportedProviders[config.Provider] {
 		return fmt.Errorf("provider %q is not supported; supported: aws, azure, gcp", config.Provider)
 	}
@@ -113,6 +127,94 @@ func Validate(config *models.InitConfig) error {
 	if config.Provider == "gcp" {
 		if config.Gcp == nil || config.Gcp.ProjectID == "" {
 			return fmt.Errorf("gcp.project_id is required")
+		}
+	}
+
+	if err := validateBackend(config); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateBackend enforces the same strict/discriminated rule on
+// backend: that Validate already applies to the top-level aws:/azure:/
+// gcp: blocks -- exactly the block matching provider may be set -- plus
+// the required fields each backend type needs to be usable at all
+// (Terraform itself would reject a backend block missing these, but
+// failing here gives a clearer, environment.yaml-specific error instead
+// of a `terraform init` failure two commands later). backend: itself
+// being absent entirely is not an error -- see BackendWarnings for the
+// non-fatal warning that covers that case instead.
+func validateBackend(config *models.InitConfig) error {
+	if config.Backend == nil {
+		return nil
+	}
+
+	backendPresent := map[string]bool{
+		"aws":   config.Backend.AWS != nil,
+		"azure": config.Backend.Azure != nil,
+		"gcp":   config.Backend.Gcp != nil,
+	}
+	for provider, isPresent := range backendPresent {
+		if provider != config.Provider && isPresent {
+			return fmt.Errorf(
+				"declares provider %q but backend has a %q block; only the block matching provider is allowed",
+				config.Provider, provider,
+			)
+		}
+	}
+
+	switch config.Provider {
+	case "aws":
+		b := config.Backend.AWS
+		if b == nil {
+			return nil
+		}
+		if b.Bucket == "" || b.Region == "" {
+			return fmt.Errorf("backend.aws requires bucket and region")
+		}
+	case "azure":
+		b := config.Backend.Azure
+		if b == nil {
+			return nil
+		}
+		if b.ResourceGroupName == "" || b.StorageAccountName == "" || b.ContainerName == "" {
+			return fmt.Errorf("backend.azure requires resource_group_name, storage_account_name, and container_name")
+		}
+	case "gcp":
+		b := config.Backend.Gcp
+		if b == nil {
+			return nil
+		}
+		if b.Bucket == "" {
+			return fmt.Errorf("backend.gcp requires bucket")
+		}
+	}
+
+	return nil
+}
+
+// BackendWarnings returns human-readable, non-fatal warnings about
+// config's backend: (or lack of one) -- multi-user state sharing isn't
+// safe without a remote backend, and AWS's S3 backend isn't
+// concurrency-safe without a lock table, but neither is invalid
+// config, so neither belongs in Validate's hard-error path. The caller
+// (cmd/cloudcompose/init.go) is responsible for printing these to
+// stderr; this package only decides what they say. See
+// docs/multi-user-state.md.
+func BackendWarnings(config *models.InitConfig) []string {
+	if config.Backend == nil {
+		return []string{
+			"no backend configured — state is local to this machine. " +
+				"Multiple users sharing this environment must configure `backend:` in environment.yaml (see docs/multi-user-state.md).",
+		}
+	}
+
+	if config.Provider == "aws" && config.Backend.AWS != nil && config.Backend.AWS.DynamoDBTable == "" {
+		return []string{
+			"backend.aws has no dynamodb_table configured — concurrent `terraform apply`/`destroy` runs " +
+				"against this environment are not protected by a state lock (see docs/multi-user-state.md).",
 		}
 	}
 

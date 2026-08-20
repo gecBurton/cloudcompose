@@ -43,7 +43,7 @@ func TestInferGcp_RealExamplesProduceValidJSON(t *testing.T) {
 			env := gcpTestEnv()
 
 			resources := InferGcp(app, &env)
-			out, err := GenerateGcp(resources, &env)
+			out, err := GenerateGcp(resources, &env, "app")
 			if err != nil {
 				t.Fatalf("GenerateGcp failed: %v", err)
 			}
@@ -185,7 +185,7 @@ func TestGenerateGcp_AlwaysWiresDockerAndRandomProviders(t *testing.T) {
 	resources := models.NewGcpResources()
 	env := gcpTestEnv()
 
-	out, err := GenerateGcp(resources, &env)
+	out, err := GenerateGcp(resources, &env, "app")
 	if err != nil {
 		t.Fatalf("GenerateGcp failed: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestGenerateGcp_Deterministic(t *testing.T) {
 	var first string
 	for i := 0; i < 6; i++ {
 		resources := InferGcp(app, &env)
-		out, err := GenerateGcp(resources, &env)
+		out, err := GenerateGcp(resources, &env, "app")
 		if err != nil {
 			t.Fatalf("GenerateGcp run %d failed: %v", i, err)
 		}
@@ -252,7 +252,7 @@ func TestGcp_MatchesExpectedStructure(t *testing.T) {
 	env := gcpTestEnv()
 
 	resources := InferGcp(app, &env)
-	out, err := GenerateGcp(resources, &env)
+	out, err := GenerateGcp(resources, &env, "app")
 	if err != nil {
 		t.Fatalf("GenerateGcp failed: %v", err)
 	}
@@ -302,5 +302,56 @@ func TestGcp_MatchesExpectedStructure(t *testing.T) {
 	provider := parsed["provider"].(map[string]any)
 	if _, ok := provider["docker"]; !ok {
 		t.Errorf("expected docker provider (always wired, unconditionally)")
+	}
+}
+
+// TestGenerateGcp_NilEnvBackendOmitsBackendBlock mirrors
+// aws.TestGenerateAWS_NilEnvBackendOmitsBackendBlock for the GCP
+// app-level generator. See docs/multi-user-state.md.
+func TestGenerateGcp_NilEnvBackendOmitsBackendBlock(t *testing.T) {
+	t.Parallel()
+	resources := models.NewGcpResources()
+	env := gcpTestEnv()
+
+	out, err := GenerateGcp(resources, &env, "checkout-api")
+	if err != nil {
+		t.Fatalf("GenerateGcp failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if _, ok := parsed["terraform"].(map[string]any)["backend"]; ok {
+		t.Errorf("did not expect terraform.backend when env.Backend is nil")
+	}
+}
+
+// TestGenerateGcp_EnvBackendProducesAppSpecificBackendBlock mirrors
+// aws.TestGenerateAWS_EnvBackendProducesAppSpecificBackendBlock for the
+// GCP app-level generator.
+func TestGenerateGcp_EnvBackendProducesAppSpecificBackendBlock(t *testing.T) {
+	t.Parallel()
+	resources := models.NewGcpResources()
+	env := gcpTestEnv()
+	env.Backend = &models.BackendConfig{Gcp: &models.GcpBackendConfig{Bucket: "my-org-tfstate"}}
+
+	out, err := GenerateGcp(resources, &env, "checkout-api")
+	if err != nil {
+		t.Fatalf("GenerateGcp failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	gcsBackend, ok := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["gcs"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend.gcs, got %v", parsed["terraform"])
+	}
+	wantPrefix := "cloudcompose/prod/apps/checkout-api.tfstate"
+	if gcsBackend["prefix"] != wantPrefix {
+		t.Errorf("prefix = %v, want %v", gcsBackend["prefix"], wantPrefix)
+	}
+	if gcsBackend["bucket"] != "my-org-tfstate" {
+		t.Errorf("bucket = %v, want my-org-tfstate", gcsBackend["bucket"])
 	}
 }

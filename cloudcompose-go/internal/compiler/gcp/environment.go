@@ -9,7 +9,8 @@ import (
 // `terraform output -json` in dir and decoding its `environment` output
 // into models.GcpEnvironment. See aws.LoadAwsEnvironment's own doc
 // comment for why this reads Terraform's own live state rather than a
-// generated file.
+// generated file, and for the optional `backend` output this also
+// decodes into env.Backend.
 func LoadGcpEnvironment(dir string) (*models.GcpEnvironment, error) {
 	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {
@@ -47,6 +48,12 @@ func LoadGcpEnvironment(dir string) (*models.GcpEnvironment, error) {
 	env.ServiceAccountEmail = shared.ToStringPtr(raw["service_account_email"])
 	env.GcpEndpoint = shared.ToStringPtr(raw["gcp_endpoint"])
 	env.Domain = shared.ToStringPtr(raw["domain"])
+
+	backendRaw, err := shared.OptionalTerraformOutputs(dir, "backend")
+	if err != nil {
+		return nil, err
+	}
+	env.Backend = shared.DecodeBackendOutput(backendRaw)
 
 	return &env, nil
 }

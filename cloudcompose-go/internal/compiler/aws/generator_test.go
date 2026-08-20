@@ -28,7 +28,7 @@ func TestGenerateAWS_BaseProviderShape(t *testing.T) {
 	resources := models.NewAWSResources()
 	env := minimalAwsEnv()
 
-	out, err := GenerateAWS(resources, env)
+	out, err := GenerateAWS(resources, env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAWS: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestGenerateAWS_DockerProviderWiredWhenBuilding(t *testing.T) {
 	}
 	env := minimalAwsEnv()
 
-	out, err := GenerateAWS(resources, env)
+	out, err := GenerateAWS(resources, env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAWS: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestGenerateAWS_CloudfrontScopedWAFPinsProvider(t *testing.T) {
 	env := minimalAwsEnv()
 	env.Region = "eu-west-1"
 
-	out, err := GenerateAWS(resources, env)
+	out, err := GenerateAWS(resources, env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAWS: %v", err)
 	}
@@ -191,13 +191,13 @@ func TestGenerateAWS_Deterministic(t *testing.T) {
 	resources.DockerImage["web_image"] = models.DockerImage{Name: "x", Build: map[string]any{"context": "."}}
 	env := minimalAwsEnv()
 
-	first, err := GenerateAWS(resources, env)
+	first, err := GenerateAWS(resources, env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAWS: %v", err)
 	}
 
 	for i := 0; i < 5; i++ {
-		next, err := GenerateAWS(resources, env)
+		next, err := GenerateAWS(resources, env, "app")
 		if err != nil {
 			t.Fatalf("GenerateAWS run %d: %v", i, err)
 		}
@@ -217,7 +217,7 @@ func TestGenerateAWS_NoEmptyResourceBlocks(t *testing.T) {
 	resources.SecurityGroup["sg"] = models.SecurityGroup{Name: "n", VpcID: "v", Description: "d"}
 	env := minimalAwsEnv()
 
-	out, err := GenerateAWS(resources, env)
+	out, err := GenerateAWS(resources, env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAWS: %v", err)
 	}
@@ -227,5 +227,64 @@ func TestGenerateAWS_NoEmptyResourceBlocks(t *testing.T) {
 	}
 	if !strings.Contains(out, "aws_security_group") {
 		t.Errorf("expected aws_security_group key:\n%s", out)
+	}
+}
+
+// TestGenerateAWS_NilEnvBackendOmitsBackendBlock confirms an app
+// compiled against an environment with no backend: configured (the
+// env.Backend nil default) produces no terraform.backend block --
+// mirroring aws.TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock
+// for the app-level generator. See docs/multi-user-state.md.
+func TestGenerateAWS_NilEnvBackendOmitsBackendBlock(t *testing.T) {
+	resources := models.NewAWSResources()
+	env := minimalAwsEnv()
+
+	out, err := GenerateAWS(resources, env, "checkout-api")
+	if err != nil {
+		t.Fatalf("GenerateAWS: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if _, ok := parsed["terraform"].(map[string]any)["backend"]; ok {
+		t.Errorf("did not expect terraform.backend when env.Backend is nil")
+	}
+}
+
+// TestGenerateAWS_EnvBackendProducesAppSpecificBackendBlock confirms an
+// app compiled against a backend-configured environment gets its own
+// s3 backend block, keyed by shared.BackendKeyForApp(env.Name,
+// projectName) -- never the environment's own key -- so the app's state
+// lives in the same bucket as its environment's, under a distinct key.
+func TestGenerateAWS_EnvBackendProducesAppSpecificBackendBlock(t *testing.T) {
+	resources := models.NewAWSResources()
+	env := minimalAwsEnv()
+	env.Backend = &models.BackendConfig{
+		AWS: &models.AwsBackendConfig{
+			Bucket:        "my-org-tfstate",
+			Region:        "eu-west-2",
+			DynamoDBTable: "my-org-tflocks",
+		},
+	}
+
+	out, err := GenerateAWS(resources, env, "checkout-api")
+	if err != nil {
+		t.Fatalf("GenerateAWS: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	s3Backend, ok := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["s3"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend.s3, got %v", parsed["terraform"])
+	}
+	wantKey := "cloudcompose/prod/apps/checkout-api.tfstate"
+	if s3Backend["key"] != wantKey {
+		t.Errorf("key = %v, want %v", s3Backend["key"], wantKey)
+	}
+	if s3Backend["bucket"] != "my-org-tfstate" {
+		t.Errorf("bucket = %v, want my-org-tfstate", s3Backend["bucket"])
 	}
 }

@@ -9,7 +9,8 @@ import (
 // `terraform output -json` in dir and decoding its `environment` output
 // into models.AzureEnvironment. See aws.LoadAwsEnvironment's own doc
 // comment for why this reads Terraform's own live state rather than a
-// generated file.
+// generated file, and for the optional `backend` output this also
+// decodes into env.Backend.
 func LoadAzureEnvironment(dir string) (*models.AzureEnvironment, error) {
 	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {
@@ -48,6 +49,12 @@ func LoadAzureEnvironment(dir string) (*models.AzureEnvironment, error) {
 	env.PostgresqlServerID = shared.ToStringPtr(raw["postgresql_server_id"])
 	env.UserAssignedIdentityID = shared.ToStringPtr(raw["user_assigned_identity_id"])
 	env.AzureEndpoint = shared.ToStringPtr(raw["azure_endpoint"])
+
+	backendRaw, err := shared.OptionalTerraformOutputs(dir, "backend")
+	if err != nil {
+		return nil, err
+	}
+	env.Backend = shared.DecodeBackendOutput(backendRaw)
 
 	// AzureEnvironment carries no cross-field validation (no equivalent to
 	// AwsEnvironment's ALB check).

@@ -102,6 +102,19 @@ func initEnvironment(configFile string) (string, error) {
 		)
 	}
 
+	// Printed here, immediately after a successful load, rather than
+	// after generation succeeds below: a human deciding whether to
+	// proceed should see these before anything is written to disk, not
+	// buried after "Success!" -- and every path through this function
+	// (any of the three clouds below) shares this one print site rather
+	// than each needing its own. See
+	// initconfig.BackendWarnings' own doc comment and
+	// docs/multi-user-state.md for what these warn about and why they
+	// are warnings, not errors that would block init entirely.
+	for _, warning := range initconfig.BackendWarnings(fileConfig) {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", warning)
+	}
+
 	providerLower := lowerASCII(fileConfig.Provider)
 	name := fileConfig.Name
 	region := fileConfig.Region
@@ -163,6 +176,7 @@ func initEnvironment(configFile string) (string, error) {
 		terraformJSON, err = aws.GenerateAwsEnvironment(
 			name, region, vpcCIDR, azCount, createALB, certPtr, endpointPtr,
 			fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
+			fileConfig.Backend,
 		)
 	case "azure":
 		vpcCIDR := ""
@@ -172,6 +186,7 @@ func initEnvironment(configFile string) (string, error) {
 		}
 		terraformJSON, err = azure.GenerateAzureEnvironment(
 			name, region, vpcCIDR, fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
+			fileConfig.Backend,
 		)
 	case "gcp":
 		vpcCIDR, projectID := "", ""
@@ -184,7 +199,7 @@ func initEnvironment(configFile string) (string, error) {
 		if domain != "" {
 			fmt.Printf("Domain: %s\n", domain)
 		}
-		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData)
+		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData, fileConfig.Backend)
 	default:
 		// initconfig.Validate already rejects an unsupported provider
 		// before Load ever returns, so this is unreachable in practice --

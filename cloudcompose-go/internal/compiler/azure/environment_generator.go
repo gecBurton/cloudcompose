@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
+	"github.com/gecburton/cloudcompose/internal/models"
 )
 
 // GenerateAzureEnvironment generates Terraform JSON for a shared Azure
@@ -27,6 +28,13 @@ import (
 // The environment's facts are exposed as a plain Terraform
 // `output "environment"` block only -- see aws.GenerateAwsEnvironment's
 // own doc comment for why.
+//
+// backend, if non-nil, is emitted both as this environment's own
+// `terraform { backend "azurerm" {...} }` block (state key derived from
+// name via shared.BackendKeyForEnvironment -- never authored) and as a
+// plain `output "backend"` block, mirroring
+// aws.GenerateAwsEnvironment's own backend handling exactly -- see
+// docs/multi-user-state.md.
 func GenerateAzureEnvironment(
 	name, location, vnetCIDR string,
 	tags map[string]string,
@@ -34,6 +42,7 @@ func GenerateAzureEnvironment(
 	highAvailabilityEnabled bool,
 	backupRetentionDays int,
 	logRetentionDays int,
+	backend *models.BackendConfig,
 ) (string, error) {
 	tfn := shared.TfName(name)
 	envTag := map[string]string{"Environment": name}
@@ -63,6 +72,36 @@ func GenerateAzureEnvironment(
 		"azurerm": map[string]any{"source": "hashicorp/azurerm", "version": "~> 4.0"},
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
+
+	// backendConfig, if set, is also emitted verbatim into the
+	// generated `output "backend"` block below, so LoadAzureEnvironment
+	// can hand it back to `cloudcompose compile`, which reuses it --
+	// under a different, app-specific key -- for every app compiled
+	// against this environment. See
+	// aws.GenerateAwsEnvironment's identical handling and
+	// docs/multi-user-state.md.
+	var backendConfig map[string]any
+	if backend != nil && backend.Azure != nil {
+		azurermBackend := map[string]any{
+			"resource_group_name":  backend.Azure.ResourceGroupName,
+			"storage_account_name": backend.Azure.StorageAccountName,
+			"container_name":       backend.Azure.ContainerName,
+			"key":                  shared.BackendKeyForEnvironment(name),
+		}
+		useAzureADAuth := true
+		if backend.Azure.UseAzureADAuth != nil {
+			useAzureADAuth = *backend.Azure.UseAzureADAuth
+		}
+		azurermBackend["use_azuread_auth"] = useAzureADAuth
+		terraform["backend"] = map[string]any{"azurerm": azurermBackend}
+
+		backendConfig = map[string]any{
+			"resource_group_name":  backend.Azure.ResourceGroupName,
+			"storage_account_name": backend.Azure.StorageAccountName,
+			"container_name":       backend.Azure.ContainerName,
+			"use_azuread_auth":     useAzureADAuth,
+		}
+	}
 	provider := map[string]any{"azurerm": map[string]any{"features": map[string]any{}}}
 	dataSources := map[string]any{"azurerm_client_config": map[string]any{"current": map[string]any{}}}
 
@@ -151,6 +190,12 @@ func GenerateAzureEnvironment(
 			"description": "Values matching cloudcompose's Environment model.",
 			"value":       environmentConfig,
 		},
+	}
+	if backendConfig != nil {
+		outputs["backend"] = map[string]any{
+			"description": "This environment's own backend config (provider name plus resource group/storage account/container), so every app compiled against this environment can derive its own backend under the same storage account. See docs/multi-user-state.md.",
+			"value":       map[string]any{"provider": "azure", "azure": backendConfig},
+		}
 	}
 
 	manifest := map[string]any{

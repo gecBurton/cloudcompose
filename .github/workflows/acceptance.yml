@@ -94,6 +94,12 @@ jobs:
           # timed-out run can still be destroyed afterwards.
           STATE_BUCKET: ${{ vars.AWS_ACCEPTANCE_STATE_BUCKET }}
           STATE_REGION: eu-west-2
+          # Optional; unset -> unlocked S3 state, the same race
+          # docs/multi-user-state.md exists to close for real
+          # cloudcompose users. Set once ci/main.tf's own
+          # aws_dynamodb_table.state_locks has been applied (see
+          # ci/README.md).
+          STATE_TABLE: ${{ vars.AWS_ACCEPTANCE_STATE_TABLE }}
         run: |
           case "${{ inputs.example }}" in
             hello)

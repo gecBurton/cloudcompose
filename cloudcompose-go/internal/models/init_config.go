@@ -80,6 +80,61 @@ type InitConfig struct {
 	AWS   *AwsInitConfig   `yaml:"aws,omitempty"`
 	Azure *AzureInitConfig `yaml:"azure,omitempty"`
 	Gcp   *GcpInitConfig   `yaml:"gcp,omitempty"`
+
+	// Backend is the optional remote Terraform state backend this
+	// environment (and every app compiled against it) uses, so more
+	// than one machine/user can apply/destroy against the same
+	// environment safely -- see docs/multi-user-state.md. Nil means
+	// today's behavior: an ordinary local terraform.tfstate file,
+	// which `cloudcompose init` warns about (multi-user sharing isn't
+	// safe without a configured backend).
+	//
+	// Like AWS/Azure/Gcp above, exactly one of Backend's own AWS/
+	// Azure/Gcp fields may be set, and it must match Provider --
+	// enforced by the loader (internal/compiler/initconfig), not here.
+	Backend *BackendConfig `yaml:"backend,omitempty"`
+}
+
+// BackendConfig is the `backend:` block of an authored environment.yaml.
+// The state *key* within each backend is never authored here -- it's
+// always derived from Name (see internal/compiler/shared's
+// backendKeyForEnvironment/backendKeyForApp), the same way env-<name>/
+// app-<env>-<project> output directory names are never authored either.
+type BackendConfig struct {
+	AWS   *AwsBackendConfig   `yaml:"aws,omitempty"`
+	Azure *AzureBackendConfig `yaml:"azure,omitempty"`
+	Gcp   *GcpBackendConfig   `yaml:"gcp,omitempty"`
+}
+
+// AwsBackendConfig configures Terraform's `s3` backend. DynamoDBTable is
+// optional but strongly recommended -- its absence is allowed (GCP has
+// no equivalent lock-table concept to require parity with) but
+// `cloudcompose init` warns about it the same way it warns about no
+// backend being configured at all, since unlocked S3 state has the same
+// concurrent-apply race a missing backend does.
+type AwsBackendConfig struct {
+	Bucket        string `yaml:"bucket"`
+	Region        string `yaml:"region"`
+	DynamoDBTable string `yaml:"dynamodb_table,omitempty"`
+}
+
+// AzureBackendConfig configures Terraform's `azurerm` backend.
+// UseAzureADAuth defaults to true (matching scripts/smoke-test.sh's own
+// convention of disabling shared-key storage-account access) --
+// represented as *bool so an explicit `false` is distinguishable from
+// "not set".
+type AzureBackendConfig struct {
+	ResourceGroupName  string `yaml:"resource_group_name"`
+	StorageAccountName string `yaml:"storage_account_name"`
+	ContainerName      string `yaml:"container_name"`
+	UseAzureADAuth     *bool  `yaml:"use_azuread_auth,omitempty"`
+}
+
+// GcpBackendConfig configures Terraform's `gcs` backend. No lock-table
+// equivalent field exists -- GCS backend locking is native (object
+// generation preconditions), requiring no separate resource or config.
+type GcpBackendConfig struct {
+	Bucket string `yaml:"bucket"`
 }
 
 // AwsInitConfig is the `aws:` block of an authored environment.yaml,

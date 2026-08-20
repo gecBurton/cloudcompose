@@ -7,10 +7,15 @@ This Terraform creates:
 - a GitHub Actions **OIDC identity provider** in your AWS account,
 - an **IAM role** (`cloudcompose-acceptance-ci`) that only `gecBurton/cloudcompose`
   workflows may assume, with `AdministratorAccess` (pragmatic for a sandbox;
-  scope down as a follow-up), and
+  scope down as a follow-up),
 - an **S3 bucket** holding Terraform state for the acceptance runs, so that a
   cancelled or timed-out run can still be torn down (see *Recovering a leaked
-  run* below).
+  run* below), and
+- a **DynamoDB lock table** for that bucket, so two runs racing against the
+  same `NAME` (or a run racing its own `--destroy-only` recovery) can't
+  corrupt each other's state — the same unlocked-S3 race
+  `docs/multi-user-state.md` closes for real `cloudcompose` users via
+  `backend.aws.dynamodb_table`.
 
 ## Apply (once, from a stable connection)
 
@@ -22,23 +27,28 @@ aws-vault exec personal -- terraform apply
 #   ... terraform apply -var create_oidc_provider=false
 ```
 
-Copy the `role_arn` and `state_bucket` outputs.
+Copy the `role_arn`, `state_bucket`, and `state_lock_table` outputs.
 
 ## Wire it into GitHub
 
-Repo → **Settings → Secrets and variables → Actions → Variables**, add both:
+Repo → **Settings → Secrets and variables → Actions → Variables**, add:
 
 | Name | Value |
 | --- | --- |
 | `AWS_ACCEPTANCE_ROLE_ARN` | the `role_arn` output |
 | `AWS_ACCEPTANCE_STATE_BUCKET` | the `state_bucket` output |
+| `AWS_ACCEPTANCE_STATE_TABLE` | the `state_lock_table` output |
 
-(They're *variables*, not secrets — neither is sensitive, and OIDC means no keys
+(They're *variables*, not secrets — none is sensitive, and OIDC means no keys
 are stored.)
 
 If `AWS_ACCEPTANCE_STATE_BUCKET` is left unset the workflow still runs, but with
 Terraform state on the runner only — a cancelled run then strands its resources
-with no way to destroy them.
+with no way to destroy them. `AWS_ACCEPTANCE_STATE_TABLE` is independently
+optional: leaving it unset still uses the state bucket, just without a lock —
+safe as long as acceptance runs never actually overlap (enforced today by the
+workflow's own `concurrency` group), but worth setting so that guarantee isn't
+the only thing standing between two runs and a corrupted state file.
 
 ## Run
 
@@ -66,7 +76,7 @@ state bucket under `acceptance/<NAME>/` and can be destroyed from anywhere.
 `NAME` is `ci<run_number>`, shown in the failed job's log.
 
 ```bash
-STATE_BUCKET=<state_bucket output> NAME=ci42 PROJECT=hello \
+STATE_BUCKET=<state_bucket output> STATE_TABLE=<state_lock_table output> NAME=ci42 PROJECT=hello \
   aws-vault exec personal -- scripts/smoke-test.sh --destroy-only
 ```
 

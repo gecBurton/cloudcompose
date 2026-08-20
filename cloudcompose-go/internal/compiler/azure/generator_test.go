@@ -28,7 +28,7 @@ func TestGenerateAzure_NoIngressProducesNoOutputKey(t *testing.T) {
 	resources.ContainerApp["web"] = app
 	env := testAppEnv(0)
 
-	out, err := GenerateAzure(resources, &env)
+	out, err := GenerateAzure(resources, &env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAzure failed: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestGenerateAzure_CdnFqdnOutputCoexistsWithIngressFqdn(t *testing.T) {
 	resources.CdnFrontdoorEndpoint["web"] = models.FrontDoorEndpoint{Name: "prod-app-web-fd"}
 	env := testAppEnv(0)
 
-	out, err := GenerateAzure(resources, &env)
+	out, err := GenerateAzure(resources, &env, "app")
 	if err != nil {
 		t.Fatalf("GenerateAzure failed: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestGenerateAzure_Deterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InferAzure run %d failed: %v", i, err)
 		}
-		out, err := GenerateAzure(resources, &env)
+		out, err := GenerateAzure(resources, &env, "app")
 		if err != nil {
 			t.Fatalf("GenerateAzure run %d failed: %v", i, err)
 		}
@@ -193,5 +193,62 @@ func TestInferContainerRegistry_BuildDictKeyOrder(t *testing.T) {
 	}
 	if build["dockerfile"] != dockerfile {
 		t.Errorf("dockerfile = %v, want %q", build["dockerfile"], dockerfile)
+	}
+}
+
+// TestGenerateAzure_NilEnvBackendOmitsBackendBlock mirrors
+// aws.TestGenerateAWS_NilEnvBackendOmitsBackendBlock for the Azure
+// app-level generator. See docs/multi-user-state.md.
+func TestGenerateAzure_NilEnvBackendOmitsBackendBlock(t *testing.T) {
+	t.Parallel()
+	resources := models.NewAzureResources()
+	env := testAppEnv(0)
+
+	out, err := GenerateAzure(resources, &env, "checkout-api")
+	if err != nil {
+		t.Fatalf("GenerateAzure failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if _, ok := parsed["terraform"].(map[string]any)["backend"]; ok {
+		t.Errorf("did not expect terraform.backend when env.Backend is nil")
+	}
+}
+
+// TestGenerateAzure_EnvBackendProducesAppSpecificBackendBlock mirrors
+// aws.TestGenerateAWS_EnvBackendProducesAppSpecificBackendBlock for the
+// Azure app-level generator.
+func TestGenerateAzure_EnvBackendProducesAppSpecificBackendBlock(t *testing.T) {
+	t.Parallel()
+	resources := models.NewAzureResources()
+	env := testAppEnv(0)
+	env.Backend = &models.BackendConfig{
+		Azure: &models.AzureBackendConfig{
+			ResourceGroupName:  "my-org-tfstate-rg",
+			StorageAccountName: "myorgtfstate",
+			ContainerName:      "tfstate",
+		},
+	}
+
+	out, err := GenerateAzure(resources, &env, "checkout-api")
+	if err != nil {
+		t.Fatalf("GenerateAzure failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	azurermBackend, ok := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["azurerm"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend.azurerm, got %v", parsed["terraform"])
+	}
+	wantKey := "cloudcompose/prod/apps/checkout-api.tfstate"
+	if azurermBackend["key"] != wantKey {
+		t.Errorf("key = %v, want %v", azurermBackend["key"], wantKey)
+	}
+	if azurermBackend["storage_account_name"] != "myorgtfstate" {
+		t.Errorf("storage_account_name = %v, want myorgtfstate", azurermBackend["storage_account_name"])
 	}
 }

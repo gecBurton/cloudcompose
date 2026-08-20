@@ -64,7 +64,14 @@ func hasCloudfrontScopedWebACL(resources *models.AWSResources) bool {
 // GenerateAWS renders a Terraform JSON manifest for the given AWS
 // resources and environment. Key ordering is deterministic because
 // encoding/json.Marshal sorts map keys alphabetically at every level.
-func GenerateAWS(resources *models.AWSResources, env *models.AwsEnvironment) (string, error) {
+//
+// projectName is this app's own name (the same value `cloudcompose
+// compile -p`/`--project` resolves to -- see compile.go's own
+// resolveProjectName), used only to derive this app's own backend
+// state key when env.Backend is set (shared.AppBackendBlock); it has no
+// effect at all when env.Backend is nil (today's default -- see
+// docs/multi-user-state.md).
+func GenerateAWS(resources *models.AWSResources, env *models.AwsEnvironment, projectName string) (string, error) {
 	provider := awsProvider(env, env.Region)
 
 	requiredProviders := map[string]any{
@@ -119,8 +126,12 @@ func GenerateAWS(resources *models.AWSResources, env *models.AwsEnvironment) (st
 	// output even when empty -- unlike "data", which is omitted when
 	// there's nothing to look up. Matched here by giving Resource no
 	// omitempty tag (see TerraformManifest).
+	terraformBlock := map[string]any{"required_providers": requiredProviders}
+	if backendBlock := shared.AppBackendBlock(env.Name, projectName, env.Backend); backendBlock != nil {
+		terraformBlock["backend"] = backendBlock
+	}
 	manifest := models.TerraformManifest{
-		Terraform: map[string]any{"required_providers": requiredProviders},
+		Terraform: terraformBlock,
 		Provider:  providers,
 		Resource:  resourceBlocksMap,
 	}

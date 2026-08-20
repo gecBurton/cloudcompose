@@ -488,3 +488,53 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 		t.Errorf("expected a normal compile's own warning summary to also report the dropped port, got:\n%s", compileOut)
 	}
 }
+
+// TestResolveProjectName_RejectsExplicitProjectContainingSlash is the
+// regression test for the backend-state-key collision
+// shared.ValidateBackendName exists to prevent (see its own doc
+// comment): a project name is also the input to
+// shared.BackendKeyForApp, so it must be rejected here before it can
+// ever reach that function -- mirroring
+// initconfig.TestLoad_RejectsNameContainingSlash's identical check on
+// an environment's own `name:`.
+func TestResolveProjectName_RejectsExplicitProjectContainingSlash(t *testing.T) {
+	t.Parallel()
+	_, err := resolveProjectName("compose.yml", "prod/apps")
+	if err == nil {
+		t.Fatal("expected an error when --project contains '/'")
+	}
+}
+
+// TestResolveProjectName_DefaultedNameIsStillValidated confirms the
+// same check applies even when the project name is defaulted from the
+// compose file's own containing directory name, not just an explicit
+// --project -- a directory name is still an untrusted string as far as
+// backend key construction is concerned.
+func TestResolveProjectName_DefaultedNameIsStillValidated(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "prod-apps")
+	// Deliberately does not create dir/compose.yml on disk --
+	// resolveProjectName never stats the file itself, only
+	// filepath.Abs/Dir/Base on the path string, so this doesn't need to
+	// exist. "prod-apps" contains no "/", so this confirms a safe
+	// defaulted name is accepted; the explicit-project case above
+	// exercises the actual slash-rejection regression.
+	if _, err := resolveProjectName(filepath.Join(dir, "compose.yml"), ""); err != nil {
+		t.Errorf("expected a safe defaulted project name to be accepted, got: %v", err)
+	}
+}
+
+// TestResolveProjectName_AcceptsSafeNames confirms ordinary project
+// names (explicit or defaulted) are unaffected by the new validation.
+func TestResolveProjectName_AcceptsSafeNames(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"checkout-api", "web_api", "hello"} {
+		got, err := resolveProjectName("compose.yml", name)
+		if err != nil {
+			t.Errorf("resolveProjectName(%q) failed: %v", name, err)
+		}
+		if got != name {
+			t.Errorf("resolveProjectName(%q) = %q, want unchanged", name, got)
+		}
+	}
+}

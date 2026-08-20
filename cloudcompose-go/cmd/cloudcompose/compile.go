@@ -10,6 +10,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/compiler/aws"
 	"github.com/gecburton/cloudcompose/internal/compiler/azure"
 	"github.com/gecburton/cloudcompose/internal/compiler/gcp"
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -285,6 +286,25 @@ func environmentName(env any) (string, error) {
 	}
 }
 
+// environmentBackend reports the environment's own Backend config (nil
+// if none was configured -- see docs/multi-user-state.md's "no backend
+// configured" default), mirroring environmentName's own per-cloud
+// type-switch shape exactly. Used by envDestroyCmd (env_destroy.go) to
+// decide whether/how to run the dependent-app safety check before
+// tearing an environment down.
+func environmentBackend(env any) (*models.BackendConfig, error) {
+	switch e := env.(type) {
+	case *models.AwsEnvironment:
+		return e.Backend, nil
+	case *models.AzureEnvironment:
+		return e.Backend, nil
+	case *models.GcpEnvironment:
+		return e.Backend, nil
+	default:
+		return nil, fmt.Errorf("unsupported environment type %T", env)
+	}
+}
+
 // appDir reports the same app-<environment name>-<project name> output
 // directory compileApp writes to for composeFile compiled against the
 // environment in envDir under projectName, without compiling anything
@@ -317,15 +337,36 @@ func appDir(composeFile, envDir, projectName string) (string, error) {
 // compileApp's own default so a caller resolving the project name ahead
 // of compileApp (as down.go must, to reconstruct the same output
 // directory without compiling anything) gets the identical value.
+// resolveProjectName returns projectName unchanged if the caller gave
+// one explicitly via -p/--project; otherwise it defaults to
+// composeFile's own containing directory's name, exactly matching
+// compileApp's own default so a caller resolving the project name ahead
+// of compileApp (as down.go must, to reconstruct the same output
+// directory without compiling anything) gets the identical value.
+//
+// Validates the resolved name via shared.ValidateBackendName before
+// returning it -- mirroring initconfig.Validate's identical check on an
+// environment's own `name:` -- since this is the same value
+// shared.BackendKeyForApp uses to build an app's backend state key
+// (docs/multi-user-state.md), and an unsanitized "/" in --project could
+// otherwise collide with another environment's or app's own key (see
+// ValidateBackendName's own doc comment for the concrete collision).
+// This applies even when the name came from the compose file's own
+// directory name (the default case), not just an explicit --project,
+// since a directory name is still an untrusted string as far as backend
+// key construction is concerned.
 func resolveProjectName(composeFile, projectName string) (string, error) {
-	if projectName != "" {
-		return projectName, nil
+	if projectName == "" {
+		absCompose, err := filepath.Abs(composeFile)
+		if err != nil {
+			return "", err
+		}
+		projectName = filepath.Base(filepath.Dir(absCompose))
 	}
-	absCompose, err := filepath.Abs(composeFile)
-	if err != nil {
+	if err := shared.ValidateBackendName("project", projectName); err != nil {
 		return "", err
 	}
-	return filepath.Base(filepath.Dir(absCompose)), nil
+	return projectName, nil
 }
 
 // demoEnvironment builds a synthetic environment for --demo, one of the
@@ -371,16 +412,16 @@ func compileTerraform(composeFile string, env any, projectName string) (string, 
 		if err != nil {
 			return "", err
 		}
-		return aws.GenerateAWS(resources, e)
+		return aws.GenerateAWS(resources, e, projectName)
 	case *models.AzureEnvironment:
 		resources, err := azure.InferAzure(semanticApp, e)
 		if err != nil {
 			return "", err
 		}
-		return azure.GenerateAzure(resources, e)
+		return azure.GenerateAzure(resources, e, projectName)
 	case *models.GcpEnvironment:
 		resources := gcp.InferGcp(semanticApp, e)
-		return gcp.GenerateGcp(resources, e)
+		return gcp.GenerateGcp(resources, e, projectName)
 	default:
 		return "", fmt.Errorf("unsupported environment type %T", env)
 	}

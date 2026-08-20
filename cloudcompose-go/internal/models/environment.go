@@ -26,6 +26,17 @@ type AwsEnvironment struct {
 	AlbListenerArn     *string  `json:"alb_listener_arn,omitempty"`
 	AlbSecurityGroupID *string  `json:"alb_security_group_id,omitempty"`
 	AwsEndpoint        *string  `json:"aws_endpoint,omitempty"`
+
+	// Backend is this environment's own backend config, read back from
+	// its own `output "backend"` block (see
+	// aws/environment_generator.go) -- nil if the environment was
+	// generated without backend: configured. Every app compiled
+	// against this environment (`cloudcompose compile`) reuses this
+	// same bucket/region/lock-table under its own, app-specific key
+	// (see shared.BackendKeyForApp), rather than each app author making
+	// its own, potentially inconsistent backend decision. See
+	// docs/multi-user-state.md.
+	Backend *BackendConfig `json:"-"`
 }
 
 // NewAwsEnvironment returns an AwsEnvironment with default values
@@ -160,6 +171,10 @@ type AzureEnvironment struct {
 	PostgresqlServerID     *string `json:"postgresql_server_id,omitempty"`
 	UserAssignedIdentityID *string `json:"user_assigned_identity_id,omitempty"`
 	AzureEndpoint          *string `json:"azure_endpoint,omitempty"`
+
+	// Backend mirrors AwsEnvironment.Backend's own doc comment exactly
+	// -- see there for the full rationale.
+	Backend *BackendConfig `json:"-"`
 }
 
 // NewAzureEnvironment returns an AzureEnvironment with default values
@@ -240,6 +255,11 @@ type GcpEnvironment struct {
 	// once that inference is implemented, rather than that being blocked
 	// on a schema change too.
 	Domain *string `json:"domain,omitempty"`
+
+	// Backend mirrors AwsEnvironment.Backend's own doc comment exactly
+	// -- see there for the full rationale. GcpBackendConfig has no
+	// lock-table-equivalent field: GCS backend locking is native.
+	Backend *BackendConfig `json:"-"`
 }
 
 // NewGcpEnvironment returns a GcpEnvironment with default values

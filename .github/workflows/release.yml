@@ -32,8 +32,10 @@ jobs:
           go-version-file: cloudcompose-go/go.mod
           cache-dependency-path: cloudcompose-go/go.sum
 
+      # disable_grpc_modules keeps this in sync with the Makefile/ci.yml/
+      # .goreleaser.yaml -- see ci.yml's own comment for why.
       - name: Run tests
-        run: go vet ./... && go test ./...
+        run: go vet -tags disable_grpc_modules ./... && go test -tags disable_grpc_modules ./...
         working-directory: cloudcompose-go
 
       - name: Create and push tag

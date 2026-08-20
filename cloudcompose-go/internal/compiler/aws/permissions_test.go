@@ -122,7 +122,7 @@ func TestInferPermissionsAndWiring_Deterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("InferAWS run %d failed: %v", i, err)
 		}
-		out, err := GenerateAWS(resources, &env)
+		out, err := GenerateAWS(resources, &env, "app")
 		if err != nil {
 			t.Fatalf("GenerateAWS run %d failed: %v", i, err)
 		}

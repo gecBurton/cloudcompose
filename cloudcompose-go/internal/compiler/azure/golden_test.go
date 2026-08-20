@@ -107,7 +107,7 @@ func TestInferAzure_GoldenExamplesByteIdentical(t *testing.T) {
 			if err != nil {
 				t.Fatalf("InferAzure failed: %v", err)
 			}
-			actual, err := GenerateAzure(resources, &env)
+			actual, err := GenerateAzure(resources, &env, "app")
 			if err != nil {
 				t.Fatalf("GenerateAzure failed: %v", err)
 			}

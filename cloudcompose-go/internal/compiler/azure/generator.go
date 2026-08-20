@@ -74,7 +74,11 @@ func sortedStringKeysAzureApp(m map[string]models.ContainerApp) []string {
 
 // GenerateAzure renders a Terraform JSON manifest for the given Azure
 // resources and environment.
-func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironment) (string, error) {
+//
+// projectName mirrors aws.GenerateAWS's own parameter of the same name
+// -- see its doc comment for what it's used for and when it has no
+// effect.
+func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironment, projectName string) (string, error) {
 	requiredProviders := map[string]any{
 		"azurerm": map[string]any{"source": "hashicorp/azurerm", "version": "~> 4.0"},
 		"random":  map[string]any{"source": "hashicorp/random", "version": "~> 3.6"},
@@ -128,6 +132,9 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 		Provider:  provider,
 		Data:      data,
 		Resource:  resourceBlocksMap,
+	}
+	if backendBlock := shared.AppBackendBlock(env.Name, projectName, env.Backend); backendBlock != nil {
+		manifest.Terraform["backend"] = backendBlock
 	}
 
 	// On AWS the public hostname belongs to the environment's shared load

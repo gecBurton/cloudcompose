@@ -2,9 +2,29 @@ package shared
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 )
+
+// errMissingOutput is TerraformOutputs' own sentinel for "this
+// directory's state has no output named outputName" -- returned
+// wrapped (via %w) so OptionalTerraformOutputs can distinguish it from
+// every other failure (terraform not on PATH, no state applied yet, a
+// genuinely different output being the wrong shape) via errors.As,
+// rather than by matching against the error message's own text, which
+// would silently stop working the moment either message's wording
+// changed.
+type errMissingOutput struct {
+	dir, outputName string
+}
+
+func (e *errMissingOutput) Error() string {
+	return fmt.Sprintf(
+		"%s has no %q output; has this environment's `terraform apply` run yet?",
+		e.dir, e.outputName,
+	)
+}
 
 // TerraformOutputs runs `terraform output -json` in dir and returns the
 // named output's resolved value as a map, or an error if the output
@@ -46,10 +66,7 @@ func TerraformOutputs(dir, outputName string) (map[string]any, error) {
 
 	entry, ok := parsed[outputName]
 	if !ok {
-		return nil, fmt.Errorf(
-			"%s has no %q output; has this environment's `terraform apply` run yet?",
-			dir, outputName,
-		)
+		return nil, &errMissingOutput{dir: dir, outputName: outputName}
 	}
 
 	value, ok := entry.Value.(map[string]any)
@@ -58,4 +75,21 @@ func TerraformOutputs(dir, outputName string) (map[string]any, error) {
 	}
 
 	return value, nil
+}
+
+// OptionalTerraformOutputs behaves exactly like TerraformOutputs, except
+// a missing outputName is not an error -- it returns (nil, nil) instead.
+// Used for the `backend` output specifically (see
+// internal/compiler/{aws,azure,gcp}/environment_generator.go): an
+// environment with no backend: configured (today's default; see
+// docs/multi-user-state.md) legitimately has no `backend` output at
+// all, unlike `environment`, which every environment this codebase
+// generates always declares.
+func OptionalTerraformOutputs(dir, outputName string) (map[string]any, error) {
+	value, err := TerraformOutputs(dir, outputName)
+	var missing *errMissingOutput
+	if errors.As(err, &missing) {
+		return nil, nil
+	}
+	return value, err
 }

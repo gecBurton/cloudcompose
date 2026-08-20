@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gecburton/cloudcompose/internal/models"
 )
 
 // TestGenerateAwsEnvironment_ValidStructure checks the shared AWS
@@ -14,7 +16,7 @@ func TestGenerateAwsEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		map[string]string{"Team": "platform"}, true, false, 7, 7,
+		map[string]string{"Team": "platform"}, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -73,7 +75,7 @@ func TestGenerateAwsEnvironment_NoAlbOmitsAlbResources(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"staging", "us-east-1", "10.0.0.0/16", 2, false, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -102,7 +104,7 @@ func TestGenerateAwsEnvironment_CertificateEnablesHTTPS(t *testing.T) {
 	cert := "arn:aws:acm:us-east-1:123:certificate/abc"
 	out, err := GenerateAwsEnvironment(
 		"prod", "us-east-1", "10.0.0.0/16", 2, true, &cert, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -131,7 +133,7 @@ func TestEnvironmentGenerators_WriteReadableFile(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -164,7 +166,7 @@ func TestGenerateAwsEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -230,7 +232,7 @@ func TestGenerateAwsEnvironment_CustomAzCount(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 3, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -256,7 +258,7 @@ func TestGenerateAwsEnvironment_CustomVpcCidr(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "172.16.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -278,7 +280,7 @@ func TestGenerateAwsEnvironment_HyphenatedName(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"my-prod-env", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -305,7 +307,7 @@ func TestGenerateAwsEnvironment_RetainDataFalse(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, false, false, 7, 7,
+		nil, false, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -334,7 +336,7 @@ func TestGenerateAwsEnvironment_LogRetentionDaysFlowsIntoOutput(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 90,
+		nil, true, false, 7, 90, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -355,7 +357,7 @@ func TestGenerateAwsEnvironment_OutputsIncludeAllRequiredFields(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -386,7 +388,7 @@ func TestGenerateAwsEnvironment_NoAlbExcludesAlbOutputFields(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, false, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -409,7 +411,7 @@ func TestGenerateAwsEnvironment_HttpListenerWhenNoCertificate(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -438,7 +440,7 @@ func TestGenerateAwsEnvironment_AwsEndpointFlowsIntoProvider(t *testing.T) {
 	endpoint := "http://localhost:4566"
 	out, err := GenerateAwsEnvironment(
 		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, &endpoint,
-		nil, true, false, 7, 7,
+		nil, true, false, 7, 7, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
@@ -458,5 +460,158 @@ func TestGenerateAwsEnvironment_AwsEndpointFlowsIntoProvider(t *testing.T) {
 	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
 	if envConfig["aws_endpoint"] != endpoint {
 		t.Errorf("output aws_endpoint = %v, want %s", envConfig["aws_endpoint"], endpoint)
+	}
+}
+
+// --- Backend coverage (docs/multi-user-state.md) --------------------------
+
+// TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock confirms
+// today's default behavior (no backend: configured) emits no
+// `terraform.backend` block at all, and no `output "backend"` block --
+// see docs/multi-user-state.md's "no backend configured" default.
+func TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateAwsEnvironment(
+		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
+		nil, true, false, 7, 7, nil,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	terraform := parsed["terraform"].(map[string]any)
+	if _, ok := terraform["backend"]; ok {
+		t.Errorf("did not expect terraform.backend when backend config is nil")
+	}
+	output := parsed["output"].(map[string]any)
+	if _, ok := output["backend"]; ok {
+		t.Errorf("did not expect output.backend when backend config is nil")
+	}
+}
+
+// TestGenerateAwsEnvironment_BackendEmitsS3BlockWithDerivedKey confirms
+// a configured backend.aws produces a `terraform { backend "s3" {} }`
+// block whose key is mechanically derived from the environment's own
+// name (shared.BackendKeyForEnvironment), never authored -- see
+// BackendConfig's own doc comment in internal/models/init_config.go.
+func TestGenerateAwsEnvironment_BackendEmitsS3BlockWithDerivedKey(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		AWS: &models.AwsBackendConfig{
+			Bucket:        "my-org-tfstate",
+			Region:        "eu-west-2",
+			DynamoDBTable: "my-org-tflocks",
+		},
+	}
+	out, err := GenerateAwsEnvironment(
+		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
+		nil, true, false, 7, 7, backend,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	s3Backend, ok := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["s3"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend.s3, got %v", parsed["terraform"])
+	}
+	if s3Backend["bucket"] != "my-org-tfstate" {
+		t.Errorf("bucket = %v, want my-org-tfstate", s3Backend["bucket"])
+	}
+	if s3Backend["key"] != "cloudcompose/prod/environment.tfstate" {
+		t.Errorf("key = %v, want cloudcompose/prod/environment.tfstate", s3Backend["key"])
+	}
+	if s3Backend["region"] != "eu-west-2" {
+		t.Errorf("region = %v, want eu-west-2", s3Backend["region"])
+	}
+	if s3Backend["encrypt"] != true {
+		t.Errorf("encrypt = %v, want true", s3Backend["encrypt"])
+	}
+	if s3Backend["dynamodb_table"] != "my-org-tflocks" {
+		t.Errorf("dynamodb_table = %v, want my-org-tflocks", s3Backend["dynamodb_table"])
+	}
+}
+
+// TestGenerateAwsEnvironment_BackendWithoutLockTableOmitsField confirms
+// dynamodb_table is optional and, when absent, simply isn't present in
+// the emitted s3 block at all (not an empty string) -- Terraform itself
+// treats an empty dynamodb_table differently from an absent one.
+func TestGenerateAwsEnvironment_BackendWithoutLockTableOmitsField(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		AWS: &models.AwsBackendConfig{Bucket: "my-org-tfstate", Region: "eu-west-2"},
+	}
+	out, err := GenerateAwsEnvironment(
+		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
+		nil, true, false, 7, 7, backend,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	s3Backend := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["s3"].(map[string]any)
+	if _, ok := s3Backend["dynamodb_table"]; ok {
+		t.Errorf("did not expect dynamodb_table key when not configured, got %v", s3Backend["dynamodb_table"])
+	}
+}
+
+// TestGenerateAwsEnvironment_BackendOutputSurfacesFactsForApps confirms
+// the new `output "backend"` block carries the same bucket/region/
+// lock-table facts LoadAwsEnvironment will hand back to `cloudcompose
+// compile`, so every app compiled against this environment can derive
+// its own backend under the same bucket (see
+// shared.BackendKeyForApp and docs/multi-user-state.md).
+func TestGenerateAwsEnvironment_BackendOutputSurfacesFactsForApps(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		AWS: &models.AwsBackendConfig{
+			Bucket:        "my-org-tfstate",
+			Region:        "eu-west-2",
+			DynamoDBTable: "my-org-tflocks",
+		},
+	}
+	out, err := GenerateAwsEnvironment(
+		"prod", "eu-west-2", "10.0.0.0/16", 2, true, nil, nil,
+		nil, true, false, 7, 7, backend,
+	)
+	if err != nil {
+		t.Fatalf("GenerateAwsEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	backendOutput, ok := parsed["output"].(map[string]any)["backend"].(map[string]any)["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected output.backend.value, got %v", parsed["output"])
+	}
+	if backendOutput["provider"] != "aws" {
+		t.Errorf("provider = %v, want aws", backendOutput["provider"])
+	}
+	awsBackendOutput, ok := backendOutput["aws"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected output.backend.value.aws, got %v", backendOutput)
+	}
+	if awsBackendOutput["bucket"] != "my-org-tfstate" || awsBackendOutput["region"] != "eu-west-2" {
+		t.Errorf("unexpected backend output: %v", awsBackendOutput)
+	}
+	if awsBackendOutput["dynamodb_table"] != "my-org-tflocks" {
+		t.Errorf("dynamodb_table = %v, want my-org-tflocks", awsBackendOutput["dynamodb_table"])
+	}
+	// The output must not carry the key -- that's environment-specific
+	// (derived from this environment's own name) and must never be
+	// reused verbatim by an app; apps derive their own key via
+	// shared.BackendKeyForApp instead.
+	if _, ok := awsBackendOutput["key"]; ok {
+		t.Errorf("did not expect output.backend.value.aws.key -- apps must derive their own key, not reuse this environment's")
 	}
 }

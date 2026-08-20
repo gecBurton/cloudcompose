@@ -13,6 +13,11 @@ import (
 // `cloudcompose init` generated and `terraform apply` has already run in --
 // see internal/compiler/shared/terraform_outputs.go for why this reads
 // Terraform's own live state rather than a generated file.
+//
+// Also decodes the optional `backend` output (present only if the
+// environment was generated with backend: configured -- see
+// docs/multi-user-state.md) into env.Backend, via
+// shared.OptionalTerraformOutputs/DecodeBackendOutput.
 func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
 	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {
@@ -50,6 +55,12 @@ func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
 	env.AlbListenerArn = shared.ToStringPtr(raw["alb_listener_arn"])
 	env.AlbSecurityGroupID = shared.ToStringPtr(raw["alb_security_group_id"])
 	env.AwsEndpoint = shared.ToStringPtr(raw["aws_endpoint"])
+
+	backendRaw, err := shared.OptionalTerraformOutputs(dir, "backend")
+	if err != nil {
+		return nil, err
+	}
+	env.Backend = shared.DecodeBackendOutput(backendRaw)
 
 	if err := env.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", dir, err)

@@ -3,6 +3,8 @@ package gcp
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/gecburton/cloudcompose/internal/models"
 )
 
 func keysOfAny(m map[string]any) []string {
@@ -19,7 +21,7 @@ func TestGenerateGcpEnvironment_ValidStructure(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateGcpEnvironment(
 		"prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "",
-		map[string]string{"team": "platform"}, true,
+		map[string]string{"team": "platform"}, true, nil,
 	)
 	if err != nil {
 		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
@@ -43,7 +45,7 @@ func TestGenerateGcpEnvironment_ValidStructure(t *testing.T) {
 // test_outputs_include_required_fields, test_target_is_gcp.
 func TestGenerateGcpEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true)
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true, nil)
 	if err != nil {
 		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
 	}
@@ -88,7 +90,7 @@ func TestGenerateGcpEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 // omitted when not.
 func TestGenerateGcpEnvironment_DomainFlowsThroughWhenSet(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "example.com", nil, true)
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "example.com", nil, true, nil)
 	if err != nil {
 		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
 	}
@@ -104,7 +106,7 @@ func TestGenerateGcpEnvironment_DomainFlowsThroughWhenSet(t *testing.T) {
 
 func TestGenerateGcpEnvironment_DomainOmittedWhenNotSet(t *testing.T) {
 	t.Parallel()
-	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true)
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true, nil)
 	if err != nil {
 		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
 	}
@@ -115,5 +117,102 @@ func TestGenerateGcpEnvironment_DomainOmittedWhenNotSet(t *testing.T) {
 	envConfig := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
 	if _, ok := envConfig["domain"]; ok {
 		t.Errorf("did not expect domain when not passed, got %v", envConfig["domain"])
+	}
+}
+
+// --- Backend coverage (docs/multi-user-state.md) --------------------------
+
+// TestGenerateGcpEnvironment_NilBackendOmitsBackendBlock mirrors
+// aws.TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock: today's
+// default (no backend: configured) emits no terraform.backend block and
+// no output.backend block.
+func TestGenerateGcpEnvironment_NilBackendOmitsBackendBlock(t *testing.T) {
+	t.Parallel()
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true, nil)
+	if err != nil {
+		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	terraform := parsed["terraform"].(map[string]any)
+	if _, ok := terraform["backend"]; ok {
+		t.Errorf("did not expect terraform.backend when backend config is nil")
+	}
+	output := parsed["output"].(map[string]any)
+	if _, ok := output["backend"]; ok {
+		t.Errorf("did not expect output.backend when backend config is nil")
+	}
+}
+
+// TestGenerateGcpEnvironment_BackendEmitsGcsBlockWithDerivedPrefix
+// confirms a configured backend.gcp produces a
+// `terraform { backend "gcs" {} }` block whose "prefix" (gcs's own name
+// for the per-object path within the bucket, unlike s3/azurerm's "key")
+// is mechanically derived from the environment's own name, never
+// authored -- mirroring
+// aws.TestGenerateAwsEnvironment_BackendEmitsS3BlockWithDerivedKey.
+func TestGenerateGcpEnvironment_BackendEmitsGcsBlockWithDerivedPrefix(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		Gcp: &models.GcpBackendConfig{Bucket: "my-org-tfstate"},
+	}
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true, backend)
+	if err != nil {
+		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	gcsBackend, ok := parsed["terraform"].(map[string]any)["backend"].(map[string]any)["gcs"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend.gcs, got %v", parsed["terraform"])
+	}
+	if gcsBackend["bucket"] != "my-org-tfstate" {
+		t.Errorf("bucket = %v, want my-org-tfstate", gcsBackend["bucket"])
+	}
+	if gcsBackend["prefix"] != "cloudcompose/prod/environment.tfstate" {
+		t.Errorf("prefix = %v, want cloudcompose/prod/environment.tfstate", gcsBackend["prefix"])
+	}
+}
+
+// TestGenerateGcpEnvironment_BackendOutputSurfacesFactsForApps mirrors
+// aws.TestGenerateAwsEnvironment_BackendOutputSurfacesFactsForApps: the
+// output.backend block carries the same bucket fact LoadGcpEnvironment
+// will hand back to `cloudcompose compile` for every app compiled
+// against this environment, but deliberately not the prefix -- apps
+// must derive their own via shared.BackendKeyForApp, not reuse this
+// environment's.
+func TestGenerateGcpEnvironment_BackendOutputSurfacesFactsForApps(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		Gcp: &models.GcpBackendConfig{Bucket: "my-org-tfstate"},
+	}
+	out, err := GenerateGcpEnvironment("prod", "us-central1", "10.0.0.0/16", "my-gcp-project", "", nil, true, backend)
+	if err != nil {
+		t.Fatalf("GenerateGcpEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	backendOutput, ok := parsed["output"].(map[string]any)["backend"].(map[string]any)["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected output.backend.value, got %v", parsed["output"])
+	}
+	if backendOutput["provider"] != "gcp" {
+		t.Errorf("provider = %v, want gcp", backendOutput["provider"])
+	}
+	gcpBackendOutput, ok := backendOutput["gcp"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected output.backend.value.gcp, got %v", backendOutput)
+	}
+	if gcpBackendOutput["bucket"] != "my-org-tfstate" {
+		t.Errorf("bucket = %v, want my-org-tfstate", gcpBackendOutput["bucket"])
+	}
+	if _, ok := gcpBackendOutput["prefix"]; ok {
+		t.Errorf("did not expect output.backend.value.gcp.prefix -- apps must derive their own, not reuse this environment's")
 	}
 }

@@ -7,7 +7,11 @@ import (
 
 // GenerateGcp renders a Terraform JSON manifest for the given GCP
 // resources and environment.
-func GenerateGcp(resources *models.GcpResources, env *models.GcpEnvironment) (string, error) {
+//
+// projectName mirrors aws.GenerateAWS's own parameter of the same name
+// -- see its doc comment for what it's used for and when it has no
+// effect.
+func GenerateGcp(resources *models.GcpResources, env *models.GcpEnvironment, projectName string) (string, error) {
 	requiredProviders := map[string]any{
 		"google": map[string]any{"source": "hashicorp/google", "version": "~> 5.0"},
 		"docker": map[string]any{"source": "kreuzwerker/docker", "version": "~> 3.0"},
@@ -37,6 +41,9 @@ func GenerateGcp(resources *models.GcpResources, env *models.GcpEnvironment) (st
 		Terraform: map[string]any{"required_providers": requiredProviders},
 		Provider:  provider,
 		Resource:  resourceBlocksMap,
+	}
+	if backendBlock := shared.AppBackendBlock(env.Name, projectName, env.Backend); backendBlock != nil {
+		manifest.Terraform["backend"] = backendBlock
 	}
 
 	return shared.MarshalIndentedJSON(manifest)

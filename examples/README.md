@@ -175,3 +175,15 @@ go test ./internal/compiler/azure/... -run TestInferAzure_GoldenExamplesByteIden
 If you're adding a new example, see `AGENTS.md`'s "Adding a New AWS
 Resource"/"Modifying the Semantic Model" sections for what else needs
 updating alongside a new `expected/` fixture.
+
+## Sharing one environment across multiple users
+
+Everything above assumes a single machine applying `cloudcompose init`/
+`up` against its own local Terraform state. Once more than one person
+(or a laptop and CI) needs to apply against the *same* environment,
+state has to live somewhere shared, with locking -- see
+`docs/authored-environment-config.md`'s "Sharing one environment across
+multiple users" section and `docs/multi-user-state.md` for the full
+design. [`bootstrap-state/`](bootstrap-state/) has the one-time,
+manually-applied Terraform each cloud's `backend:` block needs to
+already exist before `environment.yaml` references it.

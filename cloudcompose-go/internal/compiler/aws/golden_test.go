@@ -75,7 +75,7 @@ func TestInferAWS_GoldenExamplesByteIdentical(t *testing.T) {
 			if err != nil {
 				t.Fatalf("InferAWS failed: %v", err)
 			}
-			actual, err := GenerateAWS(resources, &env)
+			actual, err := GenerateAWS(resources, &env, "app")
 			if err != nil {
 				t.Fatalf("GenerateAWS failed: %v", err)
 			}

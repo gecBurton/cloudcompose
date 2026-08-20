@@ -93,12 +93,107 @@ gcp:
 `provider:` may be present. An `azure:` block in a file declaring
 `provider: aws` is a validation error — consistent with this codebase's
 convention that unknown/mismatched `x-cloud` keys are hard errors
-(`AGENTS.md`, `models/compose.go`'s `XCloud.UnmarshalJSON`).
+(`AGENTS.md`, `models/compose.go`'s `XCloud.UnmarshalJSON`). The same
+strict rule applies to the optional `backend:` block below.
 
 Real, `terraform validate`-checked examples for all three clouds exist
 at `examples/hello/environment.yaml` (AWS),
 `examples/hello/environment.azure.yaml`, and
 `examples/hello/environment.gcp.yaml`.
+
+## Sharing one environment across multiple users: `backend:`
+
+Everything above describes a single environment's *config*. Two people
+(or a laptop and CI) both running `terraform apply` against the same
+`environment.yaml` is a different concern — *state* — since each
+without further configuration gets its own ordinary local
+`terraform.tfstate`, and the second `apply` doesn't merge with the
+first's: it either fails on a naming collision or silently creates a
+duplicate.
+
+`backend:` is an optional block, authored alongside the common envelope
+above, that configures a real Terraform remote backend (with locking)
+for both the environment and every app compiled against it:
+
+```yaml
+# environment.yaml (AWS example, with backend:)
+provider: aws
+name: prod
+region: eu-west-2
+aws:
+  vpc_cidr: 10.0.0.0/16
+backend:
+  aws:
+    bucket: my-org-tfstate
+    region: eu-west-2
+    dynamodb_table: my-org-tflocks   # optional, but strongly recommended
+```
+
+```yaml
+# environment.yaml (Azure example, with backend:)
+provider: azure
+name: prod
+region: eastus
+azure:
+  vnet_cidr: 10.0.0.0/16
+backend:
+  azure:
+    resource_group_name: my-org-tfstate-rg
+    storage_account_name: myorgtfstate
+    container_name: tfstate
+    use_azuread_auth: true   # default; disables shared-key storage access
+```
+
+```yaml
+# environment.yaml (GCP example, with backend:)
+provider: gcp
+name: prod
+region: us-central1
+gcp:
+  vpc_cidr: 10.0.0.0/16
+  project_id: my-gcp-project-id
+backend:
+  gcp:
+    bucket: my-org-tfstate
+```
+
+`backend:` is entirely optional. Omitted (today's default), state stays
+local — `cloudcompose init` warns about this explicitly (*"no backend
+configured — state is local to this machine"*), rather than silently
+assuming one; this is a deliberate choice a human must see, not a trap.
+If AWS's `backend.aws` is configured without `dynamodb_table`, `init`
+warns about that too — unlocked S3 state has the same concurrent-apply
+race as no backend at all.
+
+The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
+authored here — it's always derived mechanically from `name:` (for the
+environment) or `--project` (for each app compiled against it), the
+same way `env-<name>`/`app-<env>-<project>` output directory names are
+never authored either. This is why environment `name:` and every app's
+`--project` are restricted to letters, digits, underscores, and
+hyphens: an unrestricted name could otherwise be crafted to collide
+with a different environment's or app's own backend key.
+
+`backend:` assumes the bucket/storage account/lock table it points at
+already exists — `cloudcompose` never provisions one itself (the same
+chicken-and-egg reason most infra tools don't: state needs a bucket,
+provisioning a bucket is itself infrastructure). See
+`examples/bootstrap-state/` for a ready-to-copy, manually-applied
+Terraform project that provisions exactly what each cloud's `backend:`
+block expects, one time per organization/account, before any
+`environment.yaml` references it.
+
+Tearing down a shared environment (as opposed to a single app —
+`cloudcompose down`) is `cloudcompose env-destroy`: unlike `down`, it
+first checks (when `backend:` is configured) whether any app still
+depends on the environment — every app compiled against a
+backend-configured environment shares that same backend, under its own
+key — and refuses by default if any are found, naming them and
+suggesting `cloudcompose down` for each first. `--force` skips that
+check. See `docs/multi-user-state.md` for the full design (locking
+details per cloud, the dependent-app check's own IAM footprint and
+degrade-to-warning behavior, and how to resolve a stale registration
+left behind by a deleted app directory that never ran `down`).
 
 ## Field reference
 
@@ -126,6 +221,15 @@ at `examples/hello/environment.yaml` (AWS),
 |---|---|
 | `vpc_cidr` | |
 | `project_id` | **required** — GCP inference depends on it throughout `gcp/infer.go` |
+
+| `backend:` block | |
+|---|---|
+| optional; entirely omitted by default (local state) | see "Sharing one environment across multiple users" above |
+| `backend.aws.bucket`, `backend.aws.region` | required if `backend.aws` is present |
+| `backend.aws.dynamodb_table` | optional, but `init` warns if absent |
+| `backend.azure.resource_group_name`, `backend.azure.storage_account_name`, `backend.azure.container_name` | required if `backend.azure` is present |
+| `backend.azure.use_azuread_auth` | optional; defaults to `true` |
+| `backend.gcp.bucket` | required if `backend.gcp` is present |
 
 `init` and `compile` take no output-location flag at all: `init` always
 writes to `<dir of -e>/env-<name>`, and `compile` always writes to
@@ -158,41 +262,66 @@ schema change once it's built, not because anything consumes it yet.
 
 - `cloudcompose init`/`compile` themselves still never run `terraform
   apply`/`destroy` or manage Terraform state — they only ever write
-  `main.tf.json`. `cloudcompose up`/`down` are the exceptions: `up`
-  orchestrates `init` + `terraform apply` + `compile` + `terraform
-  apply` for the common one-app-one-environment case, and `down` runs
-  `terraform destroy` against a single already-compiled app's own
-  directory (never the shared environment). Every `apply`/`destroy`
-  either one runs stays interactive by default (no `-auto-approve`) —
-  the same plan-review checkpoint a human running the steps by hand
-  would see, just without needing to type each command. Both commands
-  offer an opt-in, off-by-default `--auto-approve` for non-interactive
-  callers (CI, scripts) that have already decided not to have a human
-  review the plan for a given run — see `cmd/cloudcompose/up.go`'s and
-  `down.go`'s own doc comments for the reasoning.
+  `main.tf.json`. `cloudcompose up`/`down`/`env-destroy` are the
+  exceptions: `up` orchestrates `init` + `terraform apply` + `compile` +
+  `terraform apply` for the common one-app-one-environment case, `down`
+  runs `terraform destroy` against a single already-compiled app's own
+  directory (never the shared environment), and `env-destroy` runs
+  `terraform destroy` against the shared environment itself (see
+  "Sharing one environment across multiple users" above). Every
+  `apply`/`destroy` any of these runs stays interactive by default (no
+  `-auto-approve`) — the same plan-review checkpoint a human running the
+  steps by hand would see, just without needing to type each command.
+  All three offer an opt-in, off-by-default `--auto-approve` for
+  non-interactive callers (CI, scripts) that have already decided not
+  to have a human review the plan for a given run — see
+  `cmd/cloudcompose/up.go`'s, `down.go`'s, and `env_destroy.go`'s own
+  doc comments for the reasoning.
 - No multi-environment-per-file support (Terraform-workspace-style) —
   one `environment.yaml` = one directory = one environment.
 - No reverse-generation tooling to produce a starting `environment.yaml`
   from an already-deployed environment.
+- No automatic backend bootstrap — `backend:` assumes its own
+  bucket/storage account/lock table already exists; see
+  `examples/bootstrap-state/` for the one-time, manually-applied setup
+  this assumes.
 
 ## Implementation reference
 
 - `internal/models/init_config.go` — `InitConfig`,
-  `Aws/Azure/GcpInitConfig`.
+  `Aws/Azure/GcpInitConfig`, `BackendConfig`,
+  `Aws/Azure/GcpBackendConfig`.
 - `internal/compiler/initconfig` — `Load` (reads `environment.yaml`,
-  returns `(nil, nil)` if missing) and `Validate` (strict/discriminated
-  checks).
+  returns `(nil, nil)` if missing), `Validate` (strict/discriminated
+  checks, including `backend:`), and `BackendWarnings` (the non-fatal
+  "no backend configured"/"no lock table" warnings `cloudcompose init`
+  prints).
 - `cmd/cloudcompose/init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
+- `cmd/cloudcompose/env_destroy.go` — `env-destroy`'s dependent-app
+  safety check and `--force` escape hatch.
 - `internal/compiler/{aws,azure,gcp}/environment_generator.go` — each
-  declares a plain `output "environment"` block; no `local_file`
+  declares a plain `output "environment"` block (and, when `backend:`
+  is configured, an `output "backend"` block too); no `local_file`
   resource.
-- `internal/compiler/shared/terraform_outputs.go` — `TerraformOutputs(dir,
-  outputName)` shells out to `terraform output -json`.
+- `internal/compiler/shared/terraform_outputs.go` — `TerraformOutputs`/
+  `OptionalTerraformOutputs(dir, outputName)` shell out to `terraform
+  output -json`.
 - `internal/compiler/shared/terraform_output_decode.go` — decode helpers
   (`ToStringMap`/`ToStringSlice`/`ToStringPtr`).
+- `internal/compiler/shared/backend_naming.go`,
+  `backend_output_decode.go`, `app_backend_block.go` — backend state key
+  derivation (`BackendKeyForEnvironment`/`BackendKeyForApp`), decoding
+  the `output "backend"` shape, and building an app's own backend block
+  from its environment's.
+- `internal/compiler/{aws,azure,gcp}/backend_listing.go` —
+  `ListDependentApps`, the per-cloud listing `env-destroy`'s safety
+  check uses.
 - `internal/compiler/{aws,azure,gcp}/environment.go` —
-  `Load*Environment(dir)` calls `TerraformOutputs` and decodes directly.
+  `Load*Environment(dir)` calls `TerraformOutputs`/
+  `OptionalTerraformOutputs` and decodes directly.
+- See `docs/multi-user-state.md` for the full design behind all of the
+  above.
 - CI note: `scripts/ci-environment.{aws,azure}.yaml` are shared,
   committed environment configs; `scripts/smoke-test.sh` substitutes a
   per-run `name:`/`region:` into a generated copy under `build/` before

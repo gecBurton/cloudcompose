@@ -130,3 +130,23 @@ resource "aws_s3_bucket_lifecycle_configuration" "state" {
     }
   }
 }
+
+# Lock table for the bucket above -- without this, two acceptance runs
+# racing against the same NAME (or a run racing its own --destroy-only
+# recovery) can corrupt each other's state the same way any unlocked S3
+# backend can (see docs/multi-user-state.md's own "AWS" state-locking
+# note, which this table closes here for CI's own state the same way
+# examples/bootstrap-state/aws closes it for real cloudcompose users).
+# PAY_PER_REQUEST: lock traffic is proportional to how often acceptance
+# runs actually happen, not a steady load worth provisioning fixed
+# capacity for.
+resource "aws_dynamodb_table" "state_locks" {
+  name         = "${var.role_name}-state-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+}

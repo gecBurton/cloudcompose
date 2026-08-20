@@ -11,6 +11,10 @@ builds:
     binary: cloudcompose
     env:
       - CGO_ENABLED=0
+    # disable_grpc_modules keeps released binaries in sync with the
+    # Makefile/CI build tag -- see ci.yml's own comment for why.
+    flags:
+      - -tags=disable_grpc_modules
     goos:
       - linux
       - darwin

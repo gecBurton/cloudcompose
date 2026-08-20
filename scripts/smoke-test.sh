@@ -326,7 +326,7 @@ fi
 # exists to catch real regressions, and a stale binary would defeat that
 # the moment cloudcompose's source changed underneath it.
 log "Building cloudcompose…"
-(cd "$ROOT/cloudcompose-go" && go build -o cloudcompose ./cmd/cloudcompose)
+(cd "$ROOT/cloudcompose-go" && go build -tags disable_grpc_modules -o cloudcompose ./cmd/cloudcompose)
 
 # --- 1. Create environment with cloudcompose init ---------------------------------
 log "Creating $PROVIDER environment '$NAME' with cloudcompose init…"

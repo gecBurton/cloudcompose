@@ -24,8 +24,15 @@ jobs:
         go-version-file: cloudcompose-go/go.mod
         cache-dependency-path: cloudcompose-go/go.sum
 
+    # disable_grpc_modules opts cloud.google.com/go/storage out of its
+    # gRPC transport (and the gRPC/xds/envoy/OpenTelemetry dependency
+    # chain that pulls in) -- this codebase's own GCS listing only ever
+    # uses the default JSON/XML REST transport, see
+    # internal/compiler/gcp/backend_listing.go. Keep in sync with the
+    # repo Makefile and .goreleaser.yaml so CI, local dev, and released
+    # binaries all agree on the same smaller build.
     - name: Run go vet and go test
-      run: go vet ./... && go test ./...
+      run: go vet -tags disable_grpc_modules ./... && go test -tags disable_grpc_modules ./...
       working-directory: cloudcompose-go
 
     - name: Check Terraform schema compatibility
@@ -33,5 +40,5 @@ jobs:
       working-directory: cloudcompose-go
 
     - name: Build cloudcompose binary
-      run: go build -o cloudcompose ./cmd/cloudcompose
+      run: go build -tags disable_grpc_modules -o cloudcompose ./cmd/cloudcompose
       working-directory: cloudcompose-go

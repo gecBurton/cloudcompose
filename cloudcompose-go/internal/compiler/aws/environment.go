@@ -10,14 +10,10 @@ import (
 // LoadAwsEnvironment resolves an AWS environment's facts by running
 // `terraform output -json` in dir and decoding its `environment` output
 // into models.AwsEnvironment. Requires dir to be a directory
-// `cloudcompose init` generated and `terraform apply` has already run in --
-// see internal/compiler/shared/terraform_outputs.go for why this reads
-// Terraform's own live state rather than a generated file.
+// `cloudcompose init` generated and `terraform apply` has already run in.
 //
-// Also decodes the optional `backend` output (present only if the
-// environment was generated with backend: configured -- see
-// docs/multi-user-state.md) into env.Backend, via
-// shared.OptionalTerraformOutputs/DecodeBackendOutput.
+// Also decodes the optional `backend` output, present only if the
+// environment was generated with backend configuration.
 func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
 	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {

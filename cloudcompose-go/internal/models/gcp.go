@@ -6,11 +6,7 @@ package models
 // since these marshal straight into Terraform's JSON syntax.
 //
 // Unlike AWS/Azure, this has essentially no test surface to verify
-// against (no golden examples, only 4 smoke tests via `cloudcompose init`
-// scaffolding). Verified with light sanity-checking against a couple of
-// hand-built cases, not the exhaustive golden-example/coverage-survey
-// discipline AWS and Azure got, since there is no equivalent verification
-// surface to check against or survey.
+// against, so it's verified with lighter sanity-checking only.
 
 type CloudRunService struct {
 	Name      string `json:"name"`
@@ -110,10 +106,8 @@ type CloudSqlIPConfiguration struct {
 	PrivateNetwork *string `json:"private_network,omitempty"`
 }
 
-// NewCloudSqlInstance returns a CloudSqlInstance with its scalar defaults
-// set, matching what a fresh Cloud SQL instance should look like before
-// any per-application values (name, root password, networking) are
-// filled in by inference.
+// NewCloudSqlInstance returns a CloudSqlInstance with its scalar
+// defaults set.
 func NewCloudSqlInstance() CloudSqlInstance {
 	return CloudSqlInstance{
 		DatabaseVersion:        "POSTGRES_14",
@@ -296,8 +290,7 @@ type SecretManagerSecretVersion struct {
 	SecretData string `json:"secret_data"`
 }
 
-// GcpResources is a registry of the GCP resources the compiler supports,
-// mirroring GcpResources.
+// GcpResources is a registry of the GCP resources the compiler supports.
 type GcpResources struct {
 	CloudRunService          map[string]CloudRunService          `json:"google_cloud_run_service,omitempty"`
 	CloudRunServiceIamMember map[string]CloudRunServiceIamMember `json:"google_cloud_run_service_iam_member,omitempty"`
@@ -326,9 +319,6 @@ type GcpResources struct {
 	DockerImage         map[string]DockerImage         `json:"docker_image,omitempty"`
 	DockerRegistryImage map[string]DockerRegistryImage `json:"docker_registry_image,omitempty"`
 
-	// Consistent with AWS/Azure's own random_password resources: a real
-	// RandomPassword struct (length + special), not a bare {"length": N}
-	// map.
 	RandomPassword map[string]RandomPassword `json:"random_password,omitempty"`
 }
 

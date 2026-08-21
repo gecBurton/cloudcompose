@@ -8,9 +8,8 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// InferComputeResources infers ECS Fargate compute resources.
-//
-// Returns a mapping of discoverable service names to their connections.
+// InferComputeResources infers ECS Fargate compute resources and returns a
+// mapping of discoverable service names to their connections.
 func InferComputeResources(
 	resources *models.AWSResources,
 	app *models.Application,
@@ -29,7 +28,6 @@ func InferComputeResources(
 			continue
 		}
 
-		// Get compute sizing.
 		compute, ok := shared.SizeMappings[string(service.Size)]
 		if !ok {
 			compute = shared.SizeMappings["small"]
@@ -43,7 +41,6 @@ func InferComputeResources(
 			memory = *service.Memory
 		}
 
-		// Create log group.
 		logGroupKey := service.Name + "_lg"
 		logGroup := models.NewCloudWatchLogGroup()
 		logGroup.Name = "/ecs/" + getName(service.Name)
@@ -51,22 +48,16 @@ func InferComputeResources(
 		logGroup.Tags = tags
 		resources.CloudWatchLogGroup[logGroupKey] = logGroup
 
-		// Create IAM roles.
 		taskRoleKey, execRoleKey := createIamRoles(resources, service, getName, tags)
 
-		// Grant exec role permission to write logs.
 		createLogPolicy(resources, service, logGroupKey, getName, execRoleKey)
 
-		// Handle build-from-source.
 		containerImage := handleBuildContext(resources, service, env, getName, tags, discard, execRoleKey)
 
-		// Handle secrets.
 		containerSecrets := handleSecrets(resources, service, app, getName, tags, execRoleKey)
 
-		// Handle platform config (env vars valued outside compose file).
 		containerSecrets = handlePlatformConfig(resources, service, getName, tags, containerSecrets, execRoleKey)
 
-		// Create container definition.
 		var portMappings []map[string]any
 		if service.Port != nil {
 			portMappings = []map[string]any{
@@ -110,7 +101,6 @@ func InferComputeResources(
 
 		containerJSON := marshalJSONString([]models.ContainerDefinition{container})
 
-		// Create task definition.
 		taskDefKey := service.Name + "_td"
 		taskDef := models.NewEcsTaskDefinition()
 		taskDef.Family = getName(service.Name)
@@ -123,25 +113,20 @@ func InferComputeResources(
 		taskDef.Tags = tags
 		resources.EcsTaskDefinition[taskDefKey] = taskDef
 
-		// Create ECS service.
 		ecsService := createEcsService(service, env, getName, tags, taskDefKey)
 
-		// Handle public ingress.
 		if service.Ingress != nil && env.AlbArn != nil && service.Schedule == nil {
 			handleIngress(resources, service, env, getName, tags, priorities, &ecsService)
 		}
 
-		// Only create service if not scheduled.
 		if service.Schedule == nil {
 			resources.EcsService[service.Name+"_service"] = ecsService
 
-			// Handle auto-scaling.
 			if service.MaxScale > 1 {
 				handleAutoscaling(resources, service, getName)
 			}
 		}
 
-		// Add connection if discoverable.
 		if IsDiscoverable(service) {
 			connections[service.Name] = models.Connection{
 				Host:        fmt.Sprintf("%s.%s", service.Name, namespace),
@@ -212,7 +197,8 @@ func createLogPolicy(
 	}
 }
 
-// handleBuildContext handles build-from-source services.
+// handleBuildContext creates ECR/Docker build resources for
+// build-from-source services and returns the container image reference.
 func handleBuildContext(
 	resources *models.AWSResources,
 	service *models.Service,
@@ -228,7 +214,6 @@ func handleBuildContext(
 		return containerImage
 	}
 
-	// Create ECR repository.
 	ecrKey := service.Name + "_ecr"
 	ecr := models.NewEcrRepository()
 	ecr.Name = strings.ToLower(getName(service.Name))
@@ -236,7 +221,6 @@ func handleBuildContext(
 	ecr.Tags = tags
 	resources.EcrRepository[ecrKey] = ecr
 
-	// Configure build.
 	build := map[string]any{
 		"context":  *service.BuildContext,
 		"platform": "linux/amd64", // Match Fargate's X86_64.
@@ -261,7 +245,6 @@ func handleBuildContext(
 		ecrKey, pushKey,
 	)
 
-	// Grant ECR pull permissions.
 	policy := marshalJSONString(newIAMPolicyDocument(IAMPolicyStatement{
 		Effect: "Allow",
 		Action: []string{
@@ -282,8 +265,7 @@ func handleBuildContext(
 	return containerImage
 }
 
-// handleSecrets handles compose secrets and creates Secrets Manager
-// resources.
+// handleSecrets creates Secrets Manager resources for compose secrets.
 func handleSecrets(
 	resources *models.AWSResources,
 	service *models.Service,
@@ -315,7 +297,6 @@ func handleSecrets(
 			"valueFrom": fmt.Sprintf("${aws_secretsmanager_secret.%s.arn}", secretKey),
 		})
 
-		// Grant read access.
 		secretPolicyKey := fmt.Sprintf("%s_%s_policy", service.Name, secretName)
 		policy := marshalJSONString(newIAMPolicyDocument(IAMPolicyStatement{
 			Effect:   "Allow",
@@ -332,8 +313,8 @@ func handleSecrets(
 	return containerSecrets
 }
 
-// handlePlatformConfig handles platform-supplied configuration (env vars
-// not valued in the compose file).
+// handlePlatformConfig creates Secrets Manager resources for
+// platform-supplied configuration (env vars not valued in compose.yml).
 func handlePlatformConfig(
 	resources *models.AWSResources,
 	service *models.Service,
@@ -354,10 +335,6 @@ func handlePlatformConfig(
 		Tags:        tags,
 	}
 
-	// Key order in the resulting JSON string has no observable effect
-	// (Secrets Manager stores it as an opaque blob until read back out by
-	// key), but service.Config's own order is preserved anyway since
-	// that's the natural iteration order here.
 	placeholders := make(map[string]string, len(service.Config))
 	for _, key := range service.Config {
 		placeholders[key] = shared.SecretsPlaceholderValue
@@ -377,7 +354,6 @@ func handlePlatformConfig(
 		})
 	}
 
-	// Grant config read access.
 	policy := marshalJSONString(newIAMPolicyDocument(IAMPolicyStatement{
 		Effect:   "Allow",
 		Action:   []string{"secretsmanager:GetSecretValue"},
@@ -392,7 +368,7 @@ func handlePlatformConfig(
 	return containerSecrets
 }
 
-// createEcsService creates the ECS service configuration.
+// createEcsService builds the ECS service configuration.
 func createEcsService(
 	service *models.Service,
 	env *models.AwsEnvironment,
@@ -426,7 +402,8 @@ func createEcsService(
 	return svc
 }
 
-// handleIngress handles public ingress configuration (ALB).
+// handleIngress wires public ALB ingress: target group, listener rule,
+// and a dedicated security group.
 func handleIngress(
 	resources *models.AWSResources,
 	service *models.Service,
@@ -444,7 +421,6 @@ func handleIngress(
 		ingressPort = *service.Port
 	}
 
-	// Create target group.
 	tgKey := service.Name + "_tg"
 	healthCheckPath := "/"
 	if ingress.HealthCheck.Path != "" {
@@ -464,7 +440,6 @@ func handleIngress(
 		Tags: tags,
 	}
 
-	// Create listener rule.
 	if env.AlbListenerArn != nil {
 		ruleKey := service.Name + "_listener_rule"
 		resources.LbListenerRule[ruleKey] = models.LbListenerRule{
@@ -482,7 +457,6 @@ func handleIngress(
 		}
 	}
 
-	// Attach load balancer to service.
 	ecsService.LoadBalancer = []map[string]any{
 		{
 			"target_group_arn": fmt.Sprintf("${aws_lb_target_group.%s.arn}", tgKey),
@@ -491,7 +465,6 @@ func handleIngress(
 		},
 	}
 
-	// Create dedicated security group for ingress.
 	ingressSgKey := SafeTerraformIdentifier(service.Name) + "_ingress_sg"
 	desc := fmt.Sprintf("Load balancer ingress to %s", service.Name)
 	resources.SecurityGroup[ingressSgKey] = models.SecurityGroup{
@@ -519,9 +492,8 @@ func handleIngress(
 	)
 }
 
-// handleAutoscaling handles auto-scaling configuration. Supports
-// configurable metrics (CPU, memory, requests per target) with customizable
-// target values and cooldown periods.
+// handleAutoscaling configures target-tracking auto-scaling policies for
+// configurable metrics (CPU, memory, requests per target).
 func handleAutoscaling(
 	resources *models.AWSResources,
 	service *models.Service,
@@ -539,13 +511,9 @@ func handleAutoscaling(
 	)
 	resources.AppAutoscalingTarget[targetKey] = target
 
-	// Get auto-scaling configuration (use defaults if not specified).
-	//
 	// A bare zero-value models.AutoScalingConfig{} has none of the
-	// defaultAutoScalingConfig defaults (CPU 70%/Memory 80% metrics and
-	// 300s/60s cooldowns) -- a real, silent divergence (not merely an
-	// equivalent-empty-value one): a service relying on this default
-	// (declaring max_scale > min_scale with no explicit auto_scaling
+	// defaultAutoScalingConfig defaults, so a service relying on the
+	// default (max_scale > min_scale with no explicit auto_scaling
 	// block) would otherwise get no autoscaling policies at all.
 	config := service.AutoScaling
 	if config == nil {
@@ -567,7 +535,6 @@ func handleAutoscaling(
 
 		predefinedMetricSpec := map[string]any{"predefined_metric_type": metricName}
 
-		// For ALB requests, we need to specify the resource label.
 		if metric.Type == models.AutoScalingMetricRequestsPerTarget {
 			predefinedMetricSpec["resource_label"] = fmt.Sprintf("${aws_lb_target_group.%s_tg.arn_suffix}", service.Name)
 		}
@@ -587,9 +554,8 @@ func handleAutoscaling(
 	}
 }
 
-// defaultAutoScalingConfig supplies the default auto-scaling configuration:
-// CPU 70%, Memory 80%, 300s scale-in cooldown, 60s scale-out cooldown. Used
-// whenever a scaling service declares no explicit auto_scaling block.
+// defaultAutoScalingConfig supplies the default auto-scaling config: CPU
+// 70%, Memory 80%, 300s scale-in / 60s scale-out cooldowns.
 func defaultAutoScalingConfig() *models.AutoScalingConfig {
 	return &models.AutoScalingConfig{
 		Metrics: []models.AutoScalingMetric{

@@ -8,32 +8,12 @@ import (
 )
 
 // GenerateGcpEnvironment generates Terraform JSON for a shared GCP
-// environment. Creates a VPC Network, subnet, VPC connector for Cloud
-// Run, and a service networking
-// connection for Cloud SQL.
+// environment: a VPC network, subnet, VPC connector for Cloud Run, and
+// a service networking connection for Cloud SQL.
 //
-// projectID is required and is written into the generated
-// `output "environment"` block's project_id: gcp/infer.go depends on it
-// throughout, but earlier versions of this generator never populated it
-// at all, leaving cloudcompose init --provider gcp's output silently
-// incomplete until cloudcompose main failed against it later. See
-// docs/authored-environment-config.md's "The project_id gap".
-//
-// domain, if non-empty, is written into the output's domain field --
-// see models.GcpEnvironment.Domain's own doc comment for why this
-// exists (GCP CDN inference doesn't consume it yet, but the schema gap
-// that would otherwise block it is closed).
-//
-// The environment's facts are exposed as a plain Terraform output only
-// -- see aws.GenerateAwsEnvironment's own doc comment for why.
-//
-// backend, if non-nil, is emitted both as this environment's own
-// `terraform { backend "gcs" {...} }` block (state key/"prefix" derived
-// from name via shared.BackendKeyForEnvironment -- never authored) and
-// as a plain `output "backend"` block, mirroring
-// aws.GenerateAwsEnvironment's own backend handling -- except GCS has
-// no lock-table-equivalent field to carry (see GcpBackendConfig's own
-// doc comment). See docs/multi-user-state.md.
+// backend, if non-nil, is emitted both as this environment's
+// `terraform { backend "gcs" {...} }` block and as an `output "backend"`
+// block so it can be reused when compiling apps against this environment.
 func GenerateGcpEnvironment(
 	name, region, vpcCIDR, projectID, domain string,
 	tags map[string]string,
@@ -48,18 +28,12 @@ func GenerateGcpEnvironment(
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 	provider := map[string]any{"google": map[string]any{"region": region}}
 
-	// backendConfig, if set, is also emitted verbatim into the
-	// generated `output "backend"` block below, so LoadGcpEnvironment
-	// can hand it back to `cloudcompose compile`, which reuses it --
-	// under a different, app-specific prefix -- for every app compiled
-	// against this environment. See aws.GenerateAwsEnvironment's
-	// identical handling and docs/multi-user-state.md.
+	// backendConfig is also emitted into the `output "backend"` block
+	// below, so LoadGcpEnvironment can hand it back to apps compiled
+	// against this environment.
 	//
-	// Terraform's own gcs backend uses "prefix", not "key", for the
-	// per-object path within the bucket -- unlike s3/azurerm, which
-	// both call it "key". shared.BackendKeyForEnvironment's return
-	// value is used identically either way; only the backend block's
-	// own field name differs.
+	// Terraform's gcs backend uses "prefix", not "key", for the
+	// per-object path within the bucket, unlike s3/azurerm.
 	var backendConfig map[string]any
 	if backend != nil && backend.Gcp != nil {
 		terraform["backend"] = map[string]any{

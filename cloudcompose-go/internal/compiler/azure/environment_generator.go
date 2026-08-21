@@ -14,27 +14,13 @@ import (
 // the apps themselves.
 //
 // Does NOT create a Container Apps Environment or any subnets: those
-// are per-app now, created by GenerateAzure (cloudcompose main), one
-// set per app inside this VNet -- see
-// docs/azure-app-isolation-design.md for why. A Container Apps
-// Environment is Azure's actual isolation boundary (confirmed against
-// the real azurerm_container_app schema, which has no networking fields
-// at all, and Microsoft's own docs: "Use more than one environment when
-// you want two or more applications to... never share the same compute
-// resources"), so a shared one here would defeat the isolation this
-// design exists to provide, the same way sharing one AWS security group
-// across unrelated apps would.
-//
-// The environment's facts are exposed as a plain Terraform
-// `output "environment"` block only -- see aws.GenerateAwsEnvironment's
-// own doc comment for why.
+// are per-app, created by GenerateAzure, one set per app inside this
+// VNet. A Container Apps Environment is Azure's actual isolation
+// boundary, so a shared one here would defeat that isolation.
 //
 // backend, if non-nil, is emitted both as this environment's own
 // `terraform { backend "azurerm" {...} }` block (state key derived from
-// name via shared.BackendKeyForEnvironment -- never authored) and as a
-// plain `output "backend"` block, mirroring
-// aws.GenerateAwsEnvironment's own backend handling exactly -- see
-// docs/multi-user-state.md.
+// name, never authored) and as a plain `output "backend"` block.
 func GenerateAzureEnvironment(
 	name, location, vnetCIDR string,
 	tags map[string]string,
@@ -48,21 +34,9 @@ func GenerateAzureEnvironment(
 	envTag := map[string]string{"Environment": name}
 
 	// azurerm_log_analytics_workspace.retention_in_days has a hard
-	// minimum of 30 days -- confirmed against the real provider schema
-	// (`terraform validate` itself rejects anything lower, "expected
-	// retention_in_days to be in the range (30 - 730)"), not a matter of
-	// preference the way the shared 7-day default otherwise is. AWS's
-	// CloudWatch equivalent has no such floor (its own minimum is 1
-	// day), so log_retention_days' shared default of 7 -- chosen to
-	// match AWS's own long-standing default, unrelated to Azure's
-	// constraint -- would silently break every Azure environment that
-	// doesn't override it. Clamped here, not by raising the shared
-	// default: AWS keeps whatever value a user actually asked for.
-	// The output block below reports this clamped value too, not the
-	// raw request: it's meant to reflect what's actually deployed, and
-	// a silent mismatch between the output and the real resource would
-	// be its own confusing bug for whatever later reads it back via
-	// LoadAzureEnvironment.
+	// minimum of 30 days. AWS's CloudWatch equivalent has no such floor,
+	// so the shared 7-day default is clamped up here rather than raised
+	// globally, keeping AWS's own default unaffected.
 	workspaceRetentionDays := logRetentionDays
 	if workspaceRetentionDays < 30 {
 		workspaceRetentionDays = 30
@@ -73,13 +47,10 @@ func GenerateAzureEnvironment(
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 
-	// backendConfig, if set, is also emitted verbatim into the
-	// generated `output "backend"` block below, so LoadAzureEnvironment
-	// can hand it back to `cloudcompose compile`, which reuses it --
-	// under a different, app-specific key -- for every app compiled
-	// against this environment. See
-	// aws.GenerateAwsEnvironment's identical handling and
-	// docs/multi-user-state.md.
+	// backendConfig, if set, is also emitted into the generated
+	// `output "backend"` block below, so LoadAzureEnvironment can hand
+	// it back to `cloudcompose compile` for every app compiled against
+	// this environment.
 	var backendConfig map[string]any
 	if backend != nil && backend.Azure != nil {
 		azurermBackend := map[string]any{
@@ -153,15 +124,9 @@ func GenerateAzureEnvironment(
 		},
 	}
 
-	// appsCIDR is the upper half of the VNet, reserved for apps -- see
-	// docs/azure-app-isolation-design.md's "Decided: CIDR math" section
-	// for the full reasoning (128 apps at the default VNet size, each
-	// app's own /24 split into four /26 subnets, double Container
-	// Apps' own documented /27 minimum). The lower half is implicitly
-	// reserved for whatever the Cloud Compose Environment layer itself
-	// might need in its own address space in the future -- nothing
-	// uses it today, but reserving it now costs nothing and avoids a
-	// second breaking change later if something does.
+	// appsCIDR is the upper half of the VNet, reserved for apps. The
+	// lower half is implicitly reserved for whatever the Cloud Compose
+	// Environment layer might need in its own address space later.
 	appsCIDR, err := shared.Cidrsubnet(vnetCIDR, 1, 1)
 	if err != nil {
 		return "", err
@@ -193,7 +158,7 @@ func GenerateAzureEnvironment(
 	}
 	if backendConfig != nil {
 		outputs["backend"] = map[string]any{
-			"description": "This environment's own backend config (provider name plus resource group/storage account/container), so every app compiled against this environment can derive its own backend under the same storage account. See docs/multi-user-state.md.",
+			"description": "This environment's own backend config (provider name plus resource group/storage account/container), so every app compiled against this environment can derive its own backend under the same storage account.",
 			"value":       map[string]any{"provider": "azure", "azure": backendConfig},
 		}
 	}

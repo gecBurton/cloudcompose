@@ -9,12 +9,9 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// InferPermissionsAndWiring wires up connections and grants IAM
-// permissions.
-//
-// For each container service, resolves environment variables that
-// reference managed services, updates task definitions, and grants
-// necessary IAM permissions.
+// InferPermissionsAndWiring resolves environment variables that reference
+// managed services, updates task definitions, and grants necessary IAM
+// permissions for each container service.
 func InferPermissionsAndWiring(
 	resources *models.AWSResources,
 	app *models.Application,
@@ -22,10 +19,9 @@ func InferPermissionsAndWiring(
 	getName func(string) string,
 	connections map[string]models.Connection,
 ) error {
-	// Iteration must be deterministic: connections are ordered by
-	// app.Services order (since that's how infer()'s managed+compute
-	// connections were built), so ResolveValue's tie-breaking between
-	// ambiguously-matching services depends on it.
+	// Iteration must be deterministic: ResolveValue's tie-breaking
+	// between ambiguously-matching services depends on connection
+	// order matching app.Services order.
 	connectionOrder := connectionOrderFor(app, connections)
 
 	for i := range app.Services {
@@ -48,7 +44,6 @@ func InferPermissionsAndWiring(
 
 		execRoleKey := service.Name + "_exec_role"
 
-		// Resolve environment variables and track references.
 		rawEnv, _ := container["environment"].([]any)
 		environment := make([]any, 0, len(rawEnv))
 		referenced := map[string]struct{}{}
@@ -76,7 +71,6 @@ func InferPermissionsAndWiring(
 		}
 		container["environment"] = environment
 
-		// Grant permissions based on references.
 		referencedNames := make([]string, 0, len(referenced))
 		for name := range referenced {
 			referencedNames = append(referencedNames, name)
@@ -108,11 +102,10 @@ func InferPermissionsAndWiring(
 	return nil
 }
 
-// connectionOrderFor returns connection keys in a deterministic order:
-// services in app.Services order, filtered to those with a connection. Go
-// map iteration order is randomized, so connections cannot be iterated
-// directly wherever tie-breaking between ambiguously-matching services
-// matters.
+// connectionOrderFor returns connection keys in app.Services order,
+// filtered to services with a connection. Go map iteration order is
+// randomized, so this matters wherever ordering-sensitive tie-breaking
+// is needed.
 func connectionOrderFor(app *models.Application, connections map[string]models.Connection) []string {
 	order := make([]string, 0, len(connections))
 	for i := range app.Services {
@@ -147,12 +140,6 @@ func storeConfidentialValue(
 ) {
 	urlKey := fmt.Sprintf("%s_%s_url", serviceName, toLowerIdentifier(varName))
 
-	// The description renders the literal string "None" when
-	// referencedService is nil, rather than, say, an empty string or
-	// "nothing". Matched here rather than assumed, since ResolveValue
-	// can legitimately report no service for a bare value that still
-	// turned out confidential in theory (never in practice today, but the
-	// description has to render something either way).
 	refServiceDesc := "None"
 	if referencedService != nil {
 		refServiceDesc = *referencedService
@@ -167,7 +154,6 @@ func storeConfidentialValue(
 	resources.SecretsmanagerSecretVersion[urlKey+"_v1"] = models.SecretsManagerSecretVersion{
 		SecretID:     fmt.Sprintf("${aws_secretsmanager_secret.%s.id}", urlKey),
 		SecretString: value,
-		// Deliberately no ignore_changes - rotated passwords must reach clients.
 	}
 
 	secrets, _ := container["secrets"].([]any)
@@ -177,7 +163,6 @@ func storeConfidentialValue(
 	})
 	container["secrets"] = secrets
 
-	// Grant read access.
 	policy := marshalJSONString(newIAMPolicyDocument(IAMPolicyStatement{
 		Effect:   "Allow",
 		Action:   []string{"secretsmanager:GetSecretValue"},

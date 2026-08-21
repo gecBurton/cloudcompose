@@ -2,37 +2,16 @@ package shared
 
 import "fmt"
 
-// CommonEnvelope holds the environment.yaml-authored fields every
-// cloud's own Aws/Azure/GcpEnvironment struct declares identically
-// (Name, Region, LogRetentionDays, RetainDataOnDestroy, Tags, and --
-// AWS/Azure only -- HighAvailabilityEnabled/BackupRetentionDays), once
-// decoded from a Terraform `environment` output's raw
-// map[string]any/[]any/string/float64/bool shape.
+// CommonEnvelope holds the environment.yaml-authored fields common to
+// every cloud's Environment struct (Name, Region, LogRetentionDays,
+// RetainDataOnDestroy, Tags, and -- AWS/Azure only --
+// HighAvailabilityEnabled/BackupRetentionDays), decoded from a Terraform
+// `environment` output's raw map[string]any/[]any/string/float64/bool shape.
 //
-// This -- and DecodeCommonEnvelope below -- replaces what used to be
-// the identical field-by-field decode logic hand-copied into
-// aws/azure/gcp/environment.go's own LoadAwsEnvironment/
-// LoadAzureEnvironment/LoadGcpEnvironment: a future change to the
-// common envelope (e.g. a new shared field) previously meant editing 3
-// files identically, which is exactly the kind of drift this package's
-// own size-table consolidation (see docs/azure-aws-parity-todo.md) had
-// to fix once already for a different duplicated table. Each loader
-// now decodes once via DecodeCommonEnvelope and copies whichever fields
-// it has, e.g.:
-//
-//	common := shared.DecodeCommonEnvelope(raw)
-//	env.Name = common.Name
-//	if common.Region != nil { env.Region = *common.Region }
-//	if common.LogRetentionDays != nil { env.LogRetentionDays = *common.LogRetentionDays }
-//	// ...
-//
-// Every field except Name/Tags is a pointer so a genuinely absent key
-// in raw can be told apart from one present with the zero value: each
-// loader's own NewXEnvironment() constructor already sets a sensible
-// default for fields like Region, and an absent field must leave that
-// default alone rather than zeroing it out -- the same "only overwrite
-// what was actually present" rule every loader applied field-by-field
-// before this existed.
+// Every field except Name/Tags is a pointer so an absent key in raw can
+// be told apart from one present with the zero value: each loader's own
+// constructor sets a default for fields like Region, and an absent field
+// must leave that default alone rather than zeroing it out.
 type CommonEnvelope struct {
 	Name                    string
 	Region                  *string
@@ -72,14 +51,7 @@ func DecodeCommonEnvelope(raw map[string]any) CommonEnvelope {
 }
 
 // RequireTarget validates raw's declared "target" field against want,
-// defaulting to want when target is absent (matching DEFAULT_TARGET in
-// the original Python implementation -- see LoadEnvironment's own doc
-// comment in internal/compiler/environment.go). Each of
-// LoadAwsEnvironment/LoadAzureEnvironment/LoadGcpEnvironment calls this
-// immediately after resolving raw, before decoding anything
-// cloud-specific: an environment.yaml declaring the wrong target for
-// the loader reading it must fail immediately, not partway through
-// decoding fields that don't exist in the wrong shape.
+// defaulting to want when target is absent.
 func RequireTarget(raw map[string]any, dir, want string) error {
 	target, _ := raw["target"].(string)
 	if target == "" {

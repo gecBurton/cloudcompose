@@ -9,9 +9,7 @@ import (
 )
 
 // privateNetworkingArgs holds the private-networking configuration fields
-// that map onto PostgreSQLFlexibleServer/MySQLFlexibleServer fields, not a
-// free-form dict, since Go structs fix field order already (see
-// PostgreSQLFlexibleServer/MySQLFlexibleServer in models/azure.go).
+// that map onto PostgreSQLFlexibleServer/MySQLFlexibleServer fields.
 type privateNetworkingArgs struct {
 	DelegatedSubnetID          *string
 	PrivateDnsZoneID           *string
@@ -69,11 +67,7 @@ func privateNetworkingAzure(
 }
 
 // redisPrivateLinkSubresource and redisPrivateDnsZoneName are Azure
-// Managed Redis's fixed private-link identifiers, confirmed against
-// Microsoft's own private-endpoint DNS reference
-// (learn.microsoft.com/azure/private-link/private-endpoint-dns):
-// private-link resource type Microsoft.Cache/RedisEnterprise,
-// subresource "redisEnterprise", DNS zone privatelink.redis.azure.net.
+// Managed Redis's fixed private-link identifiers.
 const (
 	redisPrivateLinkSubresource = "redisEnterprise"
 	redisPrivateDnsZoneName     = "privatelink.redis.azure.net"
@@ -83,18 +77,14 @@ const (
 // wires the corresponding private DNS zone/link + sets
 // public_network_access to "Disabled") when env.RedisSubnetID is set.
 //
-// Unlike privateNetworkingAzure above (Flexible Server takes
-// delegated_subnet_id/private_dns_zone_id directly on the server
-// resource itself), azurerm_managed_redis has no networking-related
-// attributes/blocks at all beyond public_network_access -- confirmed
-// against the real provider schema, not assumed from the naming
-// symmetry with the database case. Private connectivity is therefore a
-// genuinely separate azurerm_private_endpoint resource, attached to a
-// plain (non-delegated) subnet.
+// azurerm_managed_redis has no networking attributes beyond
+// public_network_access, so private connectivity is a separate
+// azurerm_private_endpoint resource attached to a plain subnet, unlike
+// Flexible Server which takes delegated_subnet_id/private_dns_zone_id
+// directly.
 //
-// Environments predating env.RedisSubnetID (or that never set it) have
-// no subnet to use, so the cache falls back to public network access --
-// same fallback convention as privateNetworkingAzure, not a hard error.
+// Environments with no RedisSubnetID fall back to public network
+// access rather than a hard error.
 func privateEndpointRedisAzure(
 	resources *models.AzureResources,
 	env *models.AzureEnvironment,
@@ -148,22 +138,11 @@ func privateEndpointRedisAzure(
 	redis.PublicNetworkAccess = &disabled
 }
 
-// isMySQLImage classifies a database service's image the same way
-// _infer_databases does: "mysql" or "mariadb" in the image name (and not
-// "postgres", which would otherwise misclassify a hypothetical
-// postgres-based image that happens to mention mysql in passing) means
-// the MySQL-compatible Flexible Server family; everything else --
-// including postgres, postgresql, pgvector, timescale, etc. -- defaults
-// to PostgreSQL.
-//
-// Checking for "mariadb" too (not just "mysql") matches AWS's own
-// inferDatabase (aws/managed.go), which already detects both -- without
-// it, a mariadb image would be silently misclassified as PostgreSQL.
-// Azure has no dedicated MariaDB Flexible Server product, so a MariaDB
-// image is still provisioned onto the MySQL Flexible Server (the
-// closest wire-compatible managed offering Azure has), the same way
-// AWS's own "mariadb" branch still creates an RDS instance with
-// engine="mariadb" rather than a distinct product.
+// isMySQLImage reports whether image should be provisioned onto a MySQL
+// Flexible Server rather than PostgreSQL: "mysql" or "mariadb" in the
+// image name (and not "postgres") selects MySQL; everything else
+// defaults to PostgreSQL. Azure has no dedicated MariaDB product, so a
+// MariaDB image is provisioned onto the MySQL Flexible Server.
 func isMySQLImage(image string) bool {
 	lower := strings.ToLower(image)
 	if strings.Contains(lower, "postgres") {
@@ -173,12 +152,8 @@ func isMySQLImage(image string) bool {
 }
 
 // azureDBSkuFor maps a service size to a PostgreSQL/MySQL Flexible
-// Server SKU name, mirroring shared.DBInstanceClasses' AWS equivalent.
-// B_* (Burstable) is Azure Flexible Server's cheapest tier, roughly
-// comparable to AWS's db.t3.*; GP_* (General Purpose) is the first tier
-// with a dedicated (non-burstable) vCPU allocation, used for medium/large
-// since a shared database server is exactly the resource most likely to
-// be CPU-starved under real load if left on a burstable SKU.
+// Server SKU name. B_* (Burstable) is the cheapest tier; GP_* (General
+// Purpose) has a dedicated vCPU allocation, used for medium/large.
 func azureDBSkuFor(size models.ServiceSize) string {
 	switch size {
 	case models.ServiceSizeMedium:
@@ -190,31 +165,11 @@ func azureDBSkuFor(size models.ServiceSize) string {
 	}
 }
 
-// largestServiceSize returns the largest ServiceSize declared among
-// services, defaulting to small if none is set. Used when multiple
-// services share one Flexible Server (Azure's shared-server-per-engine
-// topology, a deliberate design difference from AWS's one-instance-per-
-// service -- see docs/azure-aws-parity-todo.md's "explicitly not a gap"
-// section): the shared server is sized for its largest consumer, since
-// under-provisioning a resource multiple services depend on is a worse
-// failure mode than over-provisioning it for the smallest one.
 // highAvailabilityAzure returns the high_availability block for a
-// Flexible Server (PostgreSQL or MySQL -- both take the identical
-// {mode, standby_availability_zone} shape), or nil when disabled.
-//
-// AwsEnvironment/AzureEnvironment's HighAvailabilityEnabled is one bool
-// mirroring AWS's aws_db_instance.multi_az (also just a bool), applied
-// uniformly to every database in the environment -- see
-// docs/azure-aws-parity-todo.md's Priority 4 backup/HA item. Always maps
-// to "ZoneRedundant", not "SameZone": AWS's Multi-AZ places the standby
-// in a different Availability Zone from the primary, and ZoneRedundant
-// is the mode that actually matches that (SameZone keeps standby and
-// primary in one AZ, protecting against node failure but not a zone
-// outage -- a materially weaker guarantee, confirmed against Microsoft's
-// own reliability docs, not assumed from the name). standby_availability_zone
-// is left unset in both modes: Azure auto-assigns it, the same way
-// PostgreSQLFlexibleServer.Lifecycle already ignores changes to the
-// primary's own auto-assigned zone.
+// Flexible Server, or nil when disabled. Always maps to
+// "ZoneRedundant" (not "SameZone"), matching AWS Multi-AZ's guarantee
+// of placing the standby in a different Availability Zone.
+// standby_availability_zone is left unset; Azure auto-assigns it.
 func highAvailabilityAzure(env *models.AzureEnvironment) map[string]string {
 	if !env.HighAvailabilityEnabled {
 		return nil
@@ -222,6 +177,10 @@ func highAvailabilityAzure(env *models.AzureEnvironment) map[string]string {
 	return map[string]string{"mode": "ZoneRedundant"}
 }
 
+// largestServiceSize returns the largest ServiceSize declared among
+// services, defaulting to small if none is set. Used when multiple
+// services share one Flexible Server: the shared server is sized for
+// its largest consumer.
 func largestServiceSize(services []*models.Service) models.ServiceSize {
 	rank := map[models.ServiceSize]int{
 		models.ServiceSizeSmall:  0,
@@ -288,17 +247,11 @@ func inferDatabasesAzure(
 
 		resources.PostgreSQLFlexibleServer["main"] = server
 
-		// Log export is on by default, not an opt-in: `cloudcompose logs`
-		// (azure/logs.go) has nothing to query for a database whose logs
-		// were never exported in the first place. Unlike MySQL/MariaDB
-		// (which additionally needs audit_log_enabled/slow_query_log
-		// server parameters turned on before there's anything to export
-		// at all -- deferred to a follow-up), Postgres logs its own
-		// error/notice output by default, so a diagnostic setting alone
-		// is enough here. "PostgreSQLLogs" is the category name
-		// Microsoft's own docs confirm for
-		// Microsoft.DBforPostgreSQL/flexibleServers (concepts-monitoring:
-		// "Category name: PostgreSQLLogs").
+		// Log export is on by default: `cloudcompose logs` has nothing
+		// to query for a database whose logs were never exported.
+		// Postgres logs its own error/notice output by default, so a
+		// diagnostic setting alone is enough (unlike MySQL/MariaDB,
+		// which additionally needs server parameters turned on first).
 		resources.DiagnosticSetting["pg_diag"] = models.DiagnosticSetting{
 			Name:                    getName("pg-diag"),
 			TargetResourceID:        "${azurerm_postgresql_flexible_server.main.id}",
@@ -354,12 +307,8 @@ func inferDatabasesAzure(
 		server.DelegatedSubnetID = networking.DelegatedSubnetID
 		server.PrivateDnsZoneID = networking.PrivateDnsZoneID
 		// Unlike PostgreSQLFlexibleServer's bool field, MySQL's
-		// public_network_access is a string, and only settable at all
-		// when NOT VNet-integrated (the provider auto-manages it to
-		// "Disabled" whenever delegated_subnet_id+private_dns_zone_id
-		// are set -- see MySQLFlexibleServer.PublicNetworkAccess's own
-		// doc comment). Only set it when public access is genuinely
-		// being requested (no delegated subnet); leave nil otherwise.
+		// public_network_access is a string, and only settable when NOT
+		// VNet-integrated. Only set when public access is requested.
 		if networking.PublicNetworkAccessEnabled {
 			enabled := "Enabled"
 			server.PublicNetworkAccess = &enabled
@@ -449,9 +398,6 @@ func inferCachesAzure(
 		resources.ManagedRedis[cacheKey] = redis
 
 		// The access key hangs off the nested database, not the cluster.
-		// The port does too, but Connection.Port is an int, so the
-		// well-known Managed Redis port is named directly rather than
-		// interpolated.
 		db := fmt.Sprintf("azurerm_managed_redis.%s.default_database[0]", cacheKey)
 		port := shared.DefaultPortAzureManagedRedis
 		passwordRef := fmt.Sprintf("${%s.primary_access_key}", db)

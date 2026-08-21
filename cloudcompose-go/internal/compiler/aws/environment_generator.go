@@ -8,32 +8,14 @@ import (
 )
 
 // GenerateAwsEnvironment generates Terraform JSON for a shared AWS
-// environment. Creates a VPC with public/private subnets across AZs,
-// NAT Gateways, an optional ALB, and
-// an ECS Cluster.
-//
-// This is the "platform" infrastructure (VPC, ALB, ECS Cluster, etc.)
-// that multiple applications share, used by `cloudcompose init` to set up
-// environments that developers then deploy to.
-//
-// The environment's facts (VPC ID, ALB ARN, cluster ARN) are exposed as
-// a plain Terraform `output "environment"` block only -- `cloudcompose main`
-// reads them directly via `terraform output -json` (see
-// internal/compiler/shared/terraform_outputs.go), rather than through a
-// generated file a local_file resource writes as a side effect. See
-// docs/authored-environment-config.md for why: a generated file
-// duplicated exactly what `terraform output` already tracks, and reading
-// live state instead means there's nothing that can go stale.
+// environment: a VPC with public/private subnets across AZs, NAT
+// Gateways, an optional ALB, and an ECS Cluster.
 //
 // backend, if non-nil, is emitted both as this environment's own
-// `terraform { backend "s3" {...} }` block (state key derived from name
-// via shared.BackendKeyForEnvironment -- never authored) and as a plain
-// `output "backend"` block, so LoadAwsEnvironment can hand the same
-// bucket/region/lock-table facts back to `cloudcompose compile`, which
-// derives its own, app-specific key under that same bucket for every
-// app compiled against this environment. Nil means today's behavior:
-// an ordinary local terraform.tfstate file, with no backend block
-// emitted at all. See docs/multi-user-state.md.
+// `terraform { backend "s3" {...} }` block and as a plain `output
+// "backend"` block, so LoadAwsEnvironment can hand the same
+// bucket/region/lock-table facts back to `cloudcompose compile`. Nil
+// means an ordinary local terraform.tfstate file with no backend block.
 func GenerateAwsEnvironment(
 	name, region, vpcCIDR string,
 	azCount int,
@@ -82,14 +64,6 @@ func GenerateAwsEnvironment(
 	}
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 
-	// backendConfig, if set, is also emitted verbatim into the
-	// generated `output "backend"` block below (see this file's own
-	// doc comment on why environment facts are exposed only via plain
-	// Terraform outputs, never a side-effect file) so
-	// LoadAwsEnvironment can hand it back to `cloudcompose compile`,
-	// which reuses it -- under a different, app-specific key -- for
-	// every app compiled against this environment. See
-	// docs/multi-user-state.md.
 	var backendConfig map[string]any
 	if backend != nil && backend.AWS != nil {
 		s3Backend := map[string]any{
@@ -357,7 +331,7 @@ func GenerateAwsEnvironment(
 	}
 	if backendConfig != nil {
 		outputs["backend"] = map[string]any{
-			"description": "This environment's own backend config (provider name plus bucket/region/lock table), so every app compiled against this environment can derive its own backend under the same bucket. See docs/multi-user-state.md.",
+			"description": "This environment's backend config (provider name plus bucket/region/lock table).",
 			"value":       map[string]any{"provider": "aws", "aws": backendConfig},
 		}
 	}

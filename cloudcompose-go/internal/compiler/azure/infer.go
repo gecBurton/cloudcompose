@@ -17,15 +17,10 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 		tags = env.Tags
 	}
 
-	// Step 0: create this app's own Container Apps Environment and its
-	// four delegated subnets, carved out of the environment's shared
-	// AppsCIDR at this app's own --subnet-index. Must run before
-	// anything below that reads env.InfrastructureSubnetID/
-	// PostgresqlSubnetID/MysqlSubnetID/RedisSubnetID (databases, caches,
-	// the Container App/Job resources themselves) -- see
-	// docs/azure-app-isolation-design.md for why this moved here from
-	// cloudcompose init, and appSubnetsAzure's own doc comment for the
-	// CIDR math.
+	// Step 0: create this app's Container Apps Environment and its four
+	// delegated subnets, carved out of the environment's shared AppsCIDR
+	// at this app's subnet-index. Must run before anything that reads
+	// env.InfrastructureSubnetID/PostgresqlSubnetID/MysqlSubnetID/RedisSubnetID.
 	if err := appSubnetsAzure(resources, app, env, getName, tags); err != nil {
 		return nil, err
 	}
@@ -52,42 +47,28 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 		connections[k] = v
 	}
 
-	// Step 7.5: discover which connections each service's own authored
-	// `environment:` values actually reference (docs/azure-aws-parity-todo.md's
-	// "Azure's RBAC/identity-granting model is depends_on:-driven, where
-	// AWS's is usage-driven" item) -- must happen before deciding whether
-	// any service needs a managed-service identity at all, since Azure's
-	// ordering constraint (the identity must exist and be granted access
-	// *before* any Container App/Job that references it) means "what
-	// does this app actually use" has to be known upfront, not learned
-	// while containerSpecAzure builds each container. See
-	// referencedServersAzure's own doc comment for the full reasoning.
+	// Step 7.5: discover which connections each service's authored
+	// `environment:` values actually reference. Must happen before
+	// deciding whether any service needs a managed-service identity,
+	// since the identity must exist and be granted access before any
+	// Container App/Job that references it.
 	referenced := referencedServersAzure(app, connections)
 
-	// Step 7.6: if any service's own authored environment: values
-	// actually reference a managed service, create a user-assigned
-	// identity for the app (before any Container App/Job exists, so it
-	// can be granted RBAC first -- see permissions.go's own doc comments
-	// for the ordering reason) and grant it access to that service's
-	// stored credential/storage account. Only services that actually
-	// reference a connection use this identity (see identityForService
-	// in compute.go); every other service keeps using
-	// env.UserAssignedIdentityID or falls back to system-assigned,
-	// exactly as before this feature existed.
+	// Step 7.6: if any service references a managed service, create a
+	// user-assigned identity for the app and grant it access to that
+	// service's stored credential/storage account. Only services that
+	// reference a connection use this identity; every other service
+	// keeps using env.UserAssignedIdentityID or falls back to
+	// system-assigned.
 	managedServiceIdentityID := inferManagedServiceIdentity(resources, app, env, getName, tags, connections, referenced)
 	if managedServiceIdentityID != "" {
 		grantManagedServicePermissions(resources, app, env, getName, tags, managedServiceIdentityID, connections, referenced)
 	}
 
-	// connectionOrder tracks connections in the same insertion order they
-	// were built in: databases first, then caches, then storage -- each
-	// group in the order its services appear in app.Services -- since
-	// containerSpecAzure's env-var loop iterates connections in whatever
-	// order they were inserted, and that order determines which _URL env
-	// var comes first when a service references more than one. This
-	// matters in practice, not just in theory: alphabetical-key sorting
-	// puts DB_URL/BLOBS_URL and CACHE_URL in the wrong relative position
-	// for some real examples.
+	// connectionOrder tracks connections in insertion order (databases,
+	// then caches, then storage, each in app.Services order): this
+	// determines which _URL env var comes first when a service
+	// references more than one connection.
 	connectionOrder := shared.ConnectionOrder(app, connections)
 
 	// Step 8: Infer container apps.
@@ -106,11 +87,9 @@ func InferAzure(app *models.Application, env *models.AzureEnvironment) (*models.
 	return resources, nil
 }
 
-// inferManagedIdentity creates or references a managed identity, mirroring
-// _infer_managed_identity. Returns the identity resource ID for use in
-// other resources. Creates nothing: a system-assigned identity is used
-// implicitly elsewhere (see ContainerApp/ContainerAppJob's identity
-// config) when no user-assigned one is configured.
+// inferManagedIdentity returns the configured identity resource ID, or ""
+// if none is configured (a system-assigned identity is used implicitly
+// instead).
 func inferManagedIdentity(env *models.AzureEnvironment) string {
 	if env.UserAssignedIdentityID != nil && *env.UserAssignedIdentityID != "" {
 		return *env.UserAssignedIdentityID
@@ -118,8 +97,8 @@ func inferManagedIdentity(env *models.AzureEnvironment) string {
 	return ""
 }
 
-// inferKeyVault creates the Key Vault for secrets, mirroring
-// _infer_key_vault. Always creates exactly one, keyed "main".
+// inferKeyVault creates the Key Vault for secrets. Always creates exactly
+// one, keyed "main".
 func inferKeyVault(resources *models.AzureResources, app *models.Application, env *models.AzureEnvironment, tags map[string]string) {
 	kv := models.NewKeyVault()
 	kv.Name = KeyVaultName(env.Name, app.Name)
@@ -156,19 +135,15 @@ func inferContainerRegistry(resources *models.AzureResources, app *models.Applic
 	registry.Location = env.Region
 	registry.Sku = "Standard"
 	// Required for Container Apps to pull, and for the docker provider to
-	// authenticate when pushing (see handleBuildContextAzure and
-	// generator_azure.go's registryAuth).
+	// authenticate when pushing.
 	registry.AdminEnabled = true
 	registry.Tags = tags
 	resources.ContainerRegistry["main"] = registry
 
-	// Build and push an image for every service with a build context.
-	// Mirrors AWS's handleBuildContext in compute_aws.go: a docker_image
-	// builds locally, a docker_registry_image pushes it, and the
+	// Build and push an image for every service with a build context. The
 	// container's image reference is pinned to the pushed digest rather
 	// than a mutable ":latest" tag, so Container Apps deploys exactly what
-	// was built rather than racing a tag that could be overwritten
-	// mid-apply.
+	// was built.
 	for i := range app.Services {
 		service := &app.Services[i]
 		if service.Capability != models.CapabilityContainer || service.BuildContext == nil {

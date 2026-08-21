@@ -16,15 +16,9 @@ import (
 )
 
 // logsCmd shows recent log output for the services in a compose file,
-// the way `docker compose logs` shows container logs -- but for
-// whatever the cloud actually logged, not anything derivable from
-// compose.yml or Terraform state (see aws.FetchLogs/azure.FetchLogs's
-// own doc comments for why this is a one-shot fetch, not a --follow
-// tail, in this first version). If --follow is ever added, its
-// shorthand can be -f without colliding with --file: --file is a
-// *persistent* root flag (see main.go's own doc comment) precisely so
-// a *local* -f/--follow on this command can shadow it, the same
-// relationship real `docker compose logs -f` relies on.
+// the way `docker compose logs` shows container logs -- but fetched
+// directly from the cloud, as a one-shot fetch (not a --follow tail)
+// in this first version.
 var logsCmd = &cobra.Command{
 	Use:   "logs [service...]",
 	Short: "Show recent logs for deployed services",
@@ -33,9 +27,7 @@ var logsCmd = &cobra.Command{
 }
 
 // logEventJSON is the cloud-agnostic shape `logs --json` emits -- one
-// entry per log line, regardless of which cloud produced it, mirroring
-// ps.go's own psRowJSON rationale: scripts can assert against this
-// without any cloud-specific parsing.
+// entry per log line, regardless of which cloud produced it.
 type logEventJSON struct {
 	Service   string `json:"service"`
 	Timestamp string `json:"timestamp"` // RFC3339, UTC
@@ -79,10 +71,7 @@ func runLogs(cmd *cobra.Command, args []string) {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
-	// Check target support immediately after loading the environment,
-	// before doing any further work (parsing/normalizing compose.yml) --
-	// see requireAwsOrAzure's own doc comment for why this can't just
-	// wait for the type switch below to reject GCP.
+	// Check target support before doing any further work.
 	if err := requireAwsOrAzure(cmd.Name(), env); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -150,21 +139,17 @@ func runLogs(cmd *cobra.Command, args []string) {
 		}
 
 	default:
-		// Unreachable in practice: requireAwsOrAzure above already
-		// rejected anything but AWS/Azure. Kept as a defensive default
-		// rather than a panic, in case a future environment type is
-		// added to LoadEnvironment's own return type without this
-		// switch being updated to match.
+		// Unreachable: requireAwsOrAzure above already rejected
+		// anything but AWS/Azure.
 		target, _ := environmentTarget(env)
 		fmt.Fprintf(os.Stderr, "Error: `cloudcompose logs` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
 }
 
-// printAwsLogEvents renders logs output the way `docker compose logs`
-// does when following more than one service: each line prefixed with
-// the service name it came from, events already in chronological order
-// (see aws.FetchLogs's own sort).
+// printAwsLogEvents renders logs the way `docker compose logs` does
+// when following more than one service: each line prefixed with the
+// service name it came from.
 func printAwsLogEvents(w io.Writer, events []aws.LogEvent) {
 	for _, e := range events {
 		fmt.Fprintln(w, awsLogLine(e))
@@ -172,16 +157,14 @@ func printAwsLogEvents(w io.Writer, events []aws.LogEvent) {
 }
 
 // awsLogLine formats a single aws.LogEvent, matching
-// printAwsLogEvents' format. Split out so tests can assert on
-// formatting without capturing writer output.
+// printAwsLogEvents' format.
 func awsLogLine(e aws.LogEvent) string {
 	ts := time.UnixMilli(e.Timestamp).UTC().Format(time.RFC3339)
 	return fmt.Sprintf("%s  %s  | %s", ts, e.Service, e.Message)
 }
 
 // awsLogEventsJSON converts aws.LogEvent (epoch millis) into the
-// cloud-agnostic logEventJSON shape (RFC3339 string), matching
-// awsLogLine's own timestamp formatting.
+// cloud-agnostic logEventJSON shape (RFC3339 string).
 func awsLogEventsJSON(events []aws.LogEvent) []logEventJSON {
 	rows := make([]logEventJSON, 0, len(events))
 	for _, e := range events {
@@ -210,7 +193,7 @@ func azureLogLine(e azure.LogEvent) string {
 }
 
 // azureLogEventsJSON converts azure.LogEvent into the cloud-agnostic
-// logEventJSON shape, matching azureLogLine's own timestamp formatting.
+// logEventJSON shape.
 func azureLogEventsJSON(events []azure.LogEvent) []logEventJSON {
 	rows := make([]logEventJSON, 0, len(events))
 	for _, e := range events {

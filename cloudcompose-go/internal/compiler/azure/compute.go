@@ -14,9 +14,8 @@ import (
 // 5-field cron Azure wants.
 //
 // Azure has no rate dialect, so an interval is expressed as the cron that
-// means the same thing. Intervals that cron cannot express -- anything
-// that does not divide its unit evenly, like every 7 hours -- are rejected
-// rather than silently rounded to something that runs at the wrong time.
+// means the same thing. Intervals that cron cannot express (e.g. every 7
+// hours) are rejected rather than silently rounded.
 func cronExpressionAzure(schedule models.Schedule) (string, error) {
 	rate, isRate := shared.AsRateSchedule(schedule)
 	if !isRate {
@@ -67,14 +66,12 @@ func cronExpressionAzure(schedule models.Schedule) (string, error) {
 // registryAuthAzure returns registry pull config for a service, plus any
 // secret block it needs.
 //
-// Deliberately username/password rather than the managed-identity form of
-// registry (server + identity): a system-assigned identity's principal_id
-// does not exist until the Container App/Job itself has been created, so
-// granting it an AcrPull role assignment cannot happen before that first
-// create -- and the create itself needs to pull the image. ACR's admin
-// credentials are stable resource attributes available the moment the
-// registry exists, so authenticating with them sidesteps the ordering
-// problem entirely.
+// Uses username/password rather than managed-identity auth: a
+// system-assigned identity's principal_id doesn't exist until the
+// Container App/Job is created, but the create itself needs to pull the
+// image, so a role assignment can't happen first. ACR's admin credentials
+// are available as soon as the registry exists, avoiding that ordering
+// problem.
 func registryAuthAzure(service *models.Service) (registry []models.ContainerAppRegistry, secret []models.ContainerAppSecret) {
 	if service.BuildContext == nil {
 		return nil, nil
@@ -96,27 +93,17 @@ func registryAuthAzure(service *models.Service) (registry []models.ContainerAppR
 // containerSpecAzure builds the container block for a service, shared by
 // Container Apps and Jobs.
 //
-// Both take the same shape, so a scheduled task gets the same image
-// resolution and the same wired-in connection strings as a long-running
-// one. cpu and memory sit directly on the container; azurerm has no nested
-// "resources" block.
+// cpu and memory sit directly on the container; azurerm has no nested
+// "resources" block. Only wires a connection into a `<SERVER>_URL` env
+// var when a Relationship declares it, using the URL scheme matching the
+// target's capability (postgresql://, mysql://, rediss://, or a bare
+// https://<host>/<container> for object storage). Credentials with a
+// password use ContainerAppEnvVar.SecretName, pointing at the Key Vault
+// secret grantManagedServicePermissions stored, rather than a plaintext
+// value.
 //
-// Unlike AWS's general connections.go/ResolveValue, this only wires a
-// connection when a Relationship declares it, and only ever adds one
-// `<SERVER>_URL` env var per relationship rather than substituting into
-// service.Env's own values -- both narrower than AWS by design, tracked
-// as an open item in docs/azure-aws-parity-todo.md. The URL scheme
-// matches the target's actual capability (postgresql://, mysql://,
-// rediss://, or a bare https://<host>/<container> for object storage),
-// and credentials with a password use ContainerAppEnvVar.SecretName,
-// pointing at the Key Vault secret grantManagedServicePermissions
-// stored, rather than a plaintext ContainerAppEnvVar.Value.
-//
-// getName/tags/identityID are only used to wire compose secrets:/platform
-// config: -- see grantServiceSecretPermissions/grantPlatformConfigPermissions.
-// identityID must be the *managed-service* identity (not just any
-// identity the service happens to use), since secrets/config always go
-// through Key Vault the same way managed-service credentials do.
+// identityID must be the managed-service identity (not just any identity
+// the service uses), since secrets/config always go through Key Vault.
 func containerSpecAzure(
 	service *models.Service,
 	app *models.Application,
@@ -189,14 +176,10 @@ func containerSpecAzure(
 		envVarName := strings.ToUpper(dbName) + "_URL"
 
 		if secretRef := keyVaultSecretRefFor(resources, dbName); secretRef != "" {
-			// Credential goes through Container Apps' own secretRef
-			// mechanism, resolved from Key Vault via the app's identity
-			// -- never interpolated into the env var's own value. See
-			// docs/azure-aws-parity-todo.md Priority 1 items 1-2. The
-			// secret block itself is app/job-level, not container-level
-			// (azurerm's schema puts `secret` on ContainerApp/Job, only
-			// `env.secret_name` lives on the container) -- returned here
-			// for the caller to merge into that level.
+			// Resolved from Key Vault via the app's identity, never
+			// interpolated as a plaintext value. The secret block is
+			// app/job-level, not container-level, so it's returned here
+			// for the caller to merge in.
 			secretName := dbName + "-url"
 			secrets = append(secrets, models.ContainerAppSecret{
 				Name:             secretName,
@@ -213,8 +196,7 @@ func containerSpecAzure(
 		})
 	}
 
-	// Compose secrets:/platform config: -- see grantServiceSecretPermissions/
-	// grantPlatformConfigPermissions's own doc comments.
+	// Compose secrets:/platform config:.
 	secretEnvVars, secretSecrets := grantServiceSecretPermissions(resources, service, app, getName, tags, managedServiceIdentityID)
 	envVars = append(envVars, secretEnvVars...)
 	secrets = append(secrets, secretSecrets...)
@@ -228,32 +210,19 @@ func containerSpecAzure(
 }
 
 // resolveEnvVarAzure substitutes a real managed-service connection into
-// one authored `environment:` value, mirroring aws/permissions.go's own
-// per-entry loop over a service's container definition -- built on the
-// same shared.ResolveValue both clouds use, not a hardcoded
-// Postgres-shaped template.
+// one authored `environment:` value, built on shared.ResolveValue.
 //
-// This is additive, not a replacement for containerSpecAzure's own
-// <SERVER>_URL synthesis a few lines up: that mechanism is Azure's
-// equivalent of AWS's always-emitted DB_PASSWORD/DB_USERNAME convenience
-// vars (grantDatabasePermissions) -- an app can consume either the
-// synthesized <SERVER>_URL or its own authored DATABASE_URL/
-// DATABASE_HOST, the same way an AWS app can consume either
-// DB_PASSWORD/DB_USERNAME or its own authored value. This function
-// handles the case where an authored value references a service by name
-// or URL directly (e.g. `DATABASE_URL: postgres://db:5432/app` or
-// `DATABASE_HOST: db`) and needs substituting to the real managed
-// endpoint, since compose's own literal value points at the local
-// container's hostname, unreachable once db becomes a managed Flexible
-// Server.
+// This is additive to containerSpecAzure's own <SERVER>_URL synthesis:
+// an app can consume either the synthesized <SERVER>_URL or its own
+// authored value (e.g. `DATABASE_URL: postgres://db:5432/app` or
+// `DATABASE_HOST: db`), which needs substituting to the real managed
+// endpoint since the literal compose value points at a local hostname
+// unreachable once the service becomes managed.
 //
 // A confidential resolution (the value now carries a real password) is
-// stored in Key Vault, one secret per (service, env-var-name) --
-// mirroring aws/permissions.go's storeConfidentialValue exactly, keyed
-// the same way (`<service>_<varname>_url`) for the same reason: two
+// stored in Key Vault, one secret per (service, env-var-name), since two
 // services' own same-named env var referencing the same managed service
-// still need their own secret, since Terraform resource keys are
-// per-resource, not per-value.
+// still need their own secret.
 func resolveEnvVarAzure(
 	resources *models.AzureResources,
 	serviceName, varName, value string,
@@ -268,30 +237,19 @@ func resolveEnvVarAzure(
 		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
 	}
 
-	// A confidential value with no identity to grant Key Vault access
-	// is a real gap in cloudcompose's own setup (inferManagedServiceIdentity
-	// should have provisioned one whenever any connection carries a
-	// password), not a case with a sane fallback -- unlike
-	// connectionURLAzure's own doc comment, which explains why *that*
-	// function still renders something rather than panicking. Falling
-	// back to a plain (unencrypted) env var here would silently leak a
-	// real credential into Terraform state and the Container App's own
-	// visible configuration, worse than failing loudly.
+	// A confidential value with no identity to grant Key Vault access is
+	// a real gap in setup, not a case with a sane fallback: falling back
+	// to a plaintext env var here would silently leak a credential into
+	// Terraform state, worse than failing loudly.
 	if managedServiceIdentityID == "" {
 		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
 	}
 
 	// azurerm_key_vault_secret's name may only contain alphanumeric
-	// characters and dashes -- confirmed via a real terraform validate,
-	// not assumed: an underscore-bearing env var name like
-	// "database_url" isn't merely a style choice here, it's a
-	// hard rejection at plan time. varSlug replaces every underscore
-	// with a dash for both the Key Vault secret's own Name and the
-	// Container App secret block's Name (which must match what
-	// Container Apps itself calls the reference) -- secretKey (the
-	// Terraform resource identifier, a Go map key) keeps underscores,
-	// since identifiers have no such restriction and every other
-	// secretKey in this file already uses them.
+	// characters and dashes, so varSlug replaces underscores with
+	// dashes for the Key Vault secret's Name and the Container App
+	// secret block's Name. secretKey (the Terraform resource
+	// identifier) keeps underscores.
 	varSlug := strings.ReplaceAll(strings.ToLower(varName), "_", "-")
 	secretKey := fmt.Sprintf("%s_%s_url", serviceName, strings.ToLower(varName))
 	secret := models.NewKeyVaultSecret()
@@ -300,18 +258,10 @@ func resolveEnvVarAzure(
 	secret.Value = resolved.Value
 	resources.KeyVaultSecret[secretKey] = secret
 
-	// Granted here too, not just by grantManagedServicePermissions's own
+	// Granted here too, not just by grantManagedServicePermissions's
 	// Relationships-driven pass: a service can reference a managed
-	// service by URL without also declaring depends_on: for it (schema
-	// -valid compose, if unusual -- every real example in this repo
-	// pairs the two, but nothing enforces that pairing). Without this,
-	// such a service would get a Key Vault secret with no RBAC grant to
-	// read it. The underlying write (resources.RoleAssignment["kv_role"])
-	// is a map assignment, so calling this redundantly whenever both
-	// paths run for the same app is harmless -- grantKeyVaultAccessOnce's
-	// own *granted bool only dedupes within a single caller's loop, not
-	// across this function and grantManagedServicePermissions, but the
-	// map write itself is naturally idempotent either way.
+	// service by URL without also declaring depends_on: for it. The
+	// underlying map write is naturally idempotent if both paths run.
 	grantedKeyVault := false
 	grantKeyVaultAccessOnce(resources, &grantedKeyVault, principalIDRefForIdentity())
 
@@ -325,16 +275,9 @@ func resolveEnvVarAzure(
 }
 
 // connectionURLAzure renders a connection as a URL, choosing the scheme
-// from the target service's capability rather than always assuming
-// Postgres -- see containerSpecAzure's own doc comment for why this
-// matters. Credential-bearing connections should go through
-// keyVaultSecretRefFor's secretRef path instead of this function; this
-// path is only reached for a connection with no stored secret (i.e. no
-// password at all, or no identity was provisioned to read one from Key
-// Vault because inferManagedServiceIdentity found nothing needing it --
-// which shouldn't happen if grantManagedServicePermissions ran, but this
-// function still renders something sane rather than panicking if it
-// didn't).
+// from the target service's capability. Only reached for a connection
+// with no stored secret; credential-bearing connections should go
+// through keyVaultSecretRefFor instead.
 func connectionURLAzure(capability models.Capability, conn *models.Connection) string {
 	switch capability {
 	case models.CapabilityCache:
@@ -377,8 +320,7 @@ func connectionURLAzure(capability models.Capability, conn *models.Connection) s
 	}
 }
 
-// findServiceByNameAzure finds a service by name, mirroring
-// aws/permissions.go's findServiceByName.
+// findServiceByNameAzure finds a service by name.
 func findServiceByNameAzure(app *models.Application, name string) *models.Service {
 	for i := range app.Services {
 		if app.Services[i].Name == name {
@@ -396,13 +338,12 @@ func sortStringsAzure(s []string) {
 	}
 }
 
-// getContainerImageAzure gets the container image reference, mirroring
-// _get_container_image.
+// getContainerImageAzure gets the container image reference.
 //
-// For a built service this must resolve to the exact image
-// inferContainerRegistry pushed -- the sha256 digest, not a mutable
-// ":latest" tag -- so Container Apps can't pull a different image than the
-// one Terraform just built.
+// For a built service this must resolve to the exact sha256 digest
+// inferContainerRegistry pushed, not a mutable ":latest" tag, so
+// Container Apps can't pull a different image than the one Terraform
+// just built.
 func getContainerImageAzure(service *models.Service, app *models.Application, env *models.AzureEnvironment) string {
 	if service.BuildContext != nil {
 		pushKey := service.Name + "_push"
@@ -416,40 +357,24 @@ func getContainerImageAzure(service *models.Service, app *models.Application, en
 
 // azureConsumptionMaxCPU and azureConsumptionMaxMemoryGB are Container
 // Apps' Consumption workload profile limits per container (2 vCPU / 4
-// GiB), confirmed against Microsoft's own container resource-allocation
-// documentation (learn.microsoft.com/azure/container-apps/containers#allocations).
-// Not enforced by Terraform's own schema (a plain `number`/`string`
-// with no validation) -- this is an Azure API-level constraint cloudcompose
-// checks itself.
+// GiB). Not enforced by Terraform's schema, so cloudcompose checks it
+// itself.
 const (
 	azureConsumptionMaxCPU      = 2.0
 	azureConsumptionMaxMemoryGB = 4.0
 )
 
 // azureConsumptionCPUStep is the granularity Consumption-plan CPU/memory
-// allocations must land on -- confirmed against the same Microsoft
-// documentation as azureConsumptionMaxCPU: the vCPU/memory table there
-// lists every valid combination in steps of exactly 0.25 vCPU (0.25,
-// 0.5, 0.75, ... 4.0), each paired with exactly 2x that many GiB of
-// memory (0.5Gi, 1.0Gi, 1.5Gi, ... 8.0Gi). This is the constraint
-// azureCPUMemoryPairAzure enforces: not just "under the cap" (checked
-// independently below) but "on the step and at the paired memory value",
-// which the cap check alone cannot catch.
+// allocations must land on: valid combinations step in 0.25 vCPU
+// increments, each paired with exactly 2x that many GiB of memory.
 const azureConsumptionCPUStep = 0.25
 
 // azureCPUMemoryPairAzure validates that a resolved (cpu, memoryGB) pair
-// is one Container Apps' Consumption plan actually accepts.
-//
-// This is a real, separate constraint from either value's own ceiling
-// check: Consumption requires CPU and memory to land on one exact
-// matched pair from a fixed table (0.25vCPU/0.5Gi, 0.5/1.0Gi, ...,
-// 2.0/4.0Gi) -- not just independently under the 2vCPU/4GiB cap.
-// Terraform's schema does not enforce this (a plain number/string with
-// no validation), so `terraform validate` passes regardless; only
-// Azure's own API rejects an unpaired combination, at `apply` time
-// (e.g. size: medium = 1.0 vCPU + an explicit memory: 4096 override =
-// 4Gi passes `terraform validate` but is rejected by the real API,
-// since 1.0vCPU only pairs validly with 2.0Gi).
+// is one Container Apps' Consumption plan actually accepts: CPU and
+// memory must land on one exact matched pair from a fixed table, not
+// just independently under the cap. Terraform's schema doesn't enforce
+// this; only the real API rejects an unpaired combination, at apply
+// time.
 func azureCPUMemoryPairAzure(serviceName string, cpu, memoryGB float64) error {
 	steps := cpu / azureConsumptionCPUStep
 	if steps != math.Round(steps) {
@@ -468,27 +393,13 @@ func azureCPUMemoryPairAzure(serviceName string, cpu, memoryGB float64) error {
 	return nil
 }
 
-// getCPUCoresAzure converts service size or explicit CPU to cores.
-// Size-derived values come from
-// shared.SizeMappings (the same table AWS uses, converted from ECS CPU
-// units to vCPU cores) rather than a separately hardcoded table, fixing
-// a real, already-drifted duplicate: Azure's own table previously
-// defined medium as 0.5 vCPU where AWS's medium is 1.0 vCPU -- half,
-// not matching, despite using the same size name (see
-// docs/azure-aws-parity-todo.md's Priority 4 size-table-consolidation
-// item). Returns an error if the result would exceed the Consumption
-// tier's per-container limit -- see azureConsumptionMaxCPU's own
-// comment for why this wasn't previously reachable (the old table
-// topped out at 1.0 vCPU for "large", comfortably under the 2 vCPU cap;
-// deriving from AWS's table directly reaches 4.0 vCPU for "large",
-// which is over it) and needed the rejection added at the same time as
-// the table consolidation, not as a separate step.
+// getCPUCoresAzure converts service size or explicit CPU to cores, using
+// shared.SizeMappings (converted from ECS CPU units to vCPU cores).
+// Returns an error if the result exceeds the Consumption tier's
+// per-container limit.
 //
-// This only checks CPU's own ceiling, not whether the returned value
-// pairs validly with whatever getMemoryGBAzure resolves separately --
-// see resolveContainerResourcesAzure, which is what callers should use
-// so both values are validated together as the pair Azure actually
-// requires.
+// This only checks CPU's own ceiling; use resolveContainerResourcesAzure
+// to validate the CPU/memory pair together as Azure requires.
 func getCPUCoresAzure(service *models.Service) (float64, error) {
 	if service.CPU != nil {
 		cores := float64(*service.CPU) / 1024.0
@@ -515,10 +426,9 @@ func getCPUCoresAzure(service *models.Service) (float64, error) {
 }
 
 // getMemoryGBAzure converts service size or explicit memory to a GB
-// string. See getCPUCoresAzure's own doc
-// comment for the size-table consolidation and ceiling-rejection this
-// mirrors on the memory side, and resolveContainerResourcesAzure for why
-// this alone doesn't guarantee a valid Consumption-plan pairing.
+// string, applying the same ceiling check as getCPUCoresAzure. Use
+// resolveContainerResourcesAzure to validate the CPU/memory pair
+// together.
 func getMemoryGBAzure(service *models.Service) (string, error) {
 	if service.Memory != nil {
 		gb := float64(*service.Memory) / 1024.0
@@ -545,9 +455,7 @@ func getMemoryGBAzure(service *models.Service) (string, error) {
 }
 
 // memoryGBFromContainerAppsString parses back the "<N>Mi"/"<N>Gi" shape
-// getMemoryGBAzure returns into GiB, so resolveContainerResourcesAzure
-// can validate it against azureCPUMemoryPairAzure without either
-// function needing to know the other's string format.
+// getMemoryGBAzure returns into GiB.
 func memoryGBFromContainerAppsString(memory string) (float64, error) {
 	switch {
 	case strings.HasSuffix(memory, "Mi"):
@@ -568,9 +476,8 @@ func memoryGBFromContainerAppsString(memory string) (float64, error) {
 }
 
 // resolveContainerResourcesAzure resolves a service's CPU/memory and
-// validates them as the single pair Consumption plan requires, not as
-// two independently-under-the-cap values -- see azureCPUMemoryPairAzure
-// for why that distinction is real, not pedantic.
+// validates them as the single pair the Consumption plan requires, not
+// as two independently-under-the-cap values.
 func resolveContainerResourcesAzure(service *models.Service) (float64, string, error) {
 	cpu, err := getCPUCoresAzure(service)
 	if err != nil {
@@ -591,17 +498,10 @@ func resolveContainerResourcesAzure(service *models.Service) (float64, string, e
 }
 
 // azureProbeIntervalSeconds and azureProbeMaxFailureCount are the
-// interval/threshold this codebase always uses when expressing
-// StartupGracePeriod as a startup_probe budget (see healthProbesAzure).
-// Not the schema's own ceiling (interval_seconds and
-// failure_count_threshold both individually allow up to 240) -- picked
-// so the interval matches the already-prototyped, documented approach
-// (docs/spikes/azure/README.md's finding #4, docs/spikes/azure/doctor.tf's
-// startup_probe) rather than inventing a new one, and so
-// azureProbeMaxFailureCount's own product with the interval defines the
-// largest StartupGracePeriod this mapping can express at all (240*10 =
-// 2400s = 40 minutes) before rejecting outright rather than silently
-// truncating to a shorter window than the user actually asked for.
+// interval/threshold used when expressing StartupGracePeriod as a
+// startup_probe budget. Their product defines the largest
+// StartupGracePeriod this mapping can express (240*10 = 2400s = 40
+// minutes) before rejecting outright.
 const (
 	azureProbeIntervalSeconds = 10
 	azureProbeMaxFailureCount = 240
@@ -609,36 +509,20 @@ const (
 
 // healthProbesAzure builds Container Apps' liveness_probe/startup_probe
 // values from a service's ingress health check and StartupGracePeriod.
-// Returns single pointers, not the []ContainerAppProbe slices the
-// schema's own cardinality requires (see ContainerAppProbe's own doc
-// comment for why the model field is a slice) -- the caller wraps each
-// into a one-element slice, since this codebase never has a reason to
-// set more than one of each and a single pointer is simpler to build
-// and test here.
+// Returns single pointers rather than slices; the caller wraps each into
+// a one-element slice.
 //
 // Only liveness_probe and startup_probe are built, not readiness_probe:
-// AWS's own equivalent (the ALB target-group health check,
-// aws/compute.go's handleIngress) has no concept of "ready to receive
-// traffic but not yet considered healthy" distinct from "healthy" --
-// one check serves both roles there, which liveness_probe alone mirrors
-// here. readiness_probe would be a genuinely new capability beyond
-// parity, not a gap to close.
+// this codebase has no concept of "ready but not yet healthy" distinct
+// from "healthy".
 //
-// Container Apps has no direct equivalent of ECS's HealthCheckGracePeriodSecs
-// (a load-balancer-level "ignore failures for N seconds after start");
-// its nearest expression is a startup_probe whose failure budget covers
-// the same window -- approximate, not equivalent, exactly as
-// docs/spikes/azure/README.md's finding #4 and doctor.tf's own prototype
-// already found and documented before any of this was wired up. 120s
-// becomes 12 failures at a 10s interval; StartupGracePeriod=0 (or nil)
-// omits startup_probe entirely, since a zero-failure-budget probe would
-// be meaningless.
+// Container Apps has no direct equivalent of a load-balancer-level
+// "ignore failures for N seconds after start"; startup_probe's failure
+// budget approximates it. 120s becomes 12 failures at a 10s interval;
+// StartupGracePeriod=0 (or nil) omits startup_probe entirely.
 //
-// service.Ingress.HealthCheck's Type (http/tcp) maps directly to
-// Transport (HTTP/TCP, confirmed against the real provider schema and
-// docs/spikes/azure/doctor.tf's own casing) -- Path is only meaningful
-// for HTTP, so it's left empty for TCP rather than carried over
-// unused.
+// HealthCheck.Type (http/tcp) maps directly to Transport (HTTP/TCP);
+// Path is only meaningful for HTTP, so it's left empty for TCP.
 func healthProbesAzure(service *models.Service) (liveness, startup *models.ContainerAppProbe, err error) {
 	ingress := service.Ingress
 	port := 80
@@ -685,12 +569,9 @@ func healthProbesAzure(service *models.Service) (liveness, startup *models.Conta
 }
 
 // inferScheduledJobs creates a Container Apps Job for each scheduled
-// service.
-//
-// A Job runs to completion on its trigger and stops, which is what a
-// schedule asks for. Deploying these as Container Apps instead runs a
-// nightly task continuously, and restarts one that exits as soon as it has
-// finished.
+// service: a Job runs to completion on its trigger and stops, rather
+// than running continuously and restarting once it exits.
+
 // managedIdentityAzure builds the `identity` block shared by Container
 // Apps and Jobs: a user-assigned identity when the environment names one,
 // otherwise a system-assigned identity Azure creates and manages itself.
@@ -701,18 +582,10 @@ func managedIdentityAzure(identityID string) *models.ManagedIdentity {
 	return &models.ManagedIdentity{Type: "SystemAssigned"}
 }
 
-// defaultAutoScalingConfigAzure mirrors aws/compute.go's own
-// defaultAutoScalingConfig(): CPU 70%/Memory 80%, matching
-// shared.AutoScalingCPUTarget/AutoScalingMemoryTarget. Used whenever a
-// service declares max_scale>1 but no explicit auto_scaling block --
-// see inferContainerApps's own comment on this for why it's needed at
-// all (without it, such a service got zero scale rules on Azure, unlike
-// AWS which has applied this default since the original port).
-// ScaleInCooldown/ScaleOutCooldown aren't included: those are
-// AppAutoscalingPolicy-specific fields with no Container Apps
-// equivalent (KEDA's own cooldownPeriod/pollingInterval live on the
-// template, not per-rule, and aren't wired here -- see
-// docs/azure-aws-parity-todo.md for other Azure/AWS granularity gaps).
+// defaultAutoScalingConfigAzure returns CPU 70%/Memory 80% scaling,
+// matching shared.AutoScalingCPUTarget/AutoScalingMemoryTarget. Used
+// whenever a service declares max_scale>1 but no explicit auto_scaling
+// block.
 func defaultAutoScalingConfigAzure() *models.AutoScalingConfig {
 	return &models.AutoScalingConfig{
 		Metrics: []models.AutoScalingMetric{
@@ -724,21 +597,14 @@ func defaultAutoScalingConfigAzure() *models.AutoScalingConfig {
 
 // identityForService picks which identity a specific service's Container
 // App/Job should use: the app-wide managed-service identity only if this
-// particular service's own authored `environment:` values actually
-// reference a database/cache/storage connection (see permissions.go's
-// referencedServersAzure/inferManagedServiceIdentity), falling back to
-// identityID (env.UserAssignedIdentityID, or "" for system-assigned) for
-// every other service. Without this per-service check, every service in
-// the app would switch to UserAssigned the moment *any* service needed
-// the managed-service identity -- e.g. an app's "frontend" service with
-// no relationship to "db" at all would still switch identity types for
-// no reason.
+// service actually references a database/cache/storage connection,
+// falling back to identityID otherwise. Without this per-service check,
+// every service would switch to UserAssigned the moment any service
+// needed the managed-service identity.
 //
 // Checks actual env-var usage (referenced), not app.Relationships
-// (compose depends_on:) directly: a service could depends_on: db for
-// pure startup-ordering reasons, never reference it in an env var at
-// all, and shouldn't need the managed-service identity (and therefore
-// Key Vault/storage access) just because of that ordering hint.
+// (depends_on:) directly: a service could depends_on: db purely for
+// startup ordering, without referencing it in an env var.
 func identityForService(
 	service *models.Service,
 	identityID, managedServiceIdentityID string,
@@ -860,24 +726,7 @@ func inferContainerApps(
 
 		// Build scale rules. azurerm models HTTP scaling as its own
 		// http_scale_rule block with a concurrent_requests string, and
-		// CPU/Memory as generic custom_scale_rule (KEDA) blocks -- not a
-		// single uniform shape the way AWS's AppAutoscalingPolicy is.
-		//
-		// Note that the semantic model's AutoScalingMetric.type field
-		// never actually allows "http" (Literal["cpu", "memory",
-		// "requests_per_target"]), so there is no way to construct a
-		// metric with that type in the first place -- an explicit check
-		// for it here would be dead code.
-		//
-		// CPU/Memory custom_scale_rule support and the
-		// MaxScale>1-with-no-explicit-policy default: without them, a
-		// service with max_scale>1 but no ingress and no explicit
-		// auto_scaling block got zero scale rules -- min/max replicas
-		// were honored, but nothing ever drove scaling past 1. Mirrors
-		// aws/compute.go's defaultAutoScalingConfig(): applies whenever
-		// service.AutoScaling is nil, regardless of whether ingress is
-		// present (unlike the http-default rule below, which only
-		// applies when there's ingress but no explicit policy).
+		// CPU/Memory as generic custom_scale_rule (KEDA) blocks.
 		autoScaling := service.AutoScaling
 		if autoScaling == nil && maxReplicas > 1 {
 			autoScaling = defaultAutoScalingConfigAzure()

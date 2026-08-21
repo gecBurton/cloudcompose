@@ -15,9 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mainCmd is the primary compile command: parse, normalize, (optionally
-// explain), compile, and write Terraform JSON to disk, plus copying any
-// Docker build contexts alongside the manifest.
+// mainCmd parses, normalizes, compiles, and writes Terraform JSON to
+// disk, plus copying any Docker build contexts alongside the manifest.
 var mainCmd = &cobra.Command{
 	Use:   "compile",
 	Short: "Compile a Docker Compose file into deterministic Terraform JSON",
@@ -73,13 +72,7 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// --env and --demo are mutually exclusive, deliberate ways to supply
-	// an environment: one reads real Terraform-managed facts, the other
-	// synthesizes plausible-looking placeholder ones. Requiring exactly
-	// one (not defaulting either way when both are absent, and not
-	// silently preferring one when both are given) matches init.go's own
-	// "one way to configure, not two" reasoning -- this is the same
-	// choice applied to a second decision point.
+	// --env and --demo are mutually exclusive: exactly one is required.
 	if envDir == "" && demoCloud == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env or --demo is required to compile")
 		os.Exit(1)
@@ -98,15 +91,12 @@ func runMain(cmd *cobra.Command, args []string) {
 	fmt.Printf("Success! Terraform manifest written to %s\n", filepath.Join(outputDir, "main.tf.json"))
 }
 
-// compileApp does everything `cloudcompose compile` does -- load the
-// environment (from envDir, or synthesize one from demoCloud), parse and
-// normalize composeFile, infer and generate Terraform JSON, and write it
-// (plus copying any Docker build contexts) to <dir of composeFile>/
-// app-<environment name> -- and returns that output directory. Exactly
-// one of envDir/demoCloud must be non-empty; the caller (runMain, or
-// cloudcompose up in up.go) is responsible for enforcing that and for
-// printing the --demo warning banner, since up.go's own messaging
-// differs slightly from runMain's.
+// compileApp loads the environment (from envDir, or synthesizes one
+// from demoCloud), parses and normalizes composeFile, infers and
+// generates Terraform JSON, and writes it (plus any Docker build
+// contexts) to <dir of composeFile>/app-<environment name>-<project
+// name>, returning that output directory. Exactly one of
+// envDir/demoCloud must be non-empty.
 func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex int) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
@@ -143,34 +133,20 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 	}
 
 	// Output lands in <dir of -f>/app-<environment name>-<project name>,
-	// not a fixed "terraform" directory: the same compose.yml compiled
-	// against two different environments (e.g. dev vs prod) must not
-	// overwrite each other's output, and two different --project values
-	// compiled against the *same* environment must not either -- every
-	// resource this compile produces is named env.Name-app.Name-... (see
-	// e.g. aws/infer.go's getName closure), so two different project
-	// names really do produce two different, non-interchangeable sets of
-	// resources; the output directory naming must not imply they're the
-	// same deployment. Named to pair with init's own env-<name> output
-	// directory -- app-<name>-<project> is this app's slice of that
-	// environment's name plus its own identity within it.
+	// not a fixed "terraform" directory, so different environments or
+	// projects compiled from the same compose file don't overwrite each
+	// other's output.
 	envName, err := environmentName(env)
 	if err != nil {
 		return "", err
 	}
 	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName)
 
-	// --subnet-index only means something on Azure -- see
-	// AzureEnvironment.SubnetIndex's own doc comment for why it's a
-	// flag (a per-app decision) rather than an environment.yaml field
-	// (a per-environment one), and docs/azure-app-isolation-design.md
-	// for the full design. Ignored on AWS/GCP, which need no per-app
-	// subnet: their own isolation model doesn't have this gap.
+	// --subnet-index only means something on Azure; ignored on AWS/GCP.
 	if azureEnv, ok := env.(*models.AzureEnvironment); ok {
 		azureEnv.SubnetIndex = subnetIndex
 	}
 
-	// 2. Compile.
 	fmt.Printf("Compiling: %s -> %s (%s)\n", composeFile, projectName, target)
 
 	composeApp, err := compiler.ParseCompose(composeFile)
@@ -196,20 +172,10 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 	}
 
 	tfJSON, err := compileTerraform(composeFile, env, projectName)
-	// Note: for AWS/Azure/GCP environments this re-parses and
-	// re-normalizes the compose file a second time (the Go compile-<cloud>
-	// subcommand does parse+normalize+infer+generate in one call,
-	// separately from the `semantic` object already built above for the
-	// warnings step). Redundant work, not a correctness issue -- threading
-	// a pre-parsed Application through would require the Go backends to
-	// accept semantic JSON input, which the Schedule interface type makes
-	// non-trivial, so each cloud's own one-step CLI subcommand design
-	// (compiler/infer_*.go) just re-does the parse/normalize step instead.
 	if err != nil {
 		return "", err
 	}
 
-	// 3. Write output.
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return "", err
 	}
@@ -218,7 +184,6 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		return "", err
 	}
 
-	// Copy any Docker build contexts next to the manifest.
 	composeDir := filepath.Dir(absCompose)
 	if err := copyDockerBuildContexts(tfJSON, composeDir, outputDir); err != nil {
 		return "", err
@@ -242,21 +207,9 @@ func environmentTarget(env any) (string, error) {
 	}
 }
 
-// requireAwsOrAzure rejects env if it isn't an AWS or Azure environment,
-// naming cmdName (e.g. "ps", "logs") in the resulting error the same way
-// each command's own type-switch default case already did. Every one of
-// ps/logs/down's own real work (aws.FetchStatus/FetchLogs,
-// azure.FetchStatus/FetchLogs) only exists for AWS/Azure; GCP has no
-// equivalent yet, and unlike an actually-unsupported target,
-// LoadEnvironment itself has nothing to reject for GCP -- it's a real,
-// supported cloudcompose target elsewhere (compile/init), just not for
-// these three commands specifically. Callers use this to fail
-// immediately after LoadEnvironment succeeds, before doing any further
-// work (parsing/normalizing compose.yml, or in ps.go's original bug,
-// even reaching the type switch that would have rejected it anyway) --
-// found during a review as unnecessary wasted work on a GCP environment
-// specifically, not a correctness bug (the command still failed
-// correctly, just later than it needed to).
+// requireAwsOrAzure rejects env if it isn't an AWS or Azure
+// environment, naming cmdName (e.g. "ps", "logs") in the resulting
+// error.
 func requireAwsOrAzure(cmdName string, env any) error {
 	switch env.(type) {
 	case *models.AwsEnvironment, *models.AzureEnvironment:
@@ -267,12 +220,8 @@ func requireAwsOrAzure(cmdName string, env any) error {
 	}
 }
 
-// environmentName reports the environment's own name (the same `name:`
-// authored in environment.yaml, or "demo" for --demo's synthetic
-// environments), used to build compile's own output directory
-// (app-<name>) -- see that call site's own comment for why this needs
-// to vary per environment rather than being a fixed "terraform"
-// directory.
+// environmentName reports the environment's own name (the `name:`
+// authored in environment.yaml, or "demo" for --demo).
 func environmentName(env any) (string, error) {
 	switch e := env.(type) {
 	case *models.AwsEnvironment:
@@ -286,12 +235,8 @@ func environmentName(env any) (string, error) {
 	}
 }
 
-// environmentBackend reports the environment's own Backend config (nil
-// if none was configured -- see docs/multi-user-state.md's "no backend
-// configured" default), mirroring environmentName's own per-cloud
-// type-switch shape exactly. Used by envDestroyCmd (env_destroy.go) to
-// decide whether/how to run the dependent-app safety check before
-// tearing an environment down.
+// environmentBackend reports the environment's Backend config (nil if
+// none configured).
 func environmentBackend(env any) (*models.BackendConfig, error) {
 	switch e := env.(type) {
 	case *models.AwsEnvironment:
@@ -305,16 +250,9 @@ func environmentBackend(env any) (*models.BackendConfig, error) {
 	}
 }
 
-// appDir reports the same app-<environment name>-<project name> output
-// directory compileApp writes to for composeFile compiled against the
-// environment in envDir under projectName, without compiling anything
-// -- used by `cloudcompose down` (down.go) to find an already-compiled
-// app's directory to run `terraform destroy` in. projectName must be
-// resolved (defaulted from the compose file's own directory name, same
-// as compileApp does) by the caller before calling this -- see down.go's
-// own use of resolveProjectName. Deliberately takes no --demo option:
-// demo environments never produce real infrastructure, so there is
-// nothing for `down` to destroy against one.
+// appDir reports the app-<environment name>-<project name> output
+// directory compileApp writes to, without compiling anything.
+// projectName must already be resolved by the caller.
 func appDir(composeFile, envDir, projectName string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
@@ -331,30 +269,11 @@ func appDir(composeFile, envDir, projectName string) (string, error) {
 	return filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName), nil
 }
 
-// resolveProjectName returns projectName unchanged if the caller gave
-// one explicitly via -p/--project; otherwise it defaults to
-// composeFile's own containing directory's name, exactly matching
-// compileApp's own default so a caller resolving the project name ahead
-// of compileApp (as down.go must, to reconstruct the same output
-// directory without compiling anything) gets the identical value.
-// resolveProjectName returns projectName unchanged if the caller gave
-// one explicitly via -p/--project; otherwise it defaults to
-// composeFile's own containing directory's name, exactly matching
-// compileApp's own default so a caller resolving the project name ahead
-// of compileApp (as down.go must, to reconstruct the same output
-// directory without compiling anything) gets the identical value.
-//
-// Validates the resolved name via shared.ValidateBackendName before
-// returning it -- mirroring initconfig.Validate's identical check on an
-// environment's own `name:` -- since this is the same value
-// shared.BackendKeyForApp uses to build an app's backend state key
-// (docs/multi-user-state.md), and an unsanitized "/" in --project could
-// otherwise collide with another environment's or app's own key (see
-// ValidateBackendName's own doc comment for the concrete collision).
-// This applies even when the name came from the compose file's own
-// directory name (the default case), not just an explicit --project,
-// since a directory name is still an untrusted string as far as backend
-// key construction is concerned.
+// resolveProjectName returns projectName unchanged if given explicitly
+// via -p/--project; otherwise it defaults to composeFile's own
+// containing directory name. Validates the resolved name via
+// shared.ValidateBackendName, since it's used to build backend state
+// keys and an unsanitized name could collide with another app's key.
 func resolveProjectName(composeFile, projectName string) (string, error) {
 	if projectName == "" {
 		absCompose, err := filepath.Abs(composeFile)
@@ -369,12 +288,7 @@ func resolveProjectName(composeFile, projectName string) (string, error) {
 	return projectName, nil
 }
 
-// demoEnvironment builds a synthetic environment for --demo, one of the
-// same NewDemo*Environment values every golden fixture proves compiles
-// cleanly through the real infer/generate pipeline (see each
-// NewDemo*Environment's own doc comment in internal/models/environment.go).
-// Returns a pointer, matching what LoadEnvironment returns for a real
-// environment, since compileTerraform's own type switch expects one.
+// demoEnvironment builds a synthetic environment for --demo.
 func demoEnvironment(cloud string) (any, error) {
 	switch cloud {
 	case "aws":
@@ -391,11 +305,9 @@ func demoEnvironment(cloud string) (any, error) {
 	}
 }
 
-// compileTerraform dispatches to the correct Go compile-<cloud> pipeline
-// based on the concrete environment type: parse, normalize, infer, and
-// generate, all again from the compose file (see the note at this
-// function's call site for why that repeats work already done for the
-// warnings step above, and why that's not fixed here).
+// compileTerraform dispatches to the correct Go compile-<cloud>
+// pipeline based on the concrete environment type: parse, normalize,
+// infer, and generate.
 func compileTerraform(composeFile string, env any, projectName string) (string, error) {
 	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {

@@ -7,10 +7,7 @@ import (
 
 // LoadGcpEnvironment resolves a GCP environment's facts by running
 // `terraform output -json` in dir and decoding its `environment` output
-// into models.GcpEnvironment. See aws.LoadAwsEnvironment's own doc
-// comment for why this reads Terraform's own live state rather than a
-// generated file, and for the optional `backend` output this also
-// decodes into env.Backend.
+// into models.GcpEnvironment.
 func LoadGcpEnvironment(dir string) (*models.GcpEnvironment, error) {
 	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {
@@ -33,10 +30,7 @@ func LoadGcpEnvironment(dir string) (*models.GcpEnvironment, error) {
 		env.RetainDataOnDestroy = *common.RetainDataOnDestroy
 	}
 	// GcpEnvironment has no HighAvailabilityEnabled/BackupRetentionDays
-	// fields (see docs/azure-aws-parity-todo.md's "Backup/HA settings
-	// not wired for GCP" item -- Cloud SQL has its own equivalent
-	// settings, left for a follow-up), so common.HighAvailabilityEnabled/
-	// BackupRetentionDays are decoded but deliberately never copied here.
+	// fields, so those common fields are decoded but not copied here.
 	env.Tags = common.Tags
 
 	env.ProjectID, _ = raw["project_id"].(string)

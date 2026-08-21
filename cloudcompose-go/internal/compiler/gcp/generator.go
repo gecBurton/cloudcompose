@@ -7,10 +7,6 @@ import (
 
 // GenerateGcp renders a Terraform JSON manifest for the given GCP
 // resources and environment.
-//
-// projectName mirrors aws.GenerateAWS's own parameter of the same name
-// -- see its doc comment for what it's used for and when it has no
-// effect.
 func GenerateGcp(resources *models.GcpResources, env *models.GcpEnvironment, projectName string) (string, error) {
 	requiredProviders := map[string]any{
 		"google": map[string]any{"source": "hashicorp/google", "version": "~> 5.0"},

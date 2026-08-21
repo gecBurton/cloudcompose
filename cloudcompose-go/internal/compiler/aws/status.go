@@ -1,8 +1,3 @@
-// Package aws contains AWS-specific inference and Terraform generation.
-// This file adds a separate concern: live status ("cloudcompose ps"),
-// entirely independent of the parse/normalize/infer/generate pipeline
-// used everywhere else in this package. It never touches Terraform
-// state or output -- see status.go's own doc comment for why.
 package aws
 
 import (
@@ -23,36 +18,25 @@ import (
 // ServiceStatus is one row of `cloudcompose ps` output: a compose
 // service's live status on AWS, or the reason it has none.
 type ServiceStatus struct {
-	// Name is the compose service name (e.g. "web"), not the AWS
-	// resource name -- ps is keyed by what the user wrote in
-	// compose.yml, matching `docker compose ps`'s own NAME column.
+	// Name is the compose service name, not the AWS resource name.
 	Name string
 
-	// AWSName is the ECS service name ps computed and queried AWS for
-	// (env.Name-app.Name-service.Name, the same formula InferAWS's own
-	// getName closure uses -- see status.go's doc comment for why this
-	// is recomputed rather than read from anywhere).
+	// AWSName is the ECS service name ps queried AWS for.
 	AWSName string
 
-	// Found is false when ECS has no service by that name at all: not
-	// yet deployed, or deployed under a name that no longer matches
-	// (e.g. the environment or project name changed since). Every
-	// other field is meaningless when this is false.
+	// Found is false when ECS has no service by that name. Every other
+	// field is meaningless when this is false.
 	Found bool
 
-	// Status is ECS's own service status string (ACTIVE/DRAINING/etc.),
-	// verbatim from DescribeServices.
+	// Status is ECS's own service status string (ACTIVE/DRAINING/etc.).
 	Status string
 
 	DesiredCount int32
 	RunningCount int32
 	PendingCount int32
 
-	// HasIngress is true when the compose service declared a port that
-	// InferAWS would have wired to the shared ALB -- see
-	// createEcsService/handleIngress in compute.go. Determines whether
-	// Healthy/Unhealthy below are meaningful at all: a service with no
-	// ingress has no target group, so those fields stay zero.
+	// HasIngress is true when the service has a target group, making
+	// Healthy/Unhealthy meaningful.
 	HasIngress bool
 	Healthy    int
 	Unhealthy  int
@@ -65,18 +49,13 @@ type ecsClient interface {
 }
 
 // elbClient is the subset of *elasticloadbalancingv2.Client that
-// FetchStatus needs, mirroring ecsClient's rationale.
+// FetchStatus needs.
 type elbClient interface {
 	DescribeTargetHealth(ctx context.Context, params *elasticloadbalancingv2.DescribeTargetHealthInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetHealthOutput, error)
 }
 
 // NewAWSClients builds the real AWS SDK clients FetchStatus needs from
-// the ambient credential chain (environment variables, shared config/
-// credentials files, EC2/ECS instance role, or SSO -- whatever
-// config.LoadDefaultConfig already knows how to find; see AGENTS.md's
-// note that this is the same credential surface CI's
-// aws-actions/configure-aws-credentials and local aws-vault already
-// populate, so ps needs no new auth code of its own).
+// the ambient credential chain.
 func NewAWSClients(ctx context.Context, region string) (ecsClient, elbClient, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
@@ -86,28 +65,10 @@ func NewAWSClients(ctx context.Context, region string) (ecsClient, elbClient, er
 }
 
 // FetchStatus queries live ECS/ELB status for every container service in
-// app, against the cluster env points at.
-//
-// Deliberately independent of Terraform state/output: env.Name and
-// app.Name are exactly the same two inputs InferAWS's own getName
-// closure combines (env.Name + "-" + app.Name + "-" + resourceName,
-// infer.go) to name every AWS resource cloudcompose creates, so ps
-// recomputes the ECS service name itself rather than reading it back
-// from a `terraform show -json` state file or a Terraform output --
-// there is no such output today (see PR discussion), and even if there
-// were, it would just be re-stating what compose.yml + environment.yaml
-// already imply. Only compose.yml's *runtime* status is genuinely new
-// information ps can offer; anything else it could show is already
-// fully determined by the static inputs the user already has.
-//
-// One DescribeServices call covers up to 10 services (AWS's own limit);
-// FetchStatus batches automatically. Target-group health for services
-// with ingress is fetched with one DescribeTargetHealth call per
-// service, chained off the target group ARN DescribeServices itself
-// returns -- not by re-deriving the target group's name, which has its
-// own 32-character truncation risk compute.go's own naming doesn't
-// guard against (see handleIngress's tg.Name = getName(service.Name +
-// "-tg")).
+// app, against the cluster env points at. Batches DescribeServices calls
+// (10 services per call, AWS's own limit) and fetches target-group
+// health for services with ingress via one DescribeTargetHealth call per
+// service.
 func FetchStatus(ctx context.Context, ecsC ecsClient, elbC elbClient, app *models.Application, env *models.AwsEnvironment) ([]ServiceStatus, error) {
 	getName := shared.ResourceNamer(env.Name, app.Name)
 
@@ -118,9 +79,6 @@ func FetchStatus(ctx context.Context, ecsC ecsClient, elbC elbClient, app *model
 			continue
 		}
 		if service.Schedule != nil {
-			// Scheduled tasks never get an ECS service of their own
-			// (see compute.go: "Only create service if not
-			// scheduled.") -- nothing for ps to query.
 			continue
 		}
 		containerServices = append(containerServices, service)
@@ -191,9 +149,8 @@ func FetchStatus(ctx context.Context, ecsC ecsClient, elbC elbClient, app *model
 	return result, nil
 }
 
-// targetHealth sums healthy/unhealthy target counts across every target
-// group an ECS service's own LoadBalancers list references (ordinarily
-// just one, but the API allows more).
+// targetHealth sums healthy/unhealthy target counts across the target
+// groups an ECS service's LoadBalancers list references.
 func targetHealth(ctx context.Context, elbC elbClient, loadBalancers []ecstypes.LoadBalancer) (healthy, unhealthy int, err error) {
 	for _, lb := range loadBalancers {
 		if lb.TargetGroupArn == nil {

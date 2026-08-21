@@ -8,34 +8,25 @@ import (
 )
 
 // appPerAppCIDRNewbits and appSubnetNewbits are the two levels of CIDR
-// carving docs/azure-app-isolation-design.md's "Decided: CIDR math"
-// section works out: AppsCIDR is a /17 (half the VNet); each app gets
-// its own /24 (newbits=7, netnum=SubnetIndex) out of that; each app's
-// own four subnets are /26s (newbits=2, netnum=0..3) carved out of its
-// /24. /26 = 64 addresses, double Container Apps' own documented /27
-// minimum for workload-profile environments -- confirmed against
-// Microsoft's own networking docs, not assumed. This supports up to 128
-// apps per Cloud Compose Environment at the default /16 VNet size
-// (32,768 AppsCIDR addresses / 1,024 per app).
+// carving: AppsCIDR is a /17 (half the VNet); each app gets its own /24
+// (newbits=7, netnum=SubnetIndex) out of that; each app's own four
+// subnets are /26s (newbits=2, netnum=0..3) carved out of its /24. /26 =
+// 64 addresses, double Container Apps' documented /27 minimum. This
+// supports up to 128 apps per Cloud Compose Environment at the default
+// /16 VNet size.
 const (
 	appPerAppCIDRNewbits = 7
 	appSubnetNewbits     = 2
 )
 
-// appSubnetsAzure creates this app's own Container Apps Environment and
-// its four delegated subnets (infrastructure/postgresql/mysql/redis),
-// carved out of env.AppsCIDR at env.SubnetIndex -- the resources
-// cloudcompose init used to create once, shared across every app, before
-// docs/azure-app-isolation-design.md's redesign. Sets
+// appSubnetsAzure creates this app's Container Apps Environment and its
+// four delegated subnets (infrastructure/postgresql/mysql/redis), carved
+// out of env.AppsCIDR at env.SubnetIndex. Sets
 // env.InfrastructureSubnetID/PostgresqlSubnetID/MysqlSubnetID/
-// RedisSubnetID for every downstream inference function that already
-// consumed them from the environment's own Terraform outputs (managed.go's
-// privateNetworkingAzure/privateEndpointRedisAzure) -- those functions are
-// unchanged; only where these four values come from moved.
+// RedisSubnetID for downstream inference functions to consume.
 //
 // Must run before anything that reads those four fields, or the
-// Container App/Job resources that reference this environment's own ID
-// (compute.go's ContainerAppEnvironmentID).
+// Container App/Job resources that reference this environment's ID.
 func appSubnetsAzure(
 	resources *models.AzureResources,
 	app *models.Application,

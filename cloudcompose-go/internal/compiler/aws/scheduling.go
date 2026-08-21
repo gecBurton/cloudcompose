@@ -8,10 +8,8 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// InferScheduledTasks infers EventBridge scheduled task resources.
-//
-// Services with a schedule do not run as persistent ECS services. They are
-// triggered as standalone tasks via EventBridge.
+// InferScheduledTasks creates EventBridge rules to trigger standalone ECS
+// tasks for services with a schedule, instead of a persistent ECS service.
 func InferScheduledTasks(
 	resources *models.AWSResources,
 	app *models.Application,
@@ -30,7 +28,6 @@ func InferScheduledTasks(
 			return err
 		}
 
-		// Create EventBridge rule.
 		ruleKey := service.Name + "_rule"
 		rule := models.NewCloudwatchEventRule()
 		rule.Name = getName(service.Name + "-rule")
@@ -40,7 +37,6 @@ func InferScheduledTasks(
 		rule.Tags = tags
 		resources.CloudwatchEventRule[ruleKey] = rule
 
-		// Create IAM role for EventBridge.
 		ebRoleKey := service.Name + "_eb_role"
 		assumeRolePolicy := marshalJSONString(newIAMPolicyDocument(IAMPolicyStatement{
 			Action:    "sts:AssumeRole",
@@ -53,7 +49,6 @@ func InferScheduledTasks(
 			Tags:             tags,
 		}
 
-		// Create IAM policy for EventBridge to run ECS tasks.
 		taskDefKey := service.Name + "_td"
 		ebPolicyKey := service.Name + "_eb_policy"
 		policy := marshalJSONString(IAMPolicyDocument{
@@ -83,7 +78,6 @@ func InferScheduledTasks(
 			Policy: policy,
 		}
 
-		// Create EventBridge target.
 		roleArn := fmt.Sprintf("${aws_iam_role.%s.arn}", ebRoleKey)
 		resources.CloudwatchEventTarget[service.Name+"_target"] = models.CloudwatchEventTarget{
 			Rule:    fmt.Sprintf("${aws_cloudwatch_event_rule.%s.name}", ruleKey),

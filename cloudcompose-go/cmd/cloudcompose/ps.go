@@ -16,11 +16,8 @@ import (
 )
 
 // psCmd shows live status for the services in a compose file, the way
-// `docker compose ps` shows live container status -- but for whatever
-// is actually running on the cloud right now, not for anything
-// Terraform or compose.yml alone can already tell you (see
-// aws.FetchStatus/azure.FetchStatus's own doc comments for why this
-// deliberately never reads Terraform state/output).
+// `docker compose ps` shows live container status -- but queried
+// directly from the cloud, not from Terraform state or compose.yml.
 var psCmd = &cobra.Command{
 	Use:   "ps",
 	Short: "Show live status of deployed services",
@@ -29,14 +26,7 @@ var psCmd = &cobra.Command{
 }
 
 // psRowJSON is the cloud-agnostic shape `ps --json` emits -- one row
-// per compose service, regardless of which cloud produced it. Scripts
-// (e.g. scripts/smoke-test.sh) can assert against this without any
-// cloud-specific parsing, unlike the human-readable table's columns,
-// which genuinely differ between aws.ServiceStatus and
-// azure.ServiceStatus (see those types' own doc comments for why).
-// "Running" deliberately doesn't distinguish AWS's RunningCount from
-// Azure's Replicas by name -- both mean the same thing to a caller
-// that just wants to know "is at least one instance up".
+// per compose service, regardless of which cloud produced it.
 type psRowJSON struct {
 	Name    string `json:"name"`
 	Found   bool   `json:"found"`
@@ -80,10 +70,7 @@ func runPs(cmd *cobra.Command, args []string) {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
-	// Check target support immediately after loading the environment,
-	// before doing any further work (parsing/normalizing compose.yml) --
-	// see requireAwsOrAzure's own doc comment for why this can't just
-	// wait for the type switch below to reject GCP.
+	// Check target support before doing any further work.
 	if err := requireAwsOrAzure(cmd.Name(), env); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -143,20 +130,16 @@ func runPs(cmd *cobra.Command, args []string) {
 		}
 
 	default:
-		// Unreachable in practice: requireAwsOrAzure above already
-		// rejected anything but AWS/Azure. Kept as a defensive default
-		// rather than a panic, in case a future environment type is
-		// added to LoadEnvironment's own return type without this
-		// switch being updated to match.
+		// Unreachable: requireAwsOrAzure above already rejected
+		// anything but AWS/Azure.
 		target, _ := environmentTarget(env)
 		fmt.Fprintf(os.Stderr, "Error: `cloudcompose ps` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
 }
 
-// printAwsPsTable renders AWS ps output in the same spirit as `docker
-// compose ps`: one aligned table, NAME first, a human STATUS summary
-// rather than raw counters where possible.
+// printAwsPsTable renders AWS ps output as an aligned table, NAME
+// first, with a human STATUS summary rather than raw counters.
 func printAwsPsTable(w io.Writer, statuses []aws.ServiceStatus) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tSTATUS\tTASKS\tHEALTH")
@@ -167,8 +150,7 @@ func printAwsPsTable(w io.Writer, statuses []aws.ServiceStatus) {
 }
 
 // psRow formats a single aws.ServiceStatus, matching printAwsPsTable's
-// column order. Split out from printAwsPsTable so tests can assert on
-// formatting without capturing writer output.
+// column order.
 func psRow(s aws.ServiceStatus) string {
 	if !s.Found {
 		return fmt.Sprintf("%s\tnot found\t-\t-", s.Name)
@@ -185,10 +167,7 @@ func psRow(s aws.ServiceStatus) string {
 }
 
 // awsPsRowsJSON converts aws.ServiceStatus into the cloud-agnostic
-// psRowJSON shape -- RunningCount maps to Running, and Health is only
-// populated for services with ingress (aws.ServiceStatus.HasIngress),
-// matching psRow's own "-" placeholder logic for the human-readable
-// table.
+// psRowJSON shape.
 func awsPsRowsJSON(statuses []aws.ServiceStatus) []psRowJSON {
 	rows := make([]psRowJSON, 0, len(statuses))
 	for _, s := range statuses {
@@ -206,9 +185,8 @@ func awsPsRowsJSON(statuses []aws.ServiceStatus) []psRowJSON {
 }
 
 // printAzurePsTable renders Azure ps output, mirroring
-// printAwsPsTable's shape as closely as Container Apps' own status
-// model allows -- see azure.ServiceStatus's own doc comment for why
-// its columns don't line up one-to-one with AWS's.
+// printAwsPsTable's shape as closely as Container Apps' status model
+// allows.
 func printAzurePsTable(w io.Writer, statuses []azure.ServiceStatus) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tSTATUS\tREPLICAS\tHEALTH")
@@ -219,8 +197,7 @@ func printAzurePsTable(w io.Writer, statuses []azure.ServiceStatus) {
 }
 
 // azurePsRow formats a single azure.ServiceStatus, matching
-// printAzurePsTable's column order. Split out from printAzurePsTable so
-// tests can assert on formatting without capturing writer output.
+// printAzurePsTable's column order.
 func azurePsRow(s azure.ServiceStatus) string {
 	if !s.Found {
 		return fmt.Sprintf("%s\tnot found\t-\t-", s.Name)
@@ -235,10 +212,7 @@ func azurePsRow(s azure.ServiceStatus) string {
 }
 
 // azurePsRowsJSON converts azure.ServiceStatus into the cloud-agnostic
-// psRowJSON shape -- ProvisioningState maps to Status, Replicas to
-// Running, and HealthState to Health (already "-"-free at the source,
-// unlike AWS's health string, which azurePsRow's own "-" fallback
-// otherwise only applies to the table renderer).
+// psRowJSON shape.
 func azurePsRowsJSON(statuses []azure.ServiceStatus) []psRowJSON {
 	rows := make([]psRowJSON, 0, len(statuses))
 	for _, s := range statuses {

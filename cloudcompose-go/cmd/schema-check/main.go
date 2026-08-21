@@ -1,28 +1,20 @@
-// Command schema-check is a dev-time tool, not part of the shipped CLI. It
-// fetches the authoritative resource schema for every Terraform provider
-// cloudcompose generates config for (via `terraform providers schema -json`,
-// at the exact versions pinned in the generators' required_providers
-// blocks) and cross-checks it against the Go structs in internal/models
-// that cloudcompose actually marshals into that JSON.
+// Command schema-check is a dev-time tool that fetches the authoritative
+// resource schema for every Terraform provider cloudcompose generates
+// config for (via `terraform providers schema -json`, at the versions
+// pinned in the generators' required_providers blocks) and cross-checks
+// it against the Go structs in internal/models that get marshalled into
+// that JSON.
 //
-// The specific class of bug this exists to catch: Terraform's JSON syntax
-// accepts a bare object as shorthand for a single-element list only when a
-// nested block's schema says nesting_mode is "list"/"set" with max_items
-// <= 1 (or "single"). A block that's genuinely repeatable (no max_items
-// cap) needs a Go slice; a bare struct field would silently only ever be
-// able to express one entry. This is exactly the shape of bug found by
-// hand in azurerm_container_app_job's schedule_trigger_config/template --
-// this tool exists so the next one is caught by running it, not by
-// manually re-reading provider docs field by field.
+// It specifically catches a Go slice field that should be a bare struct
+// (or vice versa) for a nested Terraform block, based on the block's
+// nesting_mode/max_items in the fetched schema.
 //
 // Usage:
 //
 //	go run ./cmd/schema-check
 //
-// Requires the `terraform` CLI on PATH. Exits non-zero if any check finds
-// a mismatch definite enough to report (see "Confidence" below); always
-// prints every block it could not confidently classify, since those are
-// exactly the cases a human still needs to read the provider docs for.
+// Requires the `terraform` CLI on PATH. Exits non-zero if any check
+// finds a definite mismatch.
 package main
 
 import (
@@ -38,12 +30,12 @@ import (
 )
 
 // providerSpec is one entry in the required_providers block cloudcompose's
-// own generators declare, plus the registry source path terraform
-// providers schema -json keys its output by.
+// generators declare, plus the registry source path terraform providers
+// schema -json keys its output by.
 type providerSpec struct {
-	localName string // e.g. "aws" -- the key generators use, irrelevant here but documents provenance
-	source    string // e.g. "hashicorp/aws"
-	version   string // e.g. "~> 5.0" -- copied verbatim from the generator
+	localName string
+	source    string
+	version   string
 }
 
 // resourceSet describes one *Resources struct in internal/models and
@@ -51,8 +43,8 @@ type providerSpec struct {
 // checked against.
 type resourceSet struct {
 	name      string
-	providers []string // registry sources this struct's resource types may come from
-	value     any      // a zero value of the *Resources struct, for reflection
+	providers []string
+	value     any
 }
 
 func main() {
@@ -101,10 +93,8 @@ func main() {
 
 // fetchSchema runs `terraform init` + `terraform providers schema -json`
 // in a scratch directory declaring every provider cloudcompose generates
-// config for, at the same version constraints the generators themselves
-// pin. Real network access to the Terraform registry is required; this
-// is a dev-time check, not something run as part of `cloudcompose`'s own
-// compile path.
+// config for, at the same version constraints the generators pin.
+// Requires real network access to the Terraform registry.
 func fetchSchema(dir string, providers []providerSpec) (map[string]any, error) {
 	var b strings.Builder
 	b.WriteString("terraform {\n  required_providers {\n")
@@ -138,8 +128,8 @@ func fetchSchema(dir string, providers []providerSpec) (map[string]any, error) {
 }
 
 // blockSchema is the part of a provider's resource_schemas[type].block
-// this tool actually consults: which nested attributes are themselves
-// blocks, and how each nests.
+// this tool consults: which nested attributes are blocks, and how each
+// nests.
 type blockSchema struct {
 	blockTypes map[string]nestedBlock
 }
@@ -151,10 +141,9 @@ type nestedBlock struct {
 }
 
 // resourceBlock looks up a resource type's top-level block schema across
-// every provider source listed, since cloudcompose's own field-to-resource
-// mapping doesn't record which provider a given resource type belongs to
-// (it doesn't need to -- Terraform itself resolves that from the
-// resource type's own name prefix, e.g. "aws_" / "azurerm_" / "docker_").
+// every provider source listed, since a resource type's own name prefix
+// (e.g. "aws_"/"azurerm_"/"docker_") determines its provider, not any
+// mapping recorded here.
 func resourceBlock(schema map[string]any, providerSources []string, resourceType string) (blockSchema, bool) {
 	providerSchemas, _ := schema["provider_schemas"].(map[string]any)
 	for _, source := range providerSources {
@@ -191,10 +180,9 @@ func parseBlock(block map[string]any) blockSchema {
 	return result
 }
 
-// isBoundedToOne reports whether Terraform's JSON syntax would accept
-// (and cloudcompose should therefore represent as) a bare object rather than
-// an array for this nested block: nesting_mode "single" always, or
-// "list"/"set" with max_items exactly 1.
+// isBoundedToOne reports whether Terraform's JSON syntax would accept a
+// bare object rather than an array for this nested block: nesting_mode
+// "single" always, or "list"/"set" with max_items exactly 1.
 func (nb nestedBlock) isBoundedToOne() bool {
 	if nb.nestingMode == "single" {
 		return true
@@ -209,12 +197,11 @@ func (nb nestedBlock) isRepeatable() bool {
 	return (nb.nestingMode == "list" || nb.nestingMode == "set") && !nb.isBoundedToOne()
 }
 
-// checkResourceSet reflects over one *Resources struct's fields, and for
-// every field with a `json:"<resource_type>,omitempty"` tag that looks
-// like a Terraform resource type (contains an underscore, has a
-// map[string]SomeStruct type -- cloudcompose's own convention throughout
-// internal/models), recursively compares SomeStruct's own fields against
-// the fetched schema's block_types for that resource type.
+// checkResourceSet reflects over one *Resources struct's fields, and
+// for every field with a `json:"<resource_type>,omitempty"` tag that
+// looks like a Terraform resource type (map[string]SomeStruct with an
+// underscore in the tag), recursively compares SomeStruct's fields
+// against the fetched schema's block_types for that resource type.
 func checkResourceSet(set resourceSet, schema map[string]any) (mismatches, unclassified int) {
 	fmt.Printf("\n=== %s ===\n", set.name)
 
@@ -228,8 +215,7 @@ func checkResourceSet(set resourceSet, schema map[string]any) (mismatches, uncla
 		}
 
 		// cloudcompose's own convention: every resource-type field is
-		// map[string]T. Anything else here would itself be worth a
-		// human look, but none currently deviate from this shape.
+		// map[string]T.
 		fieldType := field.Type
 		if fieldType.Kind() != reflect.Map {
 			continue
@@ -252,8 +238,8 @@ func checkResourceSet(set resourceSet, schema map[string]any) (mismatches, uncla
 
 // compareStruct walks goType's fields, matching each to a same-named
 // (by JSON tag) entry in the schema's block_types, and reports a
-// mismatch when the Go field's own shape (slice vs. non-slice) disagrees
-// with what the schema says Terraform's JSON syntax requires.
+// mismatch when the Go field's shape (slice vs. non-slice) disagrees
+// with what the schema requires.
 func compareStruct(path string, goType reflect.Type, block blockSchema, depth int) (mismatches, unclassified int) {
 	if goType.Kind() == reflect.Ptr {
 		goType = goType.Elem()
@@ -278,9 +264,7 @@ func compareStruct(path string, goType reflect.Type, block blockSchema, depth in
 		nb, ok := block.blockTypes[jsonName]
 		if !ok {
 			// Not every JSON-tagged field is a nested block -- most are
-			// plain attributes (string/int/bool/map), which this tool
-			// has nothing to check. Only block_types entries carry a
-			// cardinality Terraform's JSON syntax cares about.
+			// plain attributes this tool has nothing to check.
 			continue
 		}
 
@@ -300,12 +284,8 @@ func compareStruct(path string, goType reflect.Type, block blockSchema, depth in
 				indent, path, field.Name, jsonName, nb.nestingMode, ft.String())
 			mismatches++
 		case nb.isBoundedToOne() && isSlice:
-			// Not a bug by itself -- Terraform's JSON syntax accepts a
-			// one-element array as an alternate spelling of a bare
-			// object for single-cardinality blocks, and this codebase
-			// already relies on that for a few resources (e.g.
-			// azurerm_container_app_job's template block). Reported as
-			// informational, not a mismatch.
+			// Not a bug: Terraform's JSON syntax also accepts a
+			// one-element array for single-cardinality blocks.
 			fmt.Printf("%sℹ %s.%s (%q): schema caps this at one entry (nesting_mode=%s, max_items=1); Go field is a slice ([%d]-shaped in JSON, valid but a bare-object field would also work)\n",
 				indent, path, field.Name, jsonName, nb.nestingMode, 1)
 		}

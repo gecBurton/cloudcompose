@@ -37,21 +37,14 @@ func awsProvider(env *models.AwsEnvironment, region string) map[string]any {
 
 // resourceBlocks converts AWSResources into the map Terraform's JSON syntax
 // expects under "resource": one entry per resource type, present only if it
-// has at least one instance. Marshalling AWSResources directly and
-// round-tripping through a map[string]any is deliberate, not incidental: the
-// struct's own `omitempty` tags are the single source of truth for which
-// resource types are "empty" (len==0 maps), so this can't drift from the
-// struct definition the way a hand-written list of non-empty checks could.
-// Delegates to shared.StructResourceBlocks, which all three clouds' own
-// generators use the same way.
+// has at least one instance.
 func resourceBlocks(resources *models.AWSResources) (map[string]any, error) {
 	return shared.StructResourceBlocks(resources)
 }
 
-// hasAnyCloudfrontWebACL reports whether any WAF Web ACL in resources is
+// hasCloudfrontScopedWebACL reports whether any WAF Web ACL in resources is
 // CLOUDFRONT-scoped, which decides whether an aliased provider pinned to
-// us-east-1 is needed (CLOUDFRONT-scoped ACLs can only be created there,
-// regardless of the environment's own region).
+// us-east-1 is needed.
 func hasCloudfrontScopedWebACL(resources *models.AWSResources) bool {
 	for _, acl := range resources.Wafv2WebAcl {
 		if acl.Scope == "CLOUDFRONT" {
@@ -62,15 +55,10 @@ func hasCloudfrontScopedWebACL(resources *models.AWSResources) bool {
 }
 
 // GenerateAWS renders a Terraform JSON manifest for the given AWS
-// resources and environment. Key ordering is deterministic because
-// encoding/json.Marshal sorts map keys alphabetically at every level.
+// resources and environment.
 //
-// projectName is this app's own name (the same value `cloudcompose
-// compile -p`/`--project` resolves to -- see compile.go's own
-// resolveProjectName), used only to derive this app's own backend
-// state key when env.Backend is set (shared.AppBackendBlock); it has no
-// effect at all when env.Backend is nil (today's default -- see
-// docs/multi-user-state.md).
+// projectName derives this app's backend state key when env.Backend is
+// set; it has no effect when env.Backend is nil.
 func GenerateAWS(resources *models.AWSResources, env *models.AwsEnvironment, projectName string) (string, error) {
 	provider := awsProvider(env, env.Region)
 
@@ -121,11 +109,6 @@ func GenerateAWS(resources *models.AWSResources, env *models.AwsEnvironment, pro
 		return "", err
 	}
 
-	// The manifest's Resource field is never nil (see NewAWSResources'
-	// default construction), so "resource" is always present in the
-	// output even when empty -- unlike "data", which is omitted when
-	// there's nothing to look up. Matched here by giving Resource no
-	// omitempty tag (see TerraformManifest).
 	terraformBlock := map[string]any{"required_providers": requiredProviders}
 	if backendBlock := shared.AppBackendBlock(env.Name, projectName, env.Backend); backendBlock != nil {
 		terraformBlock["backend"] = backendBlock

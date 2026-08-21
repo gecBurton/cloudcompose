@@ -7,10 +7,8 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// InferEdgeResources infers CloudFront CDN and WAF resources.
-//
-// For services with CDN enabled, creates CloudFront distributions with AWS
-// WAF protection.
+// InferEdgeResources creates CloudFront distributions with AWS WAF
+// protection for services with CDN enabled.
 func InferEdgeResources(
 	resources *models.AWSResources,
 	app *models.Application,
@@ -24,7 +22,6 @@ func InferEdgeResources(
 			continue
 		}
 
-		// Create WAF Web ACL.
 		wafKey := service.Name + "_waf"
 		waf := models.NewWafv2WebAcl()
 		waf.Name = getName(service.Name + "-waf")
@@ -57,7 +54,6 @@ func InferEdgeResources(
 		waf.Tags = tags
 		resources.Wafv2WebAcl[wafKey] = waf
 
-		// Create CloudFront distribution.
 		cdnKey := service.Name + "_cdn"
 		cdn := models.NewCloudfrontDistribution()
 		comment := fmt.Sprintf("CDN for %s", service.Name)

@@ -60,15 +60,9 @@ func priorityBand(appName string) int {
 }
 
 // CalculateListenerPriorities assigns each public service a stable, unique
-// listener rule priority. Listener rule priorities must be unique across
-// every application sharing a listener, so they cannot simply start at 1:
-// each application gets a band derived from its name, and its routes are
-// ordered within that band by path specificity, longest first, so that
-// /api/admin is matched before /api.
-//
-// AWS-specific: GCP URL Maps use path specificity order, not numeric
-// priority, so this lives in the AWS-specific inference package rather than
-// anywhere shared across clouds.
+// listener rule priority. Each application gets a priority band derived
+// from its name, and its routes are ordered within that band by path
+// specificity, longest first, so /api/admin is matched before /api.
 func CalculateListenerPriorities(app *models.Application) map[string]int {
 	band := priorityBand(app.Name)
 	public := app.PublicServices()
@@ -84,7 +78,7 @@ func CalculateListenerPriorities(app *models.Application) map[string]int {
 			pathJ = ordered[j].Ingress.Path
 		}
 		if len(pathI) != len(pathJ) {
-			return len(pathI) > len(pathJ) // longest first
+			return len(pathI) > len(pathJ)
 		}
 		return ordered[i].Name < ordered[j].Name
 	})

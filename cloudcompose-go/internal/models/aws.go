@@ -3,9 +3,7 @@ package models
 // AWS resource models.
 //
 // Field names and JSON tags match Terraform's own attribute names exactly,
-// since these are marshalled straight into Terraform's JSON syntax:
-// whatever key a struct here emits is the literal Terraform resource
-// attribute name.
+// since these are marshalled straight into Terraform's JSON syntax.
 //
 // Optional fields use pointers so `omitempty` distinguishes "not set" from
 // the zero value (e.g. a security group rule legitimately has
@@ -68,9 +66,7 @@ type EcsService struct {
 	NetworkConfiguration       map[string]any `json:"network_configuration"`
 	ServiceRegistries          map[string]any `json:"service_registries,omitempty"`
 	// No omitempty: the output always includes "load_balancer": [] for a
-	// service with no ingress -- confirmed by diffing real output for
-	// examples with no public ingress, whose golden files show
-	// "load_balancer": [] rather than an absent key.
+	// service with no ingress.
 	LoadBalancer []map[string]any    `json:"load_balancer"`
 	Lifecycle    *TerraformLifecycle `json:"lifecycle,omitempty"`
 	Tags         map[string]string   `json:"tags,omitempty"`
@@ -132,10 +128,6 @@ func NewEcrRepository() EcrRepository {
 	return EcrRepository{ForceDelete: true, ImageTagMutability: "MUTABLE"}
 }
 
-// DockerImage, DockerRegistryImage, and RandomPassword are defined in
-// terraform_common.go: they are cloud-agnostic and Azure's inference
-// reuses them too.
-
 type IamRole struct {
 	Name             string            `json:"name"`
 	AssumeRolePolicy string            `json:"assume_role_policy"`
@@ -151,12 +143,9 @@ type IamRolePolicy struct {
 // DbInstance mirrors aws_db_instance. MultiAz/BackupRetentionPeriod are
 // environment-level decisions (AwsEnvironment.HighAvailabilityEnabled/
 // BackupRetentionDays), applied uniformly to every database this app
-// creates, not a per-service x-cloud setting -- see
-// docs/azure-aws-parity-todo.md's Priority 4 backup/HA item for why.
-// `omitempty` on both is cosmetic, not semantic: false/0 are both real,
-// valid values the provider accepts (Multi-AZ off, zero-day retention),
-// and every call site sets them explicitly from the environment rather
-// than leaving either unset.
+// creates, not a per-service x-cloud setting. `omitempty` on both is
+// cosmetic, not semantic: false/0 are real, valid values, and every
+// call site sets them explicitly.
 type DbInstance struct {
 	Identifier              string   `json:"identifier"`
 	Engine                  string   `json:"engine"`
@@ -173,18 +162,10 @@ type DbInstance struct {
 	Username                *string  `json:"username,omitempty"`
 	Password                *string  `json:"password,omitempty"`
 	// EnabledCloudwatchLogsExports opts this instance's own log types
-	// into CloudWatch Logs -- RDS exports no logs at all by default;
-	// this is the only Terraform-side switch that turns it on
-	// (`aws_db_instance.enabled_cloudwatch_logs_exports`, a
-	// `list(string)` of engine-specific log-type names, e.g.
-	// `["postgresql", "upgrade"]` for Postgres or
-	// `["audit", "error", "general", "slowquery"]` for MySQL/MariaDB --
-	// see EngineLogExports in aws/managed.go for the exact per-engine
-	// mapping used to populate this field). Always set (never nil) by
-	// inferDatabase: `cloudcompose logs` has nothing to query for a
-	// database whose logs were never exported in the first place, so
-	// log export is on by default for every database this compiler
-	// creates, not an opt-in the user has to know to ask for.
+	// into CloudWatch Logs, an engine-specific list of log-type names
+	// (e.g. `["postgresql", "upgrade"]` for Postgres). Always set
+	// (never nil): log export is on by default for every database this
+	// compiler creates.
 	EnabledCloudwatchLogsExports []string          `json:"enabled_cloudwatch_logs_exports"`
 	Tags                         map[string]string `json:"tags,omitempty"`
 }
@@ -351,11 +332,8 @@ func NewWafv2WebAcl() Wafv2WebAcl {
 }
 
 // AWSResources is a registry of the AWS resources the compiler supports.
-//
-// Every field is a map keyed by Terraform resource key (e.g. "web_service").
-// Empty maps are omitted from JSON output so Terraform never receives an
-// empty resource-type block, which it rejects; the generator additionally
-// strips any resource-type block whose map ends up empty after that.
+// Every field is a map keyed by Terraform resource key. Empty maps are
+// omitted from JSON output.
 type AWSResources struct {
 	EcsTaskDefinition                   map[string]EcsTaskDefinition                   `json:"aws_ecs_task_definition,omitempty"`
 	EcsService                          map[string]EcsService                          `json:"aws_ecs_service,omitempty"`
@@ -390,7 +368,7 @@ type AWSResources struct {
 
 // NewAWSResources returns an AWSResources with every map initialized, so
 // inference functions can assign into resources.Foo[key] without a nil-map
-// panic. Empty maps are still omitted from JSON output (see struct tags).
+// panic.
 func NewAWSResources() *AWSResources {
 	return &AWSResources{
 		EcsTaskDefinition:                   map[string]EcsTaskDefinition{},

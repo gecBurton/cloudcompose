@@ -19,16 +19,9 @@ type ComposeService struct {
 	Build       *BuildConfig       `json:"build,omitempty"`
 	Ports       []PortConfig       `json:"ports,omitempty"`
 	Environment map[string]*string `json:"environment,omitempty"`
-	// DependsOn only ever needs to answer "which services does this one
-	// depend on" — Normalize reads nothing but the map's keys, to build
-	// Relationships. compose-go's own condition/required semantics
-	// (service_healthy, service_completed_successfully, etc.) describe
-	// startup ordering, which cloudcompose does not model at all: connectivity
-	// comes from `networks:`, not from depends_on (see normalizer_test.go's
-	// TestNormalizeRelationships). A bare marker type, rather than a
-	// struct with fields nothing reads, makes that explicit instead of
-	// letting fields imply a meaning cloudcompose does not act on. This is a
-	// pre-existing simplification opportunity, not a regression.
+	// DependsOn only records which services this one depends on; only
+	// the map's keys are read. cloudcompose does not model startup
+	// ordering -- connectivity comes from `networks:`, not depends_on.
 	DependsOn   map[string]struct{}    `json:"depends_on,omitempty"`
 	Networks    map[string]interface{} `json:"networks,omitempty"`
 	Volumes     []VolumeDefinition     `json:"volumes,omitempty"`
@@ -49,24 +42,17 @@ func (s *ComposeService) GetNetworks() []string {
 	return networks
 }
 
-// BuildConfig carries only what this codebase ever reads back out: the
-// context feeds docker_image.build.context in the Terraform this compiles
-// to, and Dockerfile/Target likewise. compose-go's own BuildConfig has
-// 25+ more fields (CacheFrom, Secrets, Ulimits, SSH forwarding, Platforms,
-// ...) — none of them modeled here because nothing downstream consumes
-// them. Args was carried and converted here for one release without ever
-// being read; removed rather than kept as a field implying support that
-// does not exist.
+// BuildConfig carries only what this codebase reads back out: Context
+// feeds docker_image.build.context in the generated Terraform, and
+// Dockerfile/Target likewise.
 type BuildConfig struct {
 	Context    string `json:"context,omitempty"`
 	Dockerfile string `json:"dockerfile,omitempty"`
 	Target     string `json:"target,omitempty"`
 }
 
-// PortConfig. Protocol (tcp/udp) was carried and converted here for one
-// release without ever being read downstream — every inferred resource
-// this compiles to assumes TCP. Removed rather than kept implying a
-// choice nothing acts on.
+// PortConfig is a service's `ports:` entry. Only TCP is assumed
+// downstream, so no protocol field.
 type PortConfig struct {
 	Target    uint32 `json:"target"`
 	Published string `json:"published,omitempty"`
@@ -76,21 +62,14 @@ type ComposeSecret struct {
 	File string `json:"file,omitempty"`
 }
 
-// NetworkDefinition. Name was carried and converted here for one release
-// without ever being read — RejectUnsupportedNetworks only ever checks
-// External, and reports the network by its compose-file key (the map this
-// type lives in), not by this field. Removed rather than kept implying a
-// use nothing makes of it.
+// NetworkDefinition is a `networks:` entry. Only External is read
+// (RejectUnsupportedNetworks).
 type NetworkDefinition struct {
 	External bool `json:"external,omitempty"`
 }
 
-// VolumeDefinition. Target and ReadOnly were carried and converted here
-// for one release without ever being read — NamedVolumeSource (the only
-// consumer) only inspects Type and Source: whether a mount is a named
-// volume at all, and if so, what it's called. The rejection error reports
-// the volume's name, not its mount path or read/write mode. Removed
-// rather than kept implying a use nothing makes of them.
+// VolumeDefinition is a service's `volumes:` entry. Only Type/Source are
+// read: whether a mount is a named volume, and if so, what it's called.
 type VolumeDefinition struct {
 	Type   string `json:"type"`
 	Source string `json:"source,omitempty"`
@@ -98,13 +77,10 @@ type VolumeDefinition struct {
 
 // XCloud is the `x-cloud` block on a service.
 //
-// Unknown keys and out-of-range values (via per-field bounds checks) are
-// rejected outright, enforced by hand in UnmarshalJSON since Go's
-// encoding/json has no declarative validation equivalent — deliberately,
-// since the failure this exists to prevent is exactly a misspelled key or
-// an out-of-range value being silently accepted rather than rejected:
-// `capabilty: database` was once silently dropped, and the service
-// deployed as whatever the compiler guessed from the image name instead.
+// Unknown keys and out-of-range values are rejected outright in
+// UnmarshalJSON rather than silently dropped, since a misspelled key
+// silently accepted (e.g. `capabilty: database`) would deploy as
+// whatever the compiler guessed instead of failing loudly.
 type XCloud struct {
 	Capability             *Capability               `json:"capability,omitempty"`
 	Ingress                *IngressConfig            `json:"ingress,omitempty"`
@@ -127,13 +103,8 @@ var validCapabilities = map[string]bool{
 
 var validSizes = map[string]bool{"small": true, "medium": true, "large": true}
 
-// intOrString accepts a JSON number or a numeric JSON string ("5").
-// docker-compose users occasionally quote numeric x-cloud values, so this
-// coerces a quoted number the same way an unquoted one would be handled
-// rather than rejecting it outright: Go's encoding/json does not coerce
-// string-to-int by default, and returning that error unchanged would turn
-// any quoted number into a hard, surprising break for a file that used to
-// compile.
+// intOrString accepts a JSON number or a numeric JSON string ("5"),
+// since docker-compose users occasionally quote numeric x-cloud values.
 func intOrString(raw json.RawMessage, field string) (int, error) {
 	var asInt int
 	if err := json.Unmarshal(raw, &asInt); err == nil {
@@ -189,10 +160,7 @@ func (x *XCloud) UnmarshalJSON(data []byte) error {
 	if v, ok := raw["ingress"]; ok {
 		if string(v) == "null" {
 			// Bare `ingress:` with nothing under it declares a default
-			// route. Left as null it parses as no ingress at all, quietly
-			// making the service internal — reintroducing, at the only
-			// place it still could, exactly the silent non-exposure this
-			// design exists to prevent.
+			// route, rather than parsing as no ingress at all.
 			result.Ingress = &IngressConfig{}
 		} else {
 			result.Ingress = &IngressConfig{}

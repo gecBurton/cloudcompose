@@ -7,8 +7,7 @@ import (
 )
 
 // Shared helpers for the "platform" shared-infrastructure generators
-// (VPC/network/cluster bootstrap used by `cloudcompose init`), used by all
-// three clouds' environment generators.
+// (VPC/network/cluster bootstrap used by `cloudcompose init`).
 
 var tfNameInvalidChars = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
@@ -24,21 +23,8 @@ func TfName(name string) string {
 }
 
 // Cidrsubnet calculates a subnet CIDR using Terraform's cidrsubnet logic.
-// Simplified implementation that works for the common cases this module
-// actually uses (IPv4, single-digit newbits).
-//
-// Validates netnum against newbits the same way Terraform's own
-// cidrsubnet does (confirmed against its real documentation: "netnum is
-// a whole number that can be represented as a binary integer with no
-// more than newbits binary digits"), not assumed: found via a real test
-// failure that netnum=128 with newbits=7 previously computed a
-// CIDR one full range past the intended block with no error at all --
-// silently spilling into whatever address space came next, rather than
-// failing loudly the way Terraform's own function would. Every existing
-// caller before docs/azure-app-isolation-design.md happened to pass a
-// small, hardcoded, or narrowly-bounded netnum that never exercised
-// this path; that design's own --subnet-index is the first caller where
-// netnum comes from external, unbounded input.
+// Simplified implementation covering IPv4 and single-digit newbits.
+// netnum must be representable in newbits binary digits.
 func Cidrsubnet(baseCIDR string, newbits, netnum int) (string, error) {
 	if netnum < 0 || netnum >= (1<<newbits) {
 		return "", fmt.Errorf(
@@ -73,11 +59,9 @@ func uint32ToIP(n uint32) net.IP {
 	return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
 }
 
-// MergedTags merges caller-supplied tags with the fixed Name/Environment
-// (or just Environment) pair every resource in the platform generators
-// tags itself with. A caller tag sharing a key with a fixed one is
-// overwritten by the fixed value, matching Terraform's usual "explicit
-// fixed tags win" tag merge convention.
+// MergedTags merges caller-supplied tags with fixed tags (e.g.
+// Name/Environment). A caller tag sharing a key with a fixed one is
+// overwritten by the fixed value.
 func MergedTags(tags map[string]string, fixed map[string]string) map[string]string {
 	result := make(map[string]string, len(tags)+len(fixed))
 	for k, v := range tags {

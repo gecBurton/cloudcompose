@@ -9,9 +9,7 @@ import (
 )
 
 // InferManagedServices infers managed services (RDS, ElastiCache, S3) and
-// returns their connections.
-//
-// Returns a mapping of service name to Connection for use in wiring.
+// returns a mapping of service name to Connection for use in wiring.
 func InferManagedServices(
 	resources *models.AWSResources,
 	app *models.Application,
@@ -21,7 +19,7 @@ func InferManagedServices(
 	discard bool,
 ) map[string]models.Connection {
 	namespace := NamespaceFor(env.Name, app.Name)
-	_ = namespace // computed but not currently used by anything in this function
+	_ = namespace
 
 	connections := map[string]models.Connection{}
 
@@ -65,11 +63,9 @@ func inferDatabase(
 
 	dbUsername := shared.DatabaseDefaultUsername
 
-	// Create random master password.
 	passwordKey := service.Name + "_password"
 	resources.RandomPassword[passwordKey] = models.RandomPassword{Length: 20, Special: false}
 
-	// Store credentials in Secrets Manager.
 	dbSecretKey := service.Name + "_db_secret"
 	desc := fmt.Sprintf("Credentials for %s RDS", service.Name)
 	resources.SecretsmanagerSecret[dbSecretKey] = models.SecretsManagerSecret{
@@ -88,7 +84,6 @@ func inferDatabase(
 		SecretString: secretString,
 	}
 
-	// Create subnet group.
 	sngKey := service.Name + "_sng"
 	resources.DbSubnetGroup[sngKey] = models.DbSubnetGroup{
 		Name:      getName(service.Name + "-sng"),
@@ -96,7 +91,6 @@ func inferDatabase(
 		Tags:      tags,
 	}
 
-	// Create unique snapshot identifier if retaining.
 	if !discard {
 		resources.RandomID[service.Name+"_snapshot"] = models.NewRandomId()
 	}
@@ -132,11 +126,8 @@ func inferDatabase(
 	passwordRef := fmt.Sprintf("${random_password.%s.result}", passwordKey)
 	dbInstance.Password = &passwordRef
 	dbInstance.Tags = tags
-	// Log export is on by default, not an opt-in: `cloudcompose logs`
-	// (aws/logs.go) has nothing to query for a database whose logs were
-	// never exported in the first place. shared.RDSLogExports is keyed
-	// by exactly the three engine strings this function itself picks
-	// from above, so this lookup cannot miss.
+	// Log export is on by default: `cloudcompose logs` has nothing to
+	// query for a database whose logs were never exported.
 	dbInstance.EnabledCloudwatchLogsExports = shared.RDSLogExports[engine]
 	resources.DbInstance[dbKey] = dbInstance
 
@@ -159,7 +150,6 @@ func inferCache(
 	getName func(string) string,
 	tags map[string]string,
 ) *models.Connection {
-	// Create subnet group.
 	sngKey := service.Name + "_sng"
 	resources.ElastiCacheSubnetGroup[sngKey] = models.ElastiCacheSubnetGroup{
 		Name:      getName(service.Name + "-sng"),

@@ -9,18 +9,8 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// Reporting every decision the compiler made, and why.
-//
-// Inference is only safe when a wrong guess is visible. Most of cloudcompose's
-// failures on real compose files were silent: a database deployed as a
-// container, an application with no ingress at all, a bind mount quietly
-// dropped. This turns those into something readable before anything is
-// deployed.
-//
-// Both branches are supported (with and without the raw compose model),
-// even though the Go CLI always has both available from ParseCompose.
-// Passing nil for composeApp still works: it's a documented, deliberate
-// degradation path, not dead code.
+// Package-level: Explain reports every decision the compiler made and why,
+// so wrong guesses are visible before anything is deployed.
 
 // DecisionSource is the category a Decision falls into.
 type DecisionSource string
@@ -41,12 +31,9 @@ type Decision struct {
 }
 
 // Explain describes every inference made while normalizing this
-// application, mirroring explain(). composeApp is optional: only a
-// handful of decisions need the raw compose model specifically (whether
-// capability was declared verbatim rather than inferred, the exact list
-// of dropped ports/mounts, and the fallback "which services publish a
-// port" detail when nothing is public). Everything else is answerable
-// from the semantic model alone.
+// application. composeApp is optional: passing nil still works, but a
+// handful of decisions (whether capability was declared verbatim, the
+// exact list of dropped ports/mounts) are less precise without it.
 func Explain(composeApp *models.ComposeApplication, semantic *models.Application) []Decision {
 	var decisions []Decision
 
@@ -64,11 +51,8 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 		if composeService != nil {
 			declaredCapability = xCloudHasKey(composeService.XCloud, "capability")
 		} else {
-			// Without the raw compose model there is no direct record of
-			// whether capability was written explicitly. Whether the
-			// inferred value would have guessed the same capability from
-			// the image name is the closest available proxy: if it
-			// disagrees, something must have overridden it.
+			// No direct record without the raw compose model; treat a
+			// mismatch with the inferred guess as evidence it was declared.
 			declaredCapability = string(service.Capability) != shared.InferCapability(service.Image)
 		}
 		decisions = append(decisions, capabilityDecision(name, service, declaredCapability))
@@ -172,12 +156,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 }
 
 // StripMarkup removes Rich-style markup tags ([bold], [cyan], [/], etc.)
-// from Render's output, for terminals/environments with no ANSI color
-// rendering wired up. Render's own markup is otherwise Rich-compatible
-// (same tag vocabulary the Rich console library understands), which this
-// intentionally does not attempt to reproduce as real ANSI escapes --
-// the Go CLI prints plain text rather than adding a color-rendering
-// dependency to match Rich visually.
+// from Render's output, for terminals with no ANSI color rendering.
 func StripMarkup(s string) string {
 	var b strings.Builder
 	inTag := false
@@ -194,18 +173,15 @@ func StripMarkup(s string) string {
 	return b.String()
 }
 
-// pyRepr renders a string the way a repr format spec does for a plain
-// str: single-quoted, not double-quoted like Go's %q. Explain's own
-// messages use this repr style throughout (image, build_context, secret,
-// server_name, schedule.expression), matching that format exactly for
-// consistency with the reports users are used to.
+// pyRepr renders a string the way Python's repr does for a plain str:
+// single-quoted, not double-quoted like Go's %q.
 func pyRepr(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "\\'") + "'"
 }
 
-// xCloudHasKey reports whether the raw x-cloud block declares the given
-// key at all, checking against the raw dict rather than the parsed model
-// (which always has some value for capability, declared or defaulted).
+// xCloudHasKey reports whether the raw x-cloud block declares key at all,
+// checking the raw dict rather than the parsed model (which always has
+// some value for capability, declared or defaulted).
 func xCloudHasKey(raw any, key string) bool {
 	m, ok := raw.(map[string]any)
 	if !ok {
@@ -215,12 +191,9 @@ func xCloudHasKey(raw any, key string) bool {
 	return ok
 }
 
-// capabilityDecision reports what a service was treated as, mirroring
-// _capability_decision.
-//
-// The wording deliberately does not change with the source: the same
-// outcome should read the same whether it was declared or guessed, so
-// that scanning the report for what happened is separate from asking why.
+// capabilityDecision reports what a service was treated as. Wording
+// does not change with the source, so scanning for what happened is
+// separate from asking why.
 func capabilityDecision(name string, service *models.Service, declared bool) Decision {
 	var outcome string
 	if service.Capability == models.CapabilityContainer {
@@ -393,11 +366,6 @@ func ingressDecisions(composeApp *models.ComposeApplication, semantic *models.Ap
 			if healthPath == "" {
 				healthPath = "/"
 			}
-			// service.Ingress.HealthCheck is never nil (it always
-			// defaults to a HealthCheck value rather than being left
-			// unset), so this branch is always "declared" in practice,
-			// never "default". Not "fixed" here: this replicates current
-			// behavior, not a corrected version of it.
 			decisions = append(decisions, Decision{
 				Subject: service.Name, Decision: fmt.Sprintf("healthy when %s returns 2xx/3xx", healthPath),
 				Because: "declared", Source: SourceDeclared,
@@ -444,10 +412,8 @@ func ingressDecisions(composeApp *models.ComposeApplication, semantic *models.Ap
 	return []Decision{{Subject: "application", Decision: "NOT reachable from outside", Because: because, Source: SourceWarning}}
 }
 
-// Render renders decisions as grouped, readable text, mirroring render().
-// Rich markup tags ([bold], [cyan], etc.) are preserved verbatim so the
-// same string can be fed through a Rich-compatible terminal renderer;
-// this function does not itself interpret them.
+// Render renders decisions as grouped, readable text. Rich markup tags
+// ([bold], [cyan], etc.) are preserved verbatim, not interpreted here.
 func Render(decisions []Decision) string {
 	marks := map[DecisionSource]string{
 		SourceDeclared: "[cyan]declared[/]",

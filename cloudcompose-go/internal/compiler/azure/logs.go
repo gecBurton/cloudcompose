@@ -1,26 +1,3 @@
-// This file adds another concern to the azure package, alongside
-// status.go's live `ps` support: live logs ("cloudcompose logs"). Same
-// rationale as status.go -- deliberately independent of Terraform
-// state/output, using the same env.Name-app.Name-service.Name formula
-// InferAzure's own getName closure uses to name each Container App in
-// the first place.
-//
-// Unlike AWS, Container Apps has no per-service log group: every
-// Container App in a Cloud Compose Environment logs into one shared
-// Log Analytics workspace (see appsubnets.go's
-// ContainerAppEnvironment.LogAnalyticsWorkspaceID, set unconditionally
-// to env.LogAnalyticsWorkspaceID for every app), distinguished only by
-// the ContainerAppName_s column of the ContainerAppConsoleLogs_CL
-// table -- there's no separate resource to point at the way AWS's
-// "/ecs/"+getName(service.Name) log group is. Rather than resolving
-// the workspace's own GUID customerId (a separate ARM property,
-// requiring either a new dependency or a new field on AzureEnvironment
-// to cache it) to use LogsClient.QueryWorkspace, this file uses
-// LogsClient.QueryResource against each Container App's own computed
-// resource ID instead: Log Analytics auto-discovers which workspace a
-// resource logs to, so the ARM resource ID `ps` already knows how to
-// build (status.go's azureName, wrapped in the standard
-// /subscriptions/.../containerApps/... shape) is enough on its own.
 package azure
 
 import (
@@ -39,8 +16,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// LogEvent is one line of Azure `cloudcompose logs` output, mirroring
-// aws.LogEvent's shape.
+// LogEvent is one line of Azure `cloudcompose logs` output.
 type LogEvent struct {
 	Service   string
 	Timestamp time.Time
@@ -48,24 +24,15 @@ type LogEvent struct {
 }
 
 // logsClient is the subset of *azquery.LogsClient that FetchLogs needs,
-// mirroring status.go's containerAppsClient/revisionsClient rationale:
 // letting tests substitute a fake without a real Azure call.
 type logsClient interface {
 	QueryResource(ctx context.Context, resourceID string, body azquery.Body, options *azquery.LogsClientQueryResourceOptions) (azquery.LogsClientQueryResourceResponse, error)
 }
 
-// NewLogsClient builds the real Azure Monitor Logs client FetchLogs
-// needs, from the same ambient credential chain NewAzureClients already
-// uses (see its own doc comment) -- kept as a separate constructor for
-// the same reason aws.NewCloudWatchLogsClient is separate from
-// aws.NewAWSClients: `ps` doesn't gain an unused dependency on this
-// package's logs client.
-//
-// Unlike NewAzureClients, this needs no subscriptionID: azquery.LogsClient
-// is a data-plane client (Log Analytics' own query endpoint, not an ARM
-// management-plane one), so the subscription is only ever encoded in
-// the resourceID string passed to QueryResource, not in the client
-// itself.
+// NewLogsClient builds the real Azure Monitor Logs client FetchLogs needs,
+// using the ambient credential chain. No subscriptionID is required: it's a
+// data-plane client, and the subscription is encoded in the resourceID
+// passed to QueryResource instead.
 func NewLogsClient() (logsClient, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
@@ -75,39 +42,13 @@ func NewLogsClient() (logsClient, error) {
 }
 
 // FetchLogs returns recent log events for the given services (or every
-// container/database service in app if services is empty, matching
-// `docker compose logs`'s own no-argument behavior), across the given
+// container/database service in app if services is empty), across the given
 // resource group/subscription.
 //
-// Covers two service capabilities, each with its own resource type and
-// query shape:
-//
-//   - CapabilityContainer: scheduled services are skipped (Container
-//     App Jobs have their own execution-log model, not the
-//     steady-state console-log stream this targets), and queries
-//     ContainerAppConsoleLogs_CL's Log_s column.
-//   - CapabilityDatabase, Postgres only (MySQL/MariaDB deferred to a
-//     follow-up -- MySQL Flexible Server needs its own
-//     audit_log_enabled/slow_query_log server parameters turned on
-//     before there's anything to export at all, unlike Postgres, which
-//     logs its own error/notice output by default once the diagnostic
-//     setting managed.go's inferDatabasesAzure creates routes it to
-//     the workspace): queries PGSQLServerLogs, a resource-specific
-//     table (not the legacy shared AzureDiagnostics table other
-//     Azure services still use) with the same TimeGenerated/Message
-//     column names ContainerAppConsoleLogs_CL happens to also use,
-//     confirmed against Microsoft's own PGSQLServerLogs table
-//     reference.
-//
-// One QueryResource call per service (not one shared query across all
-// of them), for both capabilities: each call targets that service's own
-// resource ID (a Container App or a PostgreSQL Flexible Server), letting
-// Log Analytics resolve which workspace to search itself -- avoiding a
-// second ARM round-trip to resolve the workspace's own GUID customerId
-// just to use QueryWorkspace's single-query-many-services shape instead.
-// A service with no logs yet (never deployed) returns an empty table,
-// not an error -- the same "not found is not a failure" principle
-// status.go's ServiceStatus.Found follows.
+// Container services query ContainerAppConsoleLogs_CL (scheduled services
+// are skipped, since jobs have their own execution-log model). Database
+// services query PGSQLServerLogs; MySQL/MariaDB is not yet supported. A
+// service with no logs yet returns an empty result, not an error.
 func FetchLogs(ctx context.Context, client logsClient, subscriptionID string, app *models.Application, env *models.AzureEnvironment, services []string, since time.Time, limit int32) ([]LogEvent, error) {
 	getName := shared.ResourceNamer(env.Name, app.Name)
 
@@ -141,8 +82,6 @@ func FetchLogs(ctx context.Context, client logsClient, subscriptionID string, ap
 
 		case models.CapabilityDatabase:
 			if isMySQLImage(service.Image) {
-				// MySQL/MariaDB Flexible Server logging deferred -- see
-				// this function's own doc comment.
 				continue
 			}
 			resourceID := postgresFlexibleServerResourceID(subscriptionID, env.ResourceGroupName, getName("pg"))
@@ -163,12 +102,8 @@ func FetchLogs(ctx context.Context, client logsClient, subscriptionID string, ap
 }
 
 // fetchLogAnalyticsEvents runs one QueryResource call and converts its
-// result into LogEvents tagged with serviceName -- the shared plumbing
-// both the container and database branches of FetchLogs build on.
-// messageColumn is the log message column's name, since the two
-// resource types this file queries happen to use different ones
-// (Log_s vs Message) despite both using TimeGenerated for the
-// timestamp.
+// result into LogEvents tagged with serviceName. messageColumn is the name
+// of the log message column, which varies by resource type.
 func fetchLogAnalyticsEvents(ctx context.Context, client logsClient, serviceName, resourceID, query string, since time.Time, messageColumn string) ([]LogEvent, error) {
 	body := azquery.Body{Query: &query}
 	if !since.IsZero() {
@@ -217,37 +152,16 @@ func fetchLogAnalyticsEvents(ctx context.Context, client logsClient, serviceName
 	return events, nil
 }
 
-// isMissingLogTable reports whether err is Log Analytics rejecting a
-// query for referencing a custom log table (a "_CL"-suffixed table
-// name, like ContainerAppConsoleLogs_CL/PGSQLServerLogs) that doesn't
-// exist in the workspace yet. Custom log tables are created lazily on
-// first ingestion -- a brand-new environment's very first `cloudcompose
-// logs` call, run before the app has logged anything at all yet (or
-// before Azure has finished creating the table even after it has),
-// hits this every time, and it is functionally identical to "zero
-// events" from a caller's perspective, not a real failure worth
-// surfacing as one -- the same "not yet, not never" rationale
-// isNotFound already applies to a 404 (a Container App/revision that
-// doesn't exist yet).
+// isMissingLogTable reports whether err is Log Analytics rejecting a query
+// because a custom log table (e.g. ContainerAppConsoleLogs_CL,
+// PGSQLServerLogs) doesn't exist in the workspace yet. These tables are
+// created lazily on first ingestion, so a brand-new environment's first
+// `cloudcompose logs` call hits this before anything has ever logged;
+// treated as "zero events" rather than an error.
 //
-// Confirmed against a real Azure smoke-test failure (2026-08-16,
-// francecentral, a brand-new ci65 workspace): Log Analytics returns
-// HTTP 400 (not 404, so isNotFound's own check never catches this) with
-// ErrorCode "BadArgumentError" and a body whose innererror.innererror
-// carries KQL's own SEM0100 code and a message of the literal shape
-// "'order' operator: Failed to resolve table or column expression named
-// 'ContainerAppConsoleLogs_CL'" -- every retry across a full 300s
-// window in that run hit the identical error, since the table
-// genuinely hadn't been created yet, not because of a transient blip a
-// shorter retry would have ridden out.
-//
-// Matches on ErrorCode + a specific substring from the raw response
-// body (via *ResponseError's own Error() rendering, the only place this
-// SDK version exposes the body) rather than just ErrorCode alone:
-// BadArgumentError covers other, genuinely-wrong-query cases too (a
-// real KQL syntax error, a typo'd column name in this file itself),
-// which must still surface as real errors, not be silently swallowed
-// into "zero events" alongside this one specific, expected case.
+// Azure returns HTTP 400 with ErrorCode "BadArgumentError" for this case, so
+// the error text is also checked for the specific KQL "failed to resolve"
+// message to avoid masking genuine query errors that share the same code.
 func isMissingLogTable(err error) bool {
 	var respErr *azcore.ResponseError
 	if !errors.As(err, &respErr) {
@@ -259,46 +173,24 @@ func isMissingLogTable(err error) bool {
 	return strings.Contains(respErr.Error(), "Failed to resolve table or column expression")
 }
 
-// containerAppResourceID builds the fully-qualified ARM resource ID for
-// a Container App -- the shape azquery.LogsClient.QueryResource
-// expects, and the same shape confirmed against
-// armappcontainers' own example fixtures
-// (/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.App/containerApps/{name}).
+// containerAppResourceID builds the fully-qualified ARM resource ID for a
+// Container App.
 func containerAppResourceID(subscriptionID, resourceGroupName, containerAppName string) string {
 	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
 		subscriptionID, resourceGroupName, containerAppName)
 }
 
-// postgresFlexibleServerResourceID builds the fully-qualified ARM
-// resource ID for a PostgreSQL Flexible Server, mirroring
-// containerAppResourceID's own rationale. serverName is always
-// getName("pg") -- managed.go's inferDatabasesAzure creates exactly one
-// shared Postgres server per app (serverName := getName("pg")), covering
-// every Postgres-backed compose service in that app, not one server per
-// service.
+// postgresFlexibleServerResourceID builds the fully-qualified ARM resource
+// ID for a PostgreSQL Flexible Server. serverName is always getName("pg"):
+// there is one shared Postgres server per app.
 func postgresFlexibleServerResourceID(subscriptionID, resourceGroupName, serverName string) string {
 	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/flexibleServers/%s",
 		subscriptionID, resourceGroupName, serverName)
 }
 
 // errorInfoMessage extracts a human-readable message from an
-// azquery.ErrorInfo -- Azure's own "partial failure" signal for a query
-// that returned HTTP 200 but still failed (bad KQL, etc.), which err
-// itself won't ever surface. ErrorInfo implements the error interface
-// itself (its Error() method renders the full raw error payload), so
-// this just delegates to that rather than re-deriving a message from
-// its own Code field.
-//
-// fetchLogAnalyticsEvents' own check against this message's text for
-// "Failed to resolve table or column expression" (the same
-// missing-log-table signature isMissingLogTable matches on the err !=
-// nil path) exists defensively: the actual failure this whole thing was
-// added for (see isMissingLogTable's own doc comment) surfaced via the
-// err != nil / *azcore.ResponseError path, not this one -- but
-// ErrorInfo is azquery's own documented shape for a query that fails
-// semantically despite a 200 response, and there's no guarantee the SDK
-// never routes the identical KQL semantic error through this path
-// instead in some other circumstance.
+// azquery.ErrorInfo, Azure's "partial failure" signal for a query that
+// returned HTTP 200 but still failed.
 func errorInfoMessage(e *azquery.ErrorInfo) string {
 	if e == nil {
 		return "unknown Log Analytics query error"
@@ -306,10 +198,9 @@ func errorInfoMessage(e *azquery.ErrorInfo) string {
 	return e.Error()
 }
 
-// rowTime and rowString defensively convert a Log Analytics row cell
-// (returned as `any` -- see azquery.Row's own doc comment) to the Go
-// types FetchLogs needs, tolerating a cell that's nil or an unexpected
-// type rather than panicking.
+// rowTime and rowString convert a Log Analytics row cell (returned as
+// `any`) to the Go types FetchLogs needs, tolerating nil or unexpected types
+// rather than panicking.
 func rowTime(cell any) time.Time {
 	switch v := cell.(type) {
 	case time.Time:

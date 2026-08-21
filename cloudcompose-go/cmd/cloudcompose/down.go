@@ -10,24 +10,10 @@ import (
 
 // downCmd runs `terraform destroy` against a single already-compiled
 // app's own Terraform directory (app-<environment name>-<project
-// name>), the inverse of `cloudcompose compile`. It deliberately never
-// touches the shared environment `cloudcompose init` created --
-// destroying a VPC/ALB/ECS cluster out from under every other app still
-// using it is not something a single app's teardown should ever do
-// implicitly. Tearing down the environment itself is a separate,
-// explicit `terraform destroy` run by hand in its own env-<name>
-// directory (see docs/authored-environment-config.md), matching the
-// same "environment is shared, apps are not" split `cloudcompose
-// init`/`compile` already draw.
-//
-// Like up.go's terraformApply, this runs an ordinary `terraform
-// destroy` by default -- Terraform's own plan and y/n confirmation
-// prompt included, no -auto-approve -- for the same reason: a human
-// should see exactly what's about to be deleted before it happens.
-// --auto-approve is the same opt-in, off-by-default escape hatch up.go
-// offers, for non-interactive callers (CI, scripts); see that flag's
-// own doc comment on upCmd for the full reasoning, which applies
-// identically here.
+// name>), the inverse of `cloudcompose compile`. It never touches the
+// shared environment `cloudcompose init` created -- tearing that down
+// is a separate, explicit `terraform destroy` run in its own
+// env-<name> directory.
 var downCmd = &cobra.Command{
 	Use:   "down",
 	Short: "Destroy a deployed app's infrastructure (not the shared environment)",
@@ -64,12 +50,9 @@ func runDown(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Must resolve to exactly the same project name `compile` used to
-	// produce this app's output directory in the first place -- see
-	// appDir's own doc comment. If this app was compiled with an
-	// explicit --project, that same value must be passed here too;
-	// there is no way to recover it automatically, since it is not
-	// itself recorded anywhere `down` can read it back from.
+	// Must resolve to the same project name `compile` used to produce
+	// this app's output directory. If compile was given an explicit
+	// --project, that same value must be passed here too.
 	projectName, err := resolveProjectName(composeFile, projectFlag)
 	if err != nil {
 		printUnexpectedError(err)
@@ -93,11 +76,10 @@ func runDown(cmd *cobra.Command, args []string) {
 	}
 }
 
-// terraformDestroy runs `terraform init` (idempotent, safe to re-run)
-// and then a `terraform destroy` in dir, mirroring up.go's
-// terraformApply exactly: interactive with stdin connected and no
-// -auto-approve when autoApprove is false (the default), or
-// -auto-approve passed with stdin left unconnected when true.
+// terraformDestroy runs `terraform init` and then `terraform destroy`
+// in dir. Interactive with stdin connected and no -auto-approve when
+// autoApprove is false, or -auto-approve passed with stdin left
+// unconnected when true.
 func terraformDestroy(dir string, autoApprove bool) error {
 	fmt.Printf("Running terraform destroy in %s\n", dir)
 

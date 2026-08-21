@@ -15,39 +15,12 @@ import (
 )
 
 // initCmd bootstraps shared platform infrastructure (VPC, ALB/Container
-// Apps Environment, ECS Cluster, etc.) that multiple applications deploy
-// to. Typically run once by a platform team, then developers deploy apps
-// with `cloudcompose compile --env <output>` (the environment directory
-// itself, once `terraform apply` has run in it -- cloudcompose compile
-// reads the resulting facts directly via `terraform output -json`, not a
-// generated file).
+// Apps Environment, ECS Cluster, etc.) that multiple applications
+// deploy to. Typically run once by a platform team; developers then
+// deploy apps with `cloudcompose compile --env <output>`.
 //
-// Reads an authored `environment.yaml` -- the decisions (region, VPC
-// CIDR, whether to create an ALB, a GCP project ID) -- and nothing
-// else: there are no decision flags on this command at all. To change
-// a decision, edit the file and re-run `init`; there is exactly one way
-// to configure an environment, not two ways whose precedence has to be
-// remembered. See docs/authored-environment-config.md for the full
-// design and examples/README.md for a real, runnable walkthrough.
-//
-// This is a deliberate simplification: no decision flags means no
-// three-way precedence (flag, file, hardcoded default) to keep
-// straight, for a command whose entire point is to be the one
-// reviewable, authored source of truth for an environment, the same way
-// docker-compose.yml is for an app: nobody expects `docker compose`
-// itself to take per-field override flags for compose.yml, and there's
-// no reason environment.yaml should be different now that a real,
-// copyable example exists (examples/hello/environment.yaml).
-//
-// Uses -e/--env for this file, not -f/--file: init is the one command
-// with no compose file at all, so -f/--file's inherited persistent
-// meaning (see main.go's own doc comment) is never relevant here, and
-// giving environment.yaml the same -e/--env name `up` uses for its own
-// identical input (see up.go's own doc comment on that) keeps "the
-// environment" meaning one consistent flag across every command that
-// has one -- a file pre-apply (init, up), or a directory post-apply
-// (compile/ps/logs/down) -- rather than -f overloaded to mean two
-// unrelated kinds of file depending which command it's given to.
+// Reads an authored `environment.yaml` and nothing else -- there are
+// no decision flags on this command. See docs/authored-environment-config.md.
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a shared infrastructure environment",
@@ -81,12 +54,11 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Printf("  cloudcompose compile --env %s\n", output)
 }
 
-// initEnvironment does everything `cloudcompose init` does -- load
-// configFile, generate the environment's Terraform JSON, and write it
-// (plus a copy of the resolved config) to <dir of configFile>/env-<name>
-// -- and returns that output directory. Extracted from runInit so
-// `cloudcompose up` (see up.go) can call the exact same logic directly,
-// rather than duplicating it or shelling out to itself.
+// initEnvironment loads configFile, generates the environment's
+// Terraform JSON, and writes it (plus a copy of the resolved config)
+// to <dir of configFile>/env-<name>, returning that output directory.
+// Extracted from runInit so `cloudcompose up` can call the same logic
+// directly.
 func initEnvironment(configFile string) (string, error) {
 	fileConfig, err := initconfig.Load(configFile)
 	if err != nil {
@@ -102,15 +74,8 @@ func initEnvironment(configFile string) (string, error) {
 		)
 	}
 
-	// Printed here, immediately after a successful load, rather than
-	// after generation succeeds below: a human deciding whether to
-	// proceed should see these before anything is written to disk, not
-	// buried after "Success!" -- and every path through this function
-	// (any of the three clouds below) shares this one print site rather
-	// than each needing its own. See
-	// initconfig.BackendWarnings' own doc comment and
-	// docs/multi-user-state.md for what these warn about and why they
-	// are warnings, not errors that would block init entirely.
+	// Printed immediately after a successful load, before anything is
+	// written to disk.
 	for _, warning := range initconfig.BackendWarnings(fileConfig) {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", warning)
 	}
@@ -202,8 +167,7 @@ func initEnvironment(configFile string) (string, error) {
 		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData, fileConfig.Backend)
 	default:
 		// initconfig.Validate already rejects an unsupported provider
-		// before Load ever returns, so this is unreachable in practice --
-		// kept as a defensive default rather than a panic.
+		// before Load returns, so this is unreachable in practice.
 		return "", fmt.Errorf("provider %q is not supported. Supported: aws, azure, gcp", fileConfig.Provider)
 	}
 	if err != nil {
@@ -218,11 +182,9 @@ func initEnvironment(configFile string) (string, error) {
 		return "", err
 	}
 
-	// Write a copy of the authored config back out next to main.tf.json
-	// (identical to the input, since there are no overrides to resolve
-	// anymore) so the file that produced this infrastructure is always
-	// sitting next to it, not just implied by shell history. See
-	// docs/authored-environment-config.md's "cloudcompose init behavior".
+	// Write a copy of the authored config back out next to
+	// main.tf.json, so the file that produced this infrastructure is
+	// always sitting next to it.
 	resolvedYAMLPath := filepath.Join(output, "environment.yaml")
 	resolvedYAML, err := yaml.Marshal(fileConfig)
 	if err != nil {

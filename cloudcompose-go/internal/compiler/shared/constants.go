@@ -70,14 +70,9 @@ var DBInstanceClasses = map[string]string{
 }
 
 // RDSLogExports maps each RDS engine cloudcompose creates to the exact
-// log-type names valid for aws_db_instance's own
-// enabled_cloudwatch_logs_exports attribute (RDS's per-engine list of
-// exportable log types, confirmed against AWS's own RDS documentation
-// -- Postgres/MySQL/MariaDB each support a different, engine-specific
-// set; there is no single value that works for all three). Every
-// database cloudcompose creates gets its engine's own full list set
-// unconditionally (see aws/managed.go's inferDatabase) -- log export is
-// on by default, not an opt-in the user has to know to ask for.
+// log-type names valid for aws_db_instance's enabled_cloudwatch_logs_exports
+// attribute. Every database cloudcompose creates gets its engine's full list
+// set unconditionally; log export is on by default.
 var RDSLogExports = map[string][]string{
 	"postgres": {"postgresql", "upgrade"},
 	"mysql":    {"audit", "error", "general", "slowquery"},

@@ -68,7 +68,7 @@ Azure has reached feature parity with AWS on all major fronts:
   oversight. See `azure/managed.go`'s `largestServiceSize`.
 - Azure's one-shared-ACR-per-environment vs AWS's
   one-ECR-repo-per-service — both valid.
-- No shared ALB/ingress equivalent for Azure's `cloudcompose init` —
+- No shared ALB/ingress equivalent for Azure's `cloud-compose init` —
   Container Apps' per-service-FQDN model has no shared listener to
   configure.
 - Rate-schedule rejection when a value doesn't divide evenly into cron —

@@ -3,7 +3,7 @@
 Provisions the GCS bucket `backend.gcp:` in `environment.yaml` expects to
 already exist (see `docs/authored-environment-config.md`'s "Sharing one
 environment across multiple users" and `docs/multi-user-state.md`).
-`cloudcompose` never creates this itself -- it's a one-time,
+`cloud-compose` never creates this itself -- it's a one-time,
 manually-applied setup per organization/project, run before any
 `environment.yaml` references it.
 
@@ -22,7 +22,7 @@ terraform apply -var="project_id=my-gcp-project-id" -var="name=my-org"
 ```
 
 Then grant **Storage Object Admin** (`roles/storage.objectAdmin`) on the
-bucket to every identity that will run `cloudcompose init`/`up`/
+bucket to every identity that will run `cloud-compose init`/`up`/
 `compile`/`down`/`env-destroy` against a backend-configured environment:
 
 ```bash

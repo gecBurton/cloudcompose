@@ -10,7 +10,7 @@ import (
 )
 
 // cleanAWSEnv returns env with every AWS_*/credential-related variable
-// removed, so aws.NewS3Client (env_destroy.go's own
+// removed, so aws.NewS3Client (env_down.go's own
 // checkNoDependentApps) has no ambient credentials at all to find --
 // used to exercise the "check itself can't run" degrade-to-warning path
 // deterministically, without depending on whatever happens to be set in
@@ -26,34 +26,34 @@ func cleanAWSEnv(env []string) []string {
 	return cleaned
 }
 
-// TestEnvDestroy_Help confirms `cloudcompose env-destroy --help`
+// TestEnvDown_Help confirms `cloud-compose env down --help`
 // documents the flags this command actually reads (compose_file.go's
-// global -f is not used by this command at all -- env-destroy has no
-// compose file input -- plus env-destroy's own -e/--env, --force, and
+// global -f is not used by this command at all -- env down has no
+// compose file input -- plus env down's own -e/--env, --force, and
 // --auto-approve).
-func TestEnvDestroy_Help(t *testing.T) {
+func TestEnvDown_Help(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "env-destroy", "--help")
+	cmd := exec.Command(bin, "env", "down", "--help")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose env-destroy --help failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose env down --help failed: %v\n%s", err, out)
 	}
 
 	for _, want := range []string{"-e, --env", "--force", "--auto-approve"} {
 		if !contains(string(out), want) {
-			t.Errorf("expected %s in cloudcompose env-destroy --help output, got:\n%s", want, out)
+			t.Errorf("expected %s in cloud-compose env down --help output, got:\n%s", want, out)
 		}
 	}
 }
 
-// TestEnvDestroy_RequiresEnv mirrors TestDown_RequiresEnv.
-func TestEnvDestroy_RequiresEnv(t *testing.T) {
+// TestEnvDown_RequiresEnv mirrors TestComposeDown_RequiresEnv.
+func TestEnvDown_RequiresEnv(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "env-destroy")
+	cmd := exec.Command(bin, "env", "down")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
@@ -63,25 +63,25 @@ func TestEnvDestroy_RequiresEnv(t *testing.T) {
 	}
 }
 
-// TestEnvDestroy_FailsWhenEnvDirDoesNotExist mirrors
-// TestDown_FailsWhenAppNeverCompiled's own "clear error, never invokes
+// TestEnvDown_FailsWhenEnvDirDoesNotExist mirrors
+// TestComposeDown_FailsWhenAppNeverCompiled's own "clear error, never invokes
 // terraform" rationale, for a --env directory that doesn't exist at all
 // (as opposed to down's app directory).
-func TestEnvDestroy_FailsWhenEnvDirDoesNotExist(t *testing.T) {
+func TestEnvDown_FailsWhenEnvDirDoesNotExist(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "env-destroy", "-e", filepath.Join(t.TempDir(), "does-not-exist"))
+	cmd := exec.Command(bin, "env", "down", "-e", filepath.Join(t.TempDir(), "does-not-exist"))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected cloudcompose env-destroy to fail for a nonexistent --env, got:\n%s", out)
+		t.Fatalf("expected cloud-compose env down to fail for a nonexistent --env, got:\n%s", out)
 	}
 	if !contains(string(out), "does not exist") {
 		t.Errorf("expected a 'does not exist' message, got:\n%s", out)
 	}
 }
 
-// writeAwsEnvironmentFixtureWithBackend mirrors down_test.go's own
+// writeAwsEnvironmentFixtureWithBackend mirrors compose_down_test.go's own
 // writeAwsEnvironmentFixture, but also declares a `backend` output --
 // see aws.GenerateAwsEnvironment's own doc comment for the shape every
 // environment_generator.go writes there, and
@@ -134,8 +134,8 @@ output "backend" {
 // fakeTerraformThatReturnsEnvironment writes a fake `terraform`
 // executable to a scratch directory that answers `terraform output
 // -json` with environmentJSON (verbatim) and otherwise just logs its
-// own invocation and exits 0 -- mirroring down_test.go's own inline
-// fake terraform scripts, extracted here since env_destroy_test.go
+// own invocation and exits 0 -- mirroring compose_down_test.go's own inline
+// fake terraform scripts, extracted here since env_down_test.go
 // needs the same shape more than once.
 func fakeTerraformThatReturnsEnvironment(t *testing.T, environmentJSON string) (dir, logFile string) {
 	t.Helper()
@@ -155,13 +155,13 @@ exit 0
 	return dir, logFile
 }
 
-// TestEnvDestroy_NoBackendConfiguredWarnsAndProceeds confirms an
+// TestEnvDown_NoBackendConfiguredWarnsAndProceeds confirms an
 // environment with no backend: configured (writeAwsEnvironmentFixture,
-// down_test.go's own helper, declares no `backend` output at all) skips
+// compose_down_test.go's own helper, declares no `backend` output at all) skips
 // the dependent-app check with a warning and still runs `terraform
-// destroy` -- see envDestroyCmd's own doc comment for why this can't
+// destroy` -- see envDownCmd's own doc comment for why this can't
 // block teardown the same way finding a real dependent app does.
-func TestEnvDestroy_NoBackendConfiguredWarnsAndProceeds(t *testing.T) {
+func TestEnvDown_NoBackendConfiguredWarnsAndProceeds(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
@@ -169,11 +169,11 @@ func TestEnvDestroy_NoBackendConfiguredWarnsAndProceeds(t *testing.T) {
 
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}}`)
 
-	cmd := exec.Command(bin, "env-destroy", "-e", envDir, "--auto-approve")
+	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose env-destroy failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose env down failed: %v\n%s", err, out)
 	}
 	if !contains(string(out), "no backend configured") {
 		t.Errorf("expected a 'no backend configured' warning, got:\n%s", out)
@@ -188,13 +188,13 @@ func TestEnvDestroy_NoBackendConfiguredWarnsAndProceeds(t *testing.T) {
 	}
 }
 
-// TestEnvDestroy_BackendConfiguredButUnreachableWarnsAndProceeds
+// TestEnvDown_BackendConfiguredButUnreachableWarnsAndProceeds
 // confirms an environment with a backend configured, but whose list
 // call can't actually run in this test environment (no real AWS
 // credentials), still degrades to a warning rather than blocking
 // teardown -- see checkNoDependentApps' own doc comment for why every
 // way this check can fail to run must be treated the same way.
-func TestEnvDestroy_BackendConfiguredButUnreachableWarnsAndProceeds(t *testing.T) {
+func TestEnvDown_BackendConfiguredButUnreachableWarnsAndProceeds(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
@@ -207,11 +207,11 @@ func TestEnvDestroy_BackendConfiguredButUnreachableWarnsAndProceeds(t *testing.T
 	// "check itself can't run at all" path rather than a real,
 	// permission-denied list call (which would need a real AWS
 	// account).
-	cmd := exec.Command(bin, "env-destroy", "-e", envDir, "--auto-approve")
+	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--auto-approve")
 	cmd.Env = append(cleanAWSEnv(os.Environ()), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+t.TempDir())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose env-destroy failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose env down failed: %v\n%s", err, out)
 	}
 	if !contains(string(out), "could not check for dependent apps") {
 		t.Errorf("expected a 'could not check for dependent apps' warning, got:\n%s", out)
@@ -226,12 +226,12 @@ func TestEnvDestroy_BackendConfiguredButUnreachableWarnsAndProceeds(t *testing.T
 	}
 }
 
-// TestEnvDestroy_ForceSkipsCheckEntirely confirms --force runs
+// TestEnvDown_ForceSkipsCheckEntirely confirms --force runs
 // terraform destroy without printing any dependent-app-check warning at
-// all -- the escape hatch envDestroyCmd's own doc comment describes for
+// all -- the escape hatch envDownCmd's own doc comment describes for
 // when the check itself can't run, or an operator has already confirmed
 // by other means.
-func TestEnvDestroy_ForceSkipsCheckEntirely(t *testing.T) {
+func TestEnvDown_ForceSkipsCheckEntirely(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
@@ -239,11 +239,11 @@ func TestEnvDestroy_ForceSkipsCheckEntirely(t *testing.T) {
 
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}, "backend": {"value": {"provider": "aws", "aws": {"bucket": "my-org-tfstate", "region": "us-east-1"}}}}`)
 
-	cmd := exec.Command(bin, "env-destroy", "-e", envDir, "--force", "--auto-approve")
+	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--force", "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose env-destroy --force failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose env down --force failed: %v\n%s", err, out)
 	}
 	if contains(string(out), "dependent apps") {
 		t.Errorf("expected --force to skip the dependent-app check entirely, got:\n%s", out)
@@ -258,25 +258,25 @@ func TestEnvDestroy_ForceSkipsCheckEntirely(t *testing.T) {
 	}
 }
 
-// TestEnvDestroy_NoAutoApproveDoesNotPassFlag mirrors down_test.go's own
-// TestDown_RunsTerraformDestroyInAppDir "-auto-approve absent by
+// TestEnvDown_NoAutoApproveDoesNotPassFlag mirrors compose_down_test.go's own
+// TestComposeDown_RunsTerraformDestroyInAppDir "-auto-approve absent by
 // default" assertion.
-func TestEnvDestroy_NoAutoApproveDoesNotPassFlag(t *testing.T) {
+func TestEnvDown_NoAutoApproveDoesNotPassFlag(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
 	envDir := writeAwsEnvironmentFixture(t, "demo")
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}}`)
 
-	cmd := exec.Command(bin, "env-destroy", "-e", envDir, "--force")
+	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--force")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// No stdin attached -- terraform destroy would block on a prompt
 	// forever without --auto-approve; the fake terraform script never
 	// actually prompts, so this just confirms the flag isn't passed,
-	// mirroring down_test.go's own reasoning.
+	// mirroring compose_down_test.go's own reasoning.
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose env-destroy failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose env down failed: %v\n%s", err, out)
 	}
 
 	log, err := os.ReadFile(logFile)

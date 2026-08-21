@@ -8,11 +8,11 @@ multiple users" section and `docs/multi-user-state.md` for the full
 design this supports.
 
 Unlike every other example in this repo, these are **not** compiled by
-`cloudcompose` -- they're plain, hand-written Terraform meant to be
+`cloud-compose` -- they're plain, hand-written Terraform meant to be
 `terraform apply`'d directly, once per organization/account, before any
 `environment.yaml` references the bucket/table/storage account they
 create. Nothing here is generated, and nothing here is itself managed
-by a `cloudcompose`-created environment.
+by a `cloud-compose`-created environment.
 
 - [`aws/`](aws/) -- S3 bucket + DynamoDB lock table
 - [`azure/`](azure/) -- Storage account + blob container (shared-key
@@ -25,7 +25,7 @@ the `backend:` block to copy into `environment.yaml` afterwards.
 
 ## Why this isn't automated
 
-`cloudcompose` never provisions a backend's own storage itself -- the
+`cloud-compose` never provisions a backend's own storage itself -- the
 same chicken-and-egg reason most infrastructure tools leave this to a
 human: Terraform state needs somewhere to live, and provisioning that
 somewhere is itself infrastructure that would need its own state.

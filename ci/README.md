@@ -14,7 +14,7 @@ This Terraform creates:
 - a **DynamoDB lock table** for that bucket, so two runs racing against the
   same `NAME` (or a run racing its own `--destroy-only` recovery) can't
   corrupt each other's state — the same unlocked-S3 race
-  `docs/multi-user-state.md` closes for real `cloudcompose` users via
+  `docs/multi-user-state.md` closes for real `cloud-compose` users via
   `backend.aws.dynamodb_table`.
 
 ## Apply (once, from a stable connection)

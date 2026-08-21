@@ -14,28 +14,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// initCmd bootstraps shared platform infrastructure (VPC, ALB/Container
+// envInitCmd bootstraps shared platform infrastructure (VPC, ALB/Container
 // Apps Environment, ECS Cluster, etc.) that multiple applications
 // deploy to. Typically run once by a platform team; developers then
-// deploy apps with `cloudcompose compile --env <output>`.
+// deploy apps with `cloud-compose compile --env <output>`.
 //
 // Reads an authored `environment.yaml` and nothing else -- there are
 // no decision flags on this command. See docs/authored-environment-config.md.
-var initCmd = &cobra.Command{
+var envInitCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize a shared infrastructure environment",
-	Long: "Initialize a shared infrastructure environment.\n\n" +
+	Short: "Write a shared infrastructure environment's Terraform manifest (no apply)",
+	Long: "Write a shared infrastructure environment's Terraform manifest, without applying it.\n\n" +
 		"Creates the VPC, subnets, ALB/Container Apps Environment, and other " +
 		"shared resources that multiple applications can use. This is typically " +
 		"run once by a platform team, and then developers deploy apps with " +
-		"`cloudcompose compile`.\n\n" +
+		"`cloud-compose compile`.\n\n" +
 		"Reads an authored environment.yaml -- there are no decision flags; " +
 		"to change a decision, edit the file. See docs/authored-environment-config.md " +
 		"for the schema and examples/hello/environment.yaml for a starting point.",
-	Run: runInit,
+	Run: runEnvInit,
 }
 
-func runInit(cmd *cobra.Command, args []string) {
+func runEnvInit(cmd *cobra.Command, args []string) {
 	configFile, _ := cmd.Flags().GetString("env")
 
 	output, err := initEnvironment(configFile)
@@ -51,14 +51,14 @@ func runInit(cmd *cobra.Command, args []string) {
 	fmt.Println("  3. terraform apply")
 	fmt.Println()
 	fmt.Println("Deploy an app:")
-	fmt.Printf("  cloudcompose compile --env %s\n", output)
+	fmt.Printf("  cloud-compose compile --env %s\n", output)
 }
 
 // initEnvironment loads configFile, generates the environment's
 // Terraform JSON, and writes it (plus a copy of the resolved config)
 // to <dir of configFile>/env-<name>, returning that output directory.
-// Extracted from runInit so `cloudcompose up` can call the same logic
-// directly.
+// Extracted from runEnvInit so `cloud-compose env up` can call the same
+// logic directly.
 func initEnvironment(configFile string) (string, error) {
 	fileConfig, err := initconfig.Load(configFile)
 	if err != nil {
@@ -66,10 +66,10 @@ func initEnvironment(configFile string) (string, error) {
 	}
 	if fileConfig == nil {
 		return "", fmt.Errorf(
-			"%s not found.\n\ncloudcompose init reads an authored environment.yaml -- there are no\n"+
+			"%s not found.\n\ncloud-compose env init reads an authored environment.yaml -- there are no\n"+
 				"decision flags. Create one (see examples/hello/environment.yaml for\n"+
 				"a starting point, or docs/authored-environment-config.md for the full\n"+
-				"schema), then run:\n\n  cloudcompose init -e %s",
+				"schema), then run:\n\n  cloud-compose env init -e %s",
 			configFile, configFile,
 		)
 	}
@@ -214,7 +214,7 @@ func lowerASCII(s string) string {
 }
 
 func init() {
-	rootCmd.AddCommand(initCmd)
+	envCmd.AddCommand(envInitCmd)
 
-	initCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). Unlike --env on compile/ps/logs/down (an already-applied environment directory), this is the input file init itself applies.")
+	envInitCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). Unlike --env on compose compile/ps/logs/down (an already-applied environment directory), this is the input file init itself applies.")
 }

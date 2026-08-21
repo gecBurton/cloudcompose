@@ -119,7 +119,7 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		}
 		fmt.Fprintln(os.Stderr, "DEMO MODE: using placeholder resource IDs, not a real environment. "+
 			"The generated Terraform is for evaluation only and is not deployable as-is — "+
-			"run `cloudcompose init` to set up a real one.")
+			"run `cloud-compose env init` to set up a real one.")
 	} else {
 		fmt.Printf("Loading environment: %s\n", envDir)
 		env, err = compiler.LoadEnvironment(envDir)
@@ -216,7 +216,7 @@ func requireAwsOrAzure(cmdName string, env any) error {
 		return nil
 	default:
 		target, _ := environmentTarget(env)
-		return fmt.Errorf("`cloudcompose %s` does not support %s environments yet", cmdName, target)
+		return fmt.Errorf("`cloud-compose compose %s` does not support %s environments yet", cmdName, target)
 	}
 }
 
@@ -419,7 +419,7 @@ func copyDir(src, dst string) error {
 func init() {
 	rootCmd.AddCommand(mainCmd)
 
-	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
+	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
 	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
 	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
@@ -429,5 +429,5 @@ func init() {
 
 // cloudcomposeVersion returns a short identifying string for the CLI.
 func cloudcomposeVersion() string {
-	return "cloudcompose " + rootVersion
+	return "cloud-compose " + rootVersion
 }

@@ -127,14 +127,14 @@ func TestPrintAzurePsTable_HeaderAndRows(t *testing.T) {
 	}
 }
 
-// TestMain_PsRequiresEnv confirms `cloudcompose ps` has no default
+// TestMain_PsRequiresEnv confirms `cloud-compose compose ps` has no default
 // environment: like `main`, it fails with a helpful message rather
 // than silently guessing which cluster to query.
 func TestMain_PsRequiresEnv(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "ps", "-f", "../../../examples/hello/compose.yml")
+	cmd := exec.Command(bin, "compose", "ps", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
@@ -223,7 +223,7 @@ func TestMain_PsJSONFlag(t *testing.T) {
 	// flag itself parses, not that it does anything meaningful without
 	// a real environment, which needs a real cloud (covered by
 	// scripts/smoke-test.sh instead, not a unit test).
-	cmd := exec.Command(bin, "ps", "--json", "-f", "../../../examples/hello/compose.yml")
+	cmd := exec.Command(bin, "compose", "ps", "--json", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
@@ -252,10 +252,10 @@ func TestPs_RejectsGcpBeforeParsingCompose(t *testing.T) {
 		t.Fatalf("write invalid compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "ps", "-f", invalidComposeFile, "-e", envDir)
+	cmd := exec.Command(bin, "compose", "ps", "-f", invalidComposeFile, "-e", envDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected cloudcompose ps to fail for a gcp environment, got:\n%s", out)
+		t.Fatalf("expected cloud-compose compose ps to fail for a gcp environment, got:\n%s", out)
 	}
 	if !contains(string(out), "does not support gcp") {
 		t.Errorf("expected the gcp rejection message, got:\n%s", out)

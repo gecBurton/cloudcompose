@@ -17,4 +17,4 @@ test:
 	cd cloudcompose-go && go test -tags $(GO_TAGS) ./...
 
 build:
-	cd cloudcompose-go && go build -tags $(GO_TAGS) -o cloudcompose ./cmd/cloudcompose
+	cd cloudcompose-go && go build -tags $(GO_TAGS) -o cloud-compose ./cmd/cloudcompose

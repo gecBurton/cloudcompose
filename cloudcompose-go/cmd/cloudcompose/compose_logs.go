@@ -15,15 +15,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// logsCmd shows recent log output for the services in a compose file,
-// the way `docker compose logs` shows container logs -- but fetched
-// directly from the cloud, as a one-shot fetch (not a --follow tail)
-// in this first version.
-var logsCmd = &cobra.Command{
+// composeLogsCmd shows recent log output for the services in a
+// compose file, the way `docker compose logs` shows container logs --
+// but fetched directly from the cloud, as a one-shot fetch (not a
+// --follow tail) in this first version.
+var composeLogsCmd = &cobra.Command{
 	Use:   "logs [service...]",
 	Short: "Show recent logs for deployed services",
 	Long:  "Fetch recent log output directly from the cloud for one or more compose services (AWS and Azure). Shows every service if none are named, like `docker compose logs`.",
-	Run:   runLogs,
+	Run:   runComposeLogs,
 }
 
 // logEventJSON is the cloud-agnostic shape `logs --json` emits -- one
@@ -34,7 +34,7 @@ type logEventJSON struct {
 	Message   string `json:"message"`
 }
 
-func runLogs(cmd *cobra.Command, args []string) {
+func runComposeLogs(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
@@ -142,7 +142,7 @@ func runLogs(cmd *cobra.Command, args []string) {
 		// Unreachable: requireAwsOrAzure above already rejected
 		// anything but AWS/Azure.
 		target, _ := environmentTarget(env)
-		fmt.Fprintf(os.Stderr, "Error: `cloudcompose logs` does not support %s environments yet\n", target)
+		fmt.Fprintf(os.Stderr, "Error: `cloud-compose compose logs` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
 }
@@ -207,11 +207,11 @@ func azureLogEventsJSON(events []azure.LogEvent) []logEventJSON {
 }
 
 func init() {
-	rootCmd.AddCommand(logsCmd)
+	composeCmd.AddCommand(composeLogsCmd)
 
-	logsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
-	logsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
-	logsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")
-	logsCmd.Flags().Int("tail", 200, "Number of log lines to fetch per service")
-	logsCmd.Flags().Bool("json", false, "Output as a JSON array instead of human-readable lines")
+	composeLogsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	composeLogsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
+	composeLogsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")
+	composeLogsCmd.Flags().Int("tail", 200, "Number of log lines to fetch per service")
+	composeLogsCmd.Flags().Bool("json", false, "Output as a JSON array instead of human-readable lines")
 }

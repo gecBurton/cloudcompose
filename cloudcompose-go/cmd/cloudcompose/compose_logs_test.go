@@ -76,13 +76,13 @@ func TestPrintAzureLogEvents_MultipleServicesInterleaved(t *testing.T) {
 	}
 }
 
-// TestMain_LogsRequiresEnv confirms `cloudcompose logs` has no default
+// TestMain_LogsRequiresEnv confirms `cloud-compose compose logs` has no default
 // environment, matching `ps`'s and `main`'s own requirement.
 func TestMain_LogsRequiresEnv(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "logs", "-f", "../../../examples/hello/compose.yml")
+	cmd := exec.Command(bin, "compose", "logs", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
@@ -157,7 +157,7 @@ func TestMain_LogsJSONFlag(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "logs", "--json", "-f", "../../../examples/hello/compose.yml")
+	cmd := exec.Command(bin, "compose", "logs", "--json", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
@@ -183,10 +183,10 @@ func TestLogs_RejectsGcpBeforeParsingCompose(t *testing.T) {
 		t.Fatalf("write invalid compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "logs", "-f", invalidComposeFile, "-e", envDir)
+	cmd := exec.Command(bin, "compose", "logs", "-f", invalidComposeFile, "-e", envDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected cloudcompose logs to fail for a gcp environment, got:\n%s", out)
+		t.Fatalf("expected cloud-compose compose logs to fail for a gcp environment, got:\n%s", out)
 	}
 	if !contains(string(out), "does not support gcp") {
 		t.Errorf("expected the gcp rejection message, got:\n%s", out)

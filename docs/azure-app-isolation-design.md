@@ -30,7 +30,7 @@ RBAC/firewall rules, not network segmentation).
 
 ## Design
 
-`cloudcompose init` and `cloudcompose compile` split differently on Azure
+`cloud-compose init` and `cloud-compose compile` split differently on Azure
 than on AWS:
 
 - **`init` creates** (the Cloud Compose Environment layer): resource
@@ -68,8 +68,8 @@ headroom is needed.
 
 ## Status
 
-Implemented (2026-08-11). `cloudcompose init` no longer creates a
-Container Apps Environment or subnets; `cloudcompose compile` creates its
+Implemented (2026-08-11). `cloud-compose init` no longer creates a
+Container Apps Environment or subnets; `cloud-compose compile` creates its
 own per app. Verified against real Azure (`production-stack`): the
 per-app Container Apps Environment and all four delegated subnets
 created and destroyed cleanly.

@@ -1,6 +1,6 @@
 name: Release
 
-# Manually triggered: build cross-platform cloudcompose binaries and
+# Manually triggered: build cross-platform cloud-compose binaries and
 # publish them as a GitHub Release, so users can download a binary
 # without building from source. Not triggered on every push -- release
 # timing is a deliberate choice, not automatic on merge to main.

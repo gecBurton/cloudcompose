@@ -8,36 +8,36 @@ import (
 	"testing"
 )
 
-// TestDown_Help confirms `cloudcompose down --help` documents the flags
+// TestComposeDown_Help confirms `cloud-compose compose down --help` documents the flags
 // this command actually reads (compose_file.go's global -f, plus
-// down's own -e/--env, -p/--project, and --auto-approve) -- see down.go's
+// down's own -e/--env, -p/--project, and --auto-approve) -- see compose_down.go's
 // own doc comment for why --auto-approve exists (non-interactive
 // callers) and is off by default, and appDir's own doc comment for why
 // -p/--project must match whatever `compile` used.
-func TestDown_Help(t *testing.T) {
+func TestComposeDown_Help(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "down", "--help")
+	cmd := exec.Command(bin, "compose", "down", "--help")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose down --help failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose compose down --help failed: %v\n%s", err, out)
 	}
 
 	for _, want := range []string{"-f, --file", "-e, --env", "-p, --project", "--auto-approve"} {
 		if !contains(string(out), want) {
-			t.Errorf("expected %s in cloudcompose down --help output, got:\n%s", want, out)
+			t.Errorf("expected %s in cloud-compose compose down --help output, got:\n%s", want, out)
 		}
 	}
 }
 
-// TestDown_RequiresEnv confirms `cloudcompose down` has no default
+// TestComposeDown_RequiresEnv confirms `cloud-compose compose down` has no default
 // environment, matching `ps`'s/`logs`'s own requirement.
-func TestDown_RequiresEnv(t *testing.T) {
+func TestComposeDown_RequiresEnv(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	cmd := exec.Command(bin, "down", "-f", "../../../examples/hello/compose.yml")
+	cmd := exec.Command(bin, "compose", "down", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
@@ -49,7 +49,7 @@ func TestDown_RequiresEnv(t *testing.T) {
 
 // writeGcpEnvironmentFixture mirrors writeAwsEnvironmentFixture, but
 // declares a minimal-but-valid GCP environment instead -- used by
-// ps_test.go/logs_test.go to confirm `ps`/`logs` reject a GCP
+// compose_ps_test.go/compose_logs_test.go to confirm `ps`/`logs` reject a GCP
 // environment immediately after LoadEnvironment succeeds, not only
 // after also parsing/normalizing compose.yml (see requireAwsOrAzure's
 // own doc comment in compile.go for why that ordering matters).
@@ -128,12 +128,12 @@ func writeAwsEnvironmentFixture(t *testing.T, name string) string {
 	return dir
 }
 
-// TestDown_FailsWhenAppNeverCompiled confirms `down` fails clearly, and
+// TestComposeDown_FailsWhenAppNeverCompiled confirms `down` fails clearly, and
 // never invokes terraform destroy at all, when the app-<environment
-// name> directory a previous `cloudcompose compile` would have written
+// name> directory a previous `cloud-compose compile` would have written
 // doesn't exist -- rather than terraform itself producing a more
 // confusing "no configuration files" error.
-func TestDown_FailsWhenAppNeverCompiled(t *testing.T) {
+func TestComposeDown_FailsWhenAppNeverCompiled(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	scratchDir := t.TempDir()
@@ -144,24 +144,24 @@ func TestDown_FailsWhenAppNeverCompiled(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir)
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected cloudcompose down to fail when the app was never compiled, got:\n%s", out)
+		t.Fatalf("expected cloud-compose compose down to fail when the app was never compiled, got:\n%s", out)
 	}
 	if !contains(string(out), "does not exist") {
 		t.Errorf("expected a 'does not exist' message, got:\n%s", out)
 	}
 }
 
-// TestDown_RunsTerraformDestroyInAppDir confirms `down` resolves the
+// TestComposeDown_RunsTerraformDestroyInAppDir confirms `down` resolves the
 // same app-<environment name> directory `compile` writes to and runs
 // `terraform destroy` there -- exercised via a fake `terraform` on PATH
-// that records its own working directory and arguments once init.go's
+// that records its own working directory and arguments once env_init.go's
 // real environment lookup (via the offline fixture above) has already
 // resolved the app directory, since a real destroy needs cloud
 // credentials this test suite doesn't have.
-func TestDown_RunsTerraformDestroyInAppDir(t *testing.T) {
+func TestComposeDown_RunsTerraformDestroyInAppDir(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
@@ -198,11 +198,11 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir, "-p", "hello")
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir, "-p", "hello")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose down failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose compose down failed: %v\n%s", err, out)
 	}
 
 	log, err := os.ReadFile(logFile)
@@ -220,11 +220,11 @@ exit 0
 	}
 }
 
-// TestDown_AutoApprovePassesFlagToTerraform confirms --auto-approve
+// TestComposeDown_AutoApprovePassesFlagToTerraform confirms --auto-approve
 // reaches `terraform destroy` as `-auto-approve` -- exercised via a fake
 // `terraform` on PATH that records its own arguments, since a real
 // destroy needs cloud credentials this test suite doesn't have.
-func TestDown_AutoApprovePassesFlagToTerraform(t *testing.T) {
+func TestComposeDown_AutoApprovePassesFlagToTerraform(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
@@ -255,13 +255,13 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "down", "-f", composeFile, "-e", envDir, "-p", "hello", "--auto-approve")
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir, "-p", "hello", "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	// No stdin attached at all -- see up_test.go's identical note on why
+	// No stdin attached at all -- see env_up_test.go's/compose_up_test.go's identical note on why
 	// this matters for --auto-approve specifically.
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose down --auto-approve failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose compose down --auto-approve failed: %v\n%s", err, out)
 	}
 
 	log, err := os.ReadFile(logFile)

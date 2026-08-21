@@ -8,7 +8,7 @@ builds:
   - id: cloudcompose
     dir: cloudcompose-go
     main: ./cmd/cloudcompose
-    binary: cloudcompose
+    binary: cloud-compose
     env:
       - CGO_ENABLED=0
     # disable_grpc_modules keeps released binaries in sync with the

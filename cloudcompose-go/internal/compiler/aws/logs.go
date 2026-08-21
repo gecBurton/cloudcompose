@@ -1,10 +1,3 @@
-// This file adds another concern to the aws package, alongside
-// status.go's live `ps` support: live logs ("cloudcompose logs"). Same
-// rationale as status.go -- deliberately independent of Terraform
-// state/output, recomputing the CloudWatch log group name from the
-// same env.Name-app.Name-service.Name formula InferAWS's own getName
-// closure uses to create it in the first place (compute.go's
-// `logGroup.Name = "/ecs/" + getName(service.Name)`).
 package aws
 
 import (
@@ -23,28 +16,22 @@ import (
 )
 
 // LogEvent is one line of `cloudcompose logs` output, tagged with which
-// compose service it came from so multi-service output can be
-// interleaved with a NAME prefix, the same way `docker compose logs`
-// tags each line.
+// compose service it came from.
 type LogEvent struct {
 	Service   string
-	Timestamp int64 // milliseconds since the Unix epoch, per CloudWatch's own convention
+	Timestamp int64 // milliseconds since the Unix epoch
 	Message   string
 }
 
 // cloudwatchLogsClient is the subset of *cloudwatchlogs.Client that
-// FetchLogs needs, mirroring status.go's ecsClient/elbClient rationale:
-// letting tests substitute a fake without a real AWS call.
+// FetchLogs needs, letting tests substitute a fake without a real AWS
+// call.
 type cloudwatchLogsClient interface {
 	FilterLogEvents(ctx context.Context, params *cloudwatchlogs.FilterLogEventsInput, optFns ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.FilterLogEventsOutput, error)
 }
 
 // NewCloudWatchLogsClient builds the real CloudWatch Logs client
-// FetchLogs needs, from the same ambient credential chain
-// NewAWSClients already uses (see its own doc comment) -- kept as a
-// separate constructor rather than folded into NewAWSClients so `ps`
-// (which never touches logs) doesn't gain an unused dependency on this
-// package's logs client.
+// FetchLogs needs from the ambient credential chain.
 func NewCloudWatchLogsClient(ctx context.Context, region string) (cloudwatchLogsClient, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
@@ -54,45 +41,16 @@ func NewCloudWatchLogsClient(ctx context.Context, region string) (cloudwatchLogs
 }
 
 // FetchLogs returns recent log events for the given services (or every
-// container/database service in app if services is empty, matching
-// `docker compose logs`'s own no-argument behavior of showing
-// everything), across the given cluster's environment.
+// container/database service in app if services is empty), across
+// env's cluster.
 //
-// Covers two service capabilities, each with its own log-group naming
-// and behavior:
+// For CapabilityContainer, scheduled-task services are included since
+// they still log to the same CloudWatch log group as a regular ECS
+// service. For CapabilityDatabase, all of an engine's exported RDS log
+// types are queried and merged under one Service tag.
 //
-//   - CapabilityContainer: unlike FetchStatus (status.go),
-//     scheduled-task services are not excluded here: a service with a
-//     Schedule never gets its own aws_ecs_service (compute.go's "Only
-//     create service if not scheduled"), but it still runs as an ECS
-//     task on its own schedule and logs to the exact same
-//     "/ecs/"+getName(service.Name) log group -- the log group is
-//     created unconditionally in compute.go, before the
-//     scheduled/unscheduled branch.
-//   - CapabilityDatabase: RDS exports one log group per engine-specific
-//     log type (managed.go's inferDatabase sets
-//     EnabledCloudwatchLogsExports unconditionally, so every database
-//     this compiler creates has log export on by default -- there is
-//     nothing to opt into at query time). Each log group is named
-//     "/aws/rds/instance/<identifier>/<log-type>"
-//     (AWS's own fixed naming convention for RDS's CloudWatch export,
-//     not something cloudcompose chooses), where identifier is the same
-//     getName(service.Name) inferDatabase itself used for
-//     aws_db_instance.identifier. All of that service's log types are
-//     queried and merged together, tagged with the same Service field
-//     regardless of which log type (e.g. "error" vs "slowquery") they
-//     came from -- a caller wanting to distinguish them can still do so
-//     from the message content itself, but `docker compose logs` has no
-//     concept of "log type" to expose a separate field for.
-//
-// Results are merged across services (and across log types, for
-// databases) and sorted by timestamp, so multi-service output naturally
-// interleaves in chronological order (each event still carries its own
-// Service field so the caller can prefix each line). A service whose
-// log group doesn't exist yet (never deployed, or deployed under a
-// since-changed name) is silently skipped, not an error -- the same
-// "not found is not a failure" principle status.go's ServiceStatus.Found
-// follows.
+// Results are merged and sorted by timestamp. A service whose log
+// group doesn't exist yet is silently skipped, not an error.
 func FetchLogs(ctx context.Context, client cloudwatchLogsClient, app *models.Application, env *models.AwsEnvironment, services []string, since int64, limit int32) ([]LogEvent, error) {
 	getName := shared.ResourceNamer(env.Name, app.Name)
 
@@ -130,28 +88,18 @@ func FetchLogs(ctx context.Context, client cloudwatchLogsClient, app *models.App
 }
 
 // fetchContainerLogs queries the single ECS log group a container
-// service logs to. Split out of FetchLogs so that function's own
-// per-capability switch stays a plain dispatch, matching
-// fetchDatabaseLogs' own shape below.
+// service logs to.
 func fetchContainerLogs(ctx context.Context, client cloudwatchLogsClient, service *models.Service, getName func(string) string, since int64, limit int32) ([]LogEvent, error) {
 	logGroupName := "/ecs/" + getName(service.Name)
-	// The bare service name is also the container name inside the task
-	// definition (compute.go's container.Name = service.Name, not
-	// getName-prefixed) and therefore the awslogs driver's own
-	// stream-name segment, given awslogs-stream-prefix = "ecs"
-	// (shared.AWSLogsStreamPrefix): streams look like
-	// "ecs/<service.Name>/<task-id>". Filtering by that prefix means a
-	// shared log group (if one were ever reused across services, which
-	// it currently isn't) couldn't leak another service's lines into
-	// this one's output.
+	// The bare service name is the container name and therefore the
+	// awslogs stream-name segment: streams look like
+	// "ecs/<service.Name>/<task-id>".
 	streamPrefix := shared.AWSLogsStreamPrefix + "/" + service.Name + "/"
 	return fetchLogGroupEvents(ctx, client, service.Name, logGroupName, &streamPrefix, since, limit)
 }
 
 // fetchDatabaseLogs queries every RDS log group this service's engine
-// exports (see FetchLogs's own doc comment for the naming convention
-// and why there's one log group per log type, not one for the whole
-// database).
+// exports, named "/aws/rds/instance/<identifier>/<log-type>".
 func fetchDatabaseLogs(ctx context.Context, client cloudwatchLogsClient, service *models.Service, getName func(string) string, since int64, limit int32) ([]LogEvent, error) {
 	engine := "postgres"
 	imageLower := strings.ToLower(service.Image)
@@ -175,10 +123,8 @@ func fetchDatabaseLogs(ctx context.Context, client cloudwatchLogsClient, service
 }
 
 // fetchLogGroupEvents runs FilterLogEvents against one log group,
-// paginating until exhausted, tagging every result with serviceName --
-// the shared plumbing both fetchContainerLogs and fetchDatabaseLogs
-// build on. streamNamePrefix is optional (nil for RDS, which has no
-// stream-prefix concept the way awslogs-stream-prefix gives ECS one).
+// paginating until exhausted and tagging every result with serviceName.
+// streamNamePrefix is optional (nil for RDS).
 func fetchLogGroupEvents(ctx context.Context, client cloudwatchLogsClient, serviceName, logGroupName string, streamNamePrefix *string, since int64, limit int32) ([]LogEvent, error) {
 	input := &cloudwatchlogs.FilterLogEventsInput{
 		LogGroupName:        aws.String(logGroupName),
@@ -215,10 +161,9 @@ func fetchLogGroupEvents(ctx context.Context, client cloudwatchLogsClient, servi
 	return events, nil
 }
 
-// isLogGroupNotFound reports whether err is CloudWatch Logs' own
-// ResourceNotFoundException, meaning the log group itself doesn't
-// exist -- expected for a service that's never been deployed, not a
-// real failure `logs` should surface as one.
+// isLogGroupNotFound reports whether err is CloudWatch Logs'
+// ResourceNotFoundException, meaning the log group doesn't exist --
+// expected for a service that's never been deployed, not a failure.
 func isLogGroupNotFound(err error) bool {
 	var notFound *cwltypes.ResourceNotFoundException
 	return errors.As(err, &notFound)

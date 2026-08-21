@@ -7,10 +7,8 @@ import (
 
 // LoadAzureEnvironment resolves an Azure environment's facts by running
 // `terraform output -json` in dir and decoding its `environment` output
-// into models.AzureEnvironment. See aws.LoadAwsEnvironment's own doc
-// comment for why this reads Terraform's own live state rather than a
-// generated file, and for the optional `backend` output this also
-// decodes into env.Backend.
+// into models.AzureEnvironment, along with the optional `backend` output
+// into env.Backend.
 func LoadAzureEnvironment(dir string) (*models.AzureEnvironment, error) {
 	raw, err := shared.TerraformOutputs(dir, "environment")
 	if err != nil {
@@ -56,8 +54,7 @@ func LoadAzureEnvironment(dir string) (*models.AzureEnvironment, error) {
 	}
 	env.Backend = shared.DecodeBackendOutput(backendRaw)
 
-	// AzureEnvironment carries no cross-field validation (no equivalent to
-	// AwsEnvironment's ALB check).
+	// AzureEnvironment carries no cross-field validation.
 
 	return &env, nil
 }

@@ -10,12 +10,6 @@ import (
 )
 
 // InferGcp is the main entry point for GCP inference.
-//
-// Implemented with lighter verification than InferAWS/InferAzure: GCP has
-// no golden examples and essentially no dedicated test suite either --
-// this logic has been sanity-checked against a couple of hand-verified
-// outputs, not cross-checked against an existing coverage survey the way
-// AWS/Azure were, since no equivalent survey exists to run.
 func InferGcp(app *models.Application, env *models.GcpEnvironment) *models.GcpResources {
 	resources := models.NewGcpResources()
 
@@ -24,47 +18,35 @@ func InferGcp(app *models.Application, env *models.GcpEnvironment) *models.GcpRe
 	if len(env.Tags) > 0 {
 		tags = env.Tags
 	}
-	_ = tags // Inference accepts tags but never applies them to any GCP resource type -- intentional, not an oversight here.
+	_ = tags // tags are accepted but not yet applied to any GCP resource type.
 
-	// Step 1: Create VPC connector if needed.
 	vpcConnectorName := inferVpcConnectorGcp(resources, app, env, getName)
 
-	// Step 2: Create Cloud SQL instance if needed.
 	connections := inferDatabasesGcp(resources, app, env, getName)
 
-	// Step 3: Create Memorystore Redis if needed.
 	for k, v := range inferCachesGcp(resources, app, env, getName) {
 		connections[k] = v
 	}
 
-	// Step 4: Create Cloud Storage buckets if needed.
 	for k, v := range inferStorageGcp(resources, app, env, getName) {
 		connections[k] = v
 	}
 
-	// connectionOrder tracks connections in insertion order: databases
-	// first, then caches, then storage -- each group in the order its
-	// services appear in app.Services. Iterating a Go map directly diffs
-	// the wrong way whenever a service references more than one
-	// connection type -- the same bug class Azure's implementation hit
-	// and fixed the same way (both now share shared.ConnectionOrder,
-	// rather than each having their own copy).
+	// connectionOrder preserves insertion order (databases, then caches,
+	// then storage) so output is deterministic; iterating a map directly
+	// would produce nondeterministic diffs.
 	connectionOrder := shared.ConnectionOrder(app, connections)
 
-	// Step 5: Create Cloud Run services.
 	inferCloudRunServicesGcp(resources, app, env, getName, vpcConnectorName, connections, connectionOrder)
 
-	// Step 6: Load balancer for custom domains/CDN is a deliberate no-op
-	// for now (custom domain / CDN support is not yet implemented), so
-	// there is nothing to do here either.
+	// Load balancer for custom domains/CDN is not yet implemented.
 
 	return resources
 }
 
-// inferVpcConnectorGcp creates a VPC connector for private networking if
-// any service needs it. Only created when
-// a database-capability service exists -- Cloud SQL's private IP path is
-// the only thing here that needs one.
+// inferVpcConnectorGcp creates a VPC connector for private networking,
+// needed when a database-capability service exists (Cloud SQL's private
+// IP path requires one).
 func inferVpcConnectorGcp(
 	resources *models.GcpResources,
 	app *models.Application,
@@ -99,12 +81,8 @@ func inferVpcConnectorGcp(
 	return &connectorName
 }
 
-// inferDatabasesGcp creates one Cloud SQL instance for every
-// database-capability service. Unlike AWS/Azure (one managed server per
-// service or per engine), GCP inference deliberately creates exactly one
-// Cloud SQL instance shared by every database service in the app, always
-// Postgres 14 -- this is intentional, not something to "fix" into
-// per-engine servers.
+// inferDatabasesGcp creates one shared Cloud SQL (Postgres 14) instance
+// for every database-capability service.
 func inferDatabasesGcp(
 	resources *models.GcpResources,
 	app *models.Application,
@@ -237,10 +215,6 @@ func inferStorageGcp(
 
 // inferCloudRunServicesGcp creates a Cloud Run service for every
 // container-capability service.
-//
-// Unlike ECS/Container Apps: built-in HTTPS (no separate load balancer
-// needed for the simple case), scales to zero by default, request-based
-// concurrency.
 func inferCloudRunServicesGcp(
 	resources *models.GcpResources,
 	app *models.Application,
@@ -339,25 +313,7 @@ func inferCloudRunServicesGcp(
 }
 
 // cpuLimitGcp converts service size or explicit CPU to a Cloud Run CPU
-// limit string (millicores). Size-derived values come from
-// shared.SizeMappings (the same table AWS/Azure use, converted from ECS
-// CPU units to millicores: 1024 units == 1000m, matching Kubernetes'
-// own millicore convention Cloud Run's CPU limit string uses) rather
-// than a separately hardcoded table -- this previously had its own
-// table with a genuinely different CPU:memory ratio per size than AWS/
-// Azure's (medium was 2 vCPU/1Gi here vs. AWS/Azure's 1 vCPU/2Gi, an
-// inverted ratio despite sharing the same size name), the same class of
-// already-drifted duplicate Azure's own getCPUCoresAzure fixed first
-// (see that function's own doc comment) -- found during a codebase
-// review, not by a real deployment: GCP has no golden fixtures pinning
-// these exact strings the way AWS/Azure's own size-table consolidation
-// was caught by.
-//
-// Unlike Azure's getCPUCoresAzure/getMemoryGBAzure, this has no
-// ceiling-rejection against a Cloud Run resource limit -- GCP's own
-// inference remains lighter-verified than AWS/Azure's throughout (see
-// InferGcp's own doc comment), and no real Cloud Run deployment has
-// exercised whether "large" (4 vCPU derived below) ever needs one.
+// limit string (millicores).
 func cpuLimitGcp(service *models.Service) string {
 	if service.CPU != nil {
 		return fmt.Sprintf("%dm", *service.CPU)
@@ -366,17 +322,13 @@ func cpuLimitGcp(service *models.Service) string {
 	if !ok {
 		mapping = shared.SizeMappings["small"]
 	}
-	// mapping.CPU is in ECS CPU units, where 1024 units == 1 vCPU == Cloud
-	// Run's own "1000m" -- the same *1000/1024 conversion Azure's
-	// getCPUCoresAzure divides by 1024 to get cores, just expressed in
-	// millicores instead of a float core count.
+	// mapping.CPU is in ECS CPU units, where 1024 units == 1000m.
 	millicores := mapping.CPU * 1000 / 1024
 	return fmt.Sprintf("%dm", millicores)
 }
 
 // memoryLimitGcp converts service size or explicit memory to a Cloud Run
-// memory limit string. See cpuLimitGcp's own doc comment for the
-// size-table consolidation this mirrors on the memory side.
+// memory limit string.
 func memoryLimitGcp(service *models.Service) string {
 	if service.Memory != nil {
 		return fmt.Sprintf("%dMi", *service.Memory)
@@ -388,12 +340,8 @@ func memoryLimitGcp(service *models.Service) string {
 	return fmt.Sprintf("%dMi", mapping.Memory)
 }
 
-// buildConnectionURLGcp builds a connection URL string. Unlike Azure's
-// connectionURLAzure (which now branches on the target's actual
-// capability -- see docs/azure-aws-parity-todo.md Priority 1 item 3),
-// this checks whether the connection actually carries a database and
-// falls back to a bare host:port otherwise -- not reconciled with
-// Azure's approach to the same problem.
+// buildConnectionURLGcp builds a connection URL string, falling back to
+// a bare host:port for connections that don't carry a database.
 func buildConnectionURLGcp(conn *models.Connection) string {
 	if conn.Database != nil {
 		username := pyNoneStringGcp(conn.Username)
@@ -412,11 +360,7 @@ func buildConnectionURLGcp(conn *models.Connection) string {
 }
 
 // pyNoneStringGcp renders the literal string "None" for an unset
-// Optional[str] value, not an empty string. Still a live, unfixed
-// divergence on GCP -- Azure's equivalent bug (containerSpecAzure) was
-// found and fixed in a later pass; this GCP one has not been revisited
-// since, consistent with GCP's overall lighter-verification scope (see
-// docs/azure-aws-parity-todo.md).
+// Optional[str] value, not an empty string.
 func pyNoneStringGcp(value *string) string {
 	if value == nil {
 		return "None"

@@ -144,27 +144,13 @@ func RejectPersistentVolumes(name string, service *models.ComposeService, capabi
 // NamedVolumeSource returns the name of the volume a mount refers to, or ""
 // if the mount is local-only (a bind mount or anonymous volume) and
 // therefore not something RejectPersistentVolumes needs to flag.
-//
-// Takes models.VolumeDefinition directly rather than interface{}: every
-// volume entry parser.go produces is already this concrete type, since
-// compose-go itself normalizes both short-form ("db-data:/data") and
-// long-form volume syntax into one struct shape before the loader returns.
-// A prior version of this function type-switched on interface{} expecting
-// either a bare string or this struct, and matched neither in production —
-// what actually flows through parser.go's Volumes field is compose-go's own
-// types.ServiceVolumeConfig, converted here rather than left as a look-alike
-// type nothing ever matches.
 func NamedVolumeSource(volume models.VolumeDefinition) string {
 	if volume.Type != "volume" {
 		return ""
 	}
-	// Belt and suspenders: compose-go's own Type field already distinguishes
-	// a bind mount from a named volume, and a real named volume's Source is
-	// always a bare volume name, never a path — so this loop should never
-	// actually match anything once Type == "volume" is confirmed. Kept
-	// rather than removed: it costs nothing, and it is the only thing
-	// standing between a future compose-go behavior change and this
-	// silently returning a path as if it were a volume name again.
+	// compose-go's Type field already distinguishes a bind mount from a
+	// named volume, and a named volume's Source is always a bare name,
+	// never a path.
 	source := volume.Source
 	for _, prefix := range BindSourcePrefixes {
 		if strings.HasPrefix(source, prefix) {
@@ -243,13 +229,8 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 		return nil, err
 	}
 
-	// Go map iteration order is randomized per the language spec, so
-	// iterating composeApp.Services directly would make Normalize's own
-	// output order nondeterministic across runs on identical input.
-	// Determinism is a stated project invariant (output must be
-	// byte-identical for the same input), so the iteration order has to
-	// be fixed independently of whatever order the map happens to hand
-	// keys back in.
+	// Go map iteration order is randomized, so keys are sorted for
+	// deterministic output.
 	serviceNames := make([]string, 0, len(composeApp.Services))
 	for serviceName := range composeApp.Services {
 		serviceNames = append(serviceNames, serviceName)
@@ -322,14 +303,8 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 		}
 
 		// dockerService.Command is always []string by the time it reaches
-		// here (parser.go converts compose-go's ShellCommand, which is
-		// itself already shell-split from a YAML string form — `docker
-		// compose config`, the equivalent step in the parser this replaces,
-		// does the same normalization). The []interface{}/string cases
-		// below exist only in case that assumption is ever violated by a
-		// different caller of Normalize; a bare string would previously
-		// have been wrapped in ["/bin/sh", "-c", ...], but that shape has
-		// never actually been observed from either parser in practice.
+		// here (parser.go converts compose-go's ShellCommand). The other
+		// cases are a defensive fallback in case that assumption changes.
 		var command []string
 		switch v := dockerService.Command.(type) {
 		case []string:
@@ -432,9 +407,7 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 
 		semanticServices = append(semanticServices, semanticService)
 
-		// Same determinism concern as the outer loop: DependsOn is a map,
-		// so its keys need sorting before use rather than being trusted to
-		// come back in a stable order.
+		// Same determinism concern as the outer loop: sort map keys before use.
 		depNames := make([]string, 0, len(dockerService.DependsOn))
 		for depName := range dockerService.DependsOn {
 			depNames = append(depNames, depName)
@@ -471,18 +444,9 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 
 func SettingsFor(name string, service models.ComposeService) (*models.XCloud, error) {
 	if service.XCloud == nil {
-		// Must match UnmarshalJSON's own defaults exactly, not a bare zero
-		// value — MinScale/MaxScale are meaningful at 0 (scale-to-zero is a
-		// real, validated setting: min_scale allows 0, only max_scale
-		// requires >= 1), so a zero value here is indistinguishable from a
-		// service that explicitly asked for 0. A second pass in Normalize
-		// used to paper over exactly this by resetting MinScale/MaxScale to
-		// 1 whenever both were 0 — which also reset an explicit
-		// min_scale: 0 back to 1 for any service that did have an
-		// x-cloud block, since there was no way from that check alone to
-		// tell "unset" apart from "deliberately zero" (confirmed against a
-		// real x-cloud block). Fixed at the one place the
-		// default actually needs to live, rather than reapplied downstream.
+		// MinScale/MaxScale are meaningful at 0 (scale-to-zero), so a
+		// zero-value struct is indistinguishable from an explicit 0; the
+		// defaults are applied here rather than via a zero value.
 		return &models.XCloud{Size: "small", MinScale: 1, MaxScale: 1}, nil
 	}
 

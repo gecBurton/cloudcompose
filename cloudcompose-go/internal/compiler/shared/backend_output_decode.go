@@ -2,20 +2,14 @@ package shared
 
 import "github.com/gecburton/cloudcompose/internal/models"
 
-// DecodeBackendOutput decodes the shape every cloud's own
-// Generate*Environment writes into its `output "backend"` block
-// (`{"provider": "aws"|"azure"|"gcp", "aws"|"azure"|"gcp": {...}}` --
-// see internal/compiler/{aws,azure,gcp}/environment_generator.go) back
-// into a *models.BackendConfig, or nil if raw is nil (the environment
-// was generated without backend: configured -- see
-// OptionalTerraformOutputs's own doc comment for why that's not itself
-// an error).
+// DecodeBackendOutput decodes the shape every cloud's Generate*Environment
+// writes into its `output "backend"` block
+// (`{"provider": "aws"|"azure"|"gcp", "aws"|"azure"|"gcp": {...}}`) back
+// into a *models.BackendConfig, or nil if raw is nil.
 //
-// Deliberately does not decode a "key"/"prefix" field, because none is
-// ever written there in the first place: the environment's own key is
-// specific to the environment, and must never be read back and reused
-// verbatim by an app -- every app derives its own key via
-// shared.BackendKeyForApp instead. See docs/multi-user-state.md.
+// Deliberately does not decode a "key"/"prefix" field: the environment's
+// own key must never be read back and reused verbatim by an app -- every
+// app derives its own key via BackendKeyForApp instead.
 func DecodeBackendOutput(raw map[string]any) *models.BackendConfig {
 	if raw == nil {
 		return nil
@@ -69,9 +63,7 @@ func DecodeBackendOutput(raw map[string]any) *models.BackendConfig {
 }
 
 // valueOrEmptyString type-asserts v as a string, returning "" for nil
-// or any other type -- used for optional string fields decoded out of
-// a Terraform output's map[string]any shape (dynamodb_table is the only
-// current caller: absent when no lock table was configured).
+// or any other type.
 func valueOrEmptyString(v any) string {
 	s, _ := v.(string)
 	return s

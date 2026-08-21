@@ -3,8 +3,7 @@ package models
 // Azure resource models.
 //
 // Field names and JSON tags match Terraform's own attribute names exactly,
-// since these marshal straight into Terraform's JSON syntax: whatever key a
-// struct here emits is the literal Terraform resource attribute name.
+// since these marshal straight into Terraform's JSON syntax.
 
 type ContainerApp struct {
 	Name                      string                 `json:"name"`
@@ -34,8 +33,6 @@ type ContainerAppTemplate struct {
 }
 
 // ContainerAppContainer is one entry in a template's `container` block.
-// cpu/memory sit directly on it; azurerm has no nested "resources" block
-// the way ECS does.
 type ContainerAppContainer struct {
 	Name           string               `json:"name"`
 	Image          string               `json:"image"`
@@ -48,25 +45,13 @@ type ContainerAppContainer struct {
 	StartupProbe   []ContainerAppProbe  `json:"startup_probe,omitempty"`
 }
 
-// ContainerAppProbe mirrors the (near-identical) liveness_probe/
-// readiness_probe/startup_probe blocks -- confirmed against the real
-// provider schema that all three take the same {transport, port, path,
-// interval_seconds, failure_count_threshold} shape (readiness_probe
-// additionally supports success_count_threshold, not modeled here since
-// nothing currently sets it). `path` only applies to HTTP/HTTPS
-// transport; left empty for TCP, matching AWS's own equivalent gating
-// (ALB target-group health checks are always HTTP-shaped in this
-// codebase's inference, so this asymmetry has not needed handling yet).
+// ContainerAppProbe mirrors the liveness_probe/readiness_probe/
+// startup_probe blocks, which all share the same shape. `path` only
+// applies to HTTP/HTTPS transport; left empty for TCP.
 //
-// ContainerAppContainer's three probe fields are slices, not bare
-// structs, even though this codebase only ever sets one entry each:
-// confirmed against the real schema (`go run ./cmd/schema-check`) that
-// all three are `nesting_mode: list` with no `max_items` cap -- Azure
-// genuinely allows multiple liveness/readiness/startup probes per
-// container. A bare-struct field would silently only ever be able to
-// express one, the exact class of bug `cmd/schema-check` exists to
-// catch (see its own doc comment's `ContainerAppIngress.TrafficWeight`
-// precedent).
+// The three probe fields on ContainerAppContainer are slices, not bare
+// structs: azurerm allows multiple probes per container even though
+// this codebase only ever sets one.
 type ContainerAppProbe struct {
 	Transport             string `json:"transport"`
 	Port                  int    `json:"port"`
@@ -77,9 +62,7 @@ type ContainerAppProbe struct {
 
 // ContainerAppEnvVar is one entry in a container's `env` block: either a
 // literal Value, or a SecretName referencing a `secret` block entry
-// (Terraform's schema treats these as mutually exclusive -- Value is
-// ignored when SecretName is set). Managed-service credentials use
-// SecretName (see azure/permissions.go); everything else uses Value.
+// (mutually exclusive; Value is ignored when SecretName is set).
 type ContainerAppEnvVar struct {
 	Name       string `json:"name"`
 	Value      string `json:"value,omitempty"`
@@ -93,12 +76,7 @@ type ContainerAppHTTPScaleRule struct {
 
 // ContainerAppCustomScaleRule is one entry in the `custom_scale_rule`
 // block: azurerm's generic KEDA scaler wiring, used here for the `cpu`
-// and `memory` scalers (ContainerAppHTTPScaleRule handles the
-// requests_per_target metric instead). Metadata's exact keys are
-// scaler-specific; the cpu/memory scalers both want {"type":
-// "Utilization", "value": "<percentage>"} -- see
-// https://keda.sh/docs/2.14/scalers/cpu/ (memory's scaler is identical
-// in shape).
+// and `memory` scalers.
 type ContainerAppCustomScaleRule struct {
 	Name           string            `json:"name"`
 	CustomRuleType string            `json:"custom_rule_type"`
@@ -113,13 +91,9 @@ type ContainerAppIngress struct {
 }
 
 // ContainerAppTrafficWeight is one entry in `ingress.traffic_weight`.
-// azurerm's schema allows any number of these (no max_items cap) --
-// cloudcompose only ever emits one, weighted 100% to the latest revision,
-// but the field is a slice because the schema genuinely supports more
-// (e.g. canary/blue-green splits across multiple revisions), not just as
-// single-item JSON-array shorthand. Confirmed against the real azurerm
-// provider schema via `go run ./cmd/schema-check` (nesting_mode=list,
-// no max_items), not assumed from provider docs.
+// The field is a slice, not a bare struct: azurerm's schema allows any
+// number of these (e.g. canary/blue-green splits), even though
+// cloudcompose only ever emits one, weighted 100% to the latest revision.
 type ContainerAppTrafficWeight struct {
 	LatestRevision bool `json:"latest_revision"`
 	Percentage     int  `json:"percentage"`
@@ -135,13 +109,9 @@ type ManagedIdentity struct {
 }
 
 // ContainerAppSecret is one entry in the `secret` block: either a
-// literal Value (used for the ACR admin password, which has no
-// Key-Vault-ordering problem -- see registryAuthAzure's own doc comment
-// for why it deliberately isn't RBAC-based), or a KeyVaultSecretID +
-// Identity pair that has Azure fetch the value from Key Vault using the
-// named identity at resolve time (used for managed-service credentials --
-// see azure/permissions.go). These are mutually exclusive per Terraform's
-// own schema.
+// literal Value, or a KeyVaultSecretID + Identity pair that has Azure
+// fetch the value from Key Vault using the named identity. These are
+// mutually exclusive per Terraform's own schema.
 type ContainerAppSecret struct {
 	Name             string `json:"name"`
 	Value            string `json:"value,omitempty"`
@@ -157,10 +127,9 @@ type ContainerAppRegistry struct {
 	PasswordSecretName string `json:"password_secret_name"`
 }
 
-// ContainerAppJob mirrors ContainerAppJob: a container that runs to
-// completion on a trigger, for services with a schedule. A Container App
-// is always-on, so a nightly task would run continuously, and one that
-// exits when its work is done would be restarted indefinitely.
+// ContainerAppJob is a container that runs to completion on a trigger,
+// for services with a schedule. A Container App is always-on, so a
+// scheduled task needs this separate resource instead.
 type ContainerAppJob struct {
 	Name                      string                           `json:"name"`
 	ResourceGroupName         string                           `json:"resource_group_name"`
@@ -183,8 +152,7 @@ type ContainerAppJobScheduleTrigger struct {
 }
 
 // ContainerAppJobTemplate is a Job's `template` block. Unlike a
-// ContainerApp's template, a Job has no replica bounds or scale rules --
-// it runs to completion on its trigger and stops.
+// ContainerApp's template, a Job has no replica bounds or scale rules.
 type ContainerAppJobTemplate struct {
 	Container []ContainerAppContainer `json:"container"`
 }
@@ -193,13 +161,10 @@ func NewContainerAppJob() ContainerAppJob {
 	return ContainerAppJob{ReplicaTimeoutInSeconds: 1800, ReplicaRetryLimit: 1}
 }
 
-// Subnet mirrors azurerm_subnet. Created per-app now, one set of four
-// per Container Apps Environment (infrastructure/postgresql/mysql/redis
-// -- the same four purposes cloudcompose init used to create once,
-// shared, before docs/azure-app-isolation-design.md's redesign), carved
-// out of the environment's own AppsCIDR at the app's own
-// --subnet-index. See azure/infer.go's appSubnetCIDRs for the actual
-// CIDR math.
+// Subnet mirrors azurerm_subnet. Created per-app, one set of four per
+// Container Apps Environment (infrastructure/postgresql/mysql/redis),
+// carved out of the environment's own AppsCIDR at the app's own
+// --subnet-index.
 type Subnet struct {
 	Name               string             `json:"name"`
 	ResourceGroupName  string             `json:"resource_group_name"`
@@ -208,37 +173,26 @@ type Subnet struct {
 	Delegation         []SubnetDelegation `json:"delegation,omitempty"`
 }
 
-// SubnetDelegation mirrors azurerm_subnet's delegation block --
-// confirmed against the real schema that it's a genuinely repeatable
-// list (no max_items cap), so []SubnetDelegation is correct here, not a
-// bare struct (see ContainerAppProbe's own doc comment for the class of
-// bug that distinction matters for). Not delegated at all (a nil slice)
-// for the redis subnet: azurerm_private_endpoint attaches to a plain
-// subnet, unlike the delegated subnets Flexible Server needs.
+// SubnetDelegation mirrors azurerm_subnet's delegation block -- a
+// repeatable list, so []SubnetDelegation is correct here, not a bare
+// struct. Left nil for the redis subnet: azurerm_private_endpoint
+// attaches to a plain subnet.
 type SubnetDelegation struct {
 	Name              string              `json:"name"`
 	ServiceDelegation []ServiceDelegation `json:"service_delegation"`
 }
 
 // ServiceDelegation mirrors delegation's own nested service_delegation
-// block -- confirmed capped at exactly one entry (max_items: 1), unlike
-// its parent.
+// block, capped at exactly one entry.
 type ServiceDelegation struct {
 	Name    string   `json:"name"`
 	Actions []string `json:"actions"`
 }
 
 // ContainerAppEnvironment mirrors azurerm_container_app_environment.
-// Created per-app now (docs/azure-app-isolation-design.md): a Container
-// Apps Environment is Azure's actual isolation boundary (confirmed
-// against the real azurerm_container_app schema, which has no
-// networking fields at all, and Microsoft's own docs: "Use more than
-// one environment when you want two or more applications to... never
-// share the same compute resources"), so cloudcompose main creates its
-// own rather than referencing a shared one cloudcompose init created --
-// the reverse of this type's own history: it was defined here but
-// deliberately never instantiated by inference before this redesign,
-// with the environment referenced via a data source instead.
+// Created per-app: a Container Apps Environment is Azure's actual
+// isolation boundary, so cloudcompose main creates its own rather than
+// referencing a shared one.
 type ContainerAppEnvironment struct {
 	Name                        string            `json:"name"`
 	ResourceGroupName           string            `json:"resource_group_name"`
@@ -262,14 +216,11 @@ func NewContainerRegistry() ContainerRegistry {
 	return ContainerRegistry{Sku: "Standard"}
 }
 
-// PostgreSQLFlexibleServer mirrors PostgreSQLFlexibleServer.
+// PostgreSQLFlexibleServer mirrors azurerm_postgresql_flexible_server.
 //
-// Lifecycle defaults to ignoring the "zone" attribute: Azure assigns the
-// availability zone itself, and nothing in this model configures it.
-// Without ignoring it, any later plan sees a "change" from unset to
-// whatever Azure actually picked and tries to write it back, which the API
-// rejects outright (confirmed against real Azure, open on and off in the
-// azurerm provider since 2022, e.g. hashicorp/terraform-provider-azurerm#16888).
+// Lifecycle ignores the "zone" attribute: Azure assigns the
+// availability zone itself, and without ignoring it, a later plan
+// would try to write back the zone Azure picked, which the API rejects.
 type PostgreSQLFlexibleServer struct {
 	Name                       string              `json:"name"`
 	ResourceGroupName          string              `json:"resource_group_name"`
@@ -300,20 +251,11 @@ func NewPostgreSQLFlexibleServer() PostgreSQLFlexibleServer {
 }
 
 // DiagnosticSetting mirrors azurerm_monitor_diagnostic_setting. Routes
-// a resource's own logs to the shared Log Analytics workspace every
-// Container App in this environment already logs to
-// (env.LogAnalyticsWorkspaceID) -- log export is on by default for
-// every database this compiler creates (see managed.go's
-// inferDatabase), not an opt-in the user has to know to ask for,
-// mirroring AWS's EnabledCloudwatchLogsExports on DbInstance.
+// a resource's own logs to the shared Log Analytics workspace; log
+// export is on by default for every database this compiler creates.
 //
-// EnabledLog is a Go slice, not a bare struct, because
-// azurerm_monitor_diagnostic_setting's own enabled_log block has
-// nesting_mode "set" (confirmed against the real provider schema via
-// `terraform providers schema -json`) -- genuinely repeatable, no
-// max_items cap, so a bare-object field would be silently wrong the
-// way cmd/schema-check exists to catch (see AGENTS.md's own note on
-// this class of bug).
+// EnabledLog is a slice, not a bare struct: the enabled_log block has
+// nesting_mode "set" and is genuinely repeatable.
 type DiagnosticSetting struct {
 	Name                    string                        `json:"name"`
 	TargetResourceID        string                        `json:"target_resource_id"`
@@ -322,11 +264,7 @@ type DiagnosticSetting struct {
 }
 
 // DiagnosticSettingEnabledLog is one entry of the `enabled_log` set --
-// just a log category name (e.g. "PostgreSQLLogs"). No retention_policy
-// block: that attribute is deprecated by the provider in favour of a
-// separate azurerm_storage_management_policy resource, and this model
-// has no storage-account log destination to apply one to regardless
-// (log_analytics_workspace_id only).
+// just a log category name (e.g. "PostgreSQLLogs").
 type DiagnosticSettingEnabledLog struct {
 	Category string `json:"category"`
 }
@@ -344,11 +282,7 @@ func NewPostgreSQLFlexibleDatabase() PostgreSQLFlexibleDatabase {
 
 // MySQLFlexibleServer mirrors azurerm_mysql_flexible_server. Storage is
 // a nested `storage { size_gb }` block here, unlike
-// PostgreSQLFlexibleServer's flat storage_mb/storage_tier attributes --
-// confirmed against the real provider schema via `go run
-// ./cmd/schema-check`; a flat StorageMb int would emit a nonexistent
-// "storage_mb" attribute, which `terraform validate` rejects outright as
-// an "Extraneous JSON object property".
+// PostgreSQLFlexibleServer's flat storage_mb attribute.
 type MySQLFlexibleServer struct {
 	Name                  string                       `json:"name"`
 	ResourceGroupName     string                       `json:"resource_group_name"`
@@ -362,16 +296,10 @@ type MySQLFlexibleServer struct {
 	PrivateDnsZoneID      *string                      `json:"private_dns_zone_id,omitempty"`
 
 	// PublicNetworkAccess is a string ("Enabled"/"Disabled"), not the
-	// bool PostgreSQLFlexibleServer's equivalent field is --
-	// public_network_access_enabled on this resource is
-	// computed-only (Terraform rejects a config-supplied value for it
-	// outright: "Value for unconfigurable attribute"), confirmed against
-	// the real provider schema. Omitted entirely (nil) when
-	// VNet-integrated: the provider docs state it's automatically set to
-	// Disabled whenever delegated_subnet_id + private_dns_zone_id are
-	// both set, so setting it explicitly in that case would just be
-	// redundant, not wrong -- but there's no reason to also carry the
-	// redundant value.
+	// bool PostgreSQLFlexibleServer's equivalent field is: this
+	// attribute is computed-only, so it's omitted (nil) when
+	// VNet-integrated, where the provider automatically sets it to
+	// Disabled.
 	PublicNetworkAccess *string `json:"public_network_access,omitempty"`
 
 	BackupRetentionDays int               `json:"backup_retention_days,omitempty"`
@@ -381,20 +309,17 @@ type MySQLFlexibleServer struct {
 }
 
 // MySQLFlexibleServerStorage is the `storage` block's contents.
-// size_gb, not storage_mb -- MySQL Flexible Server's storage is sized in
-// GB, unlike PostgreSQL Flexible Server's storage_mb (confirmed against
-// the real provider schema, not assumed from the naming symmetry with
-// PostgreSQL's own field).
+// size_gb, not storage_mb -- MySQL Flexible Server's storage is sized
+// in GB, unlike PostgreSQL Flexible Server's storage_mb.
 type MySQLFlexibleServerStorage struct {
 	SizeGB int `json:"size_gb"`
 }
 
 func NewMySQLFlexibleServer() MySQLFlexibleServer {
 	return MySQLFlexibleServer{
-		// "8.0.21" is the actual valid version string, not "8.0" --
-		// the provider's version attribute requires an exact match
-		// against one of "5.7"/"8.0.21"/"8.4", found the same way as the
-		// other MySQL Flexible Server bugs above.
+		// "8.0.21" is the actual valid version string; the provider's
+		// version attribute requires an exact match against one of
+		// "5.7"/"8.0.21"/"8.4".
 		Version: "8.0.21",
 		SkuName: "B_Standard_B1ms",
 		Storage: []MySQLFlexibleServerStorage{{SizeGB: 32}},
@@ -403,10 +328,7 @@ func NewMySQLFlexibleServer() MySQLFlexibleServer {
 
 // MySQLFlexibleDatabase mirrors azurerm_mysql_flexible_database, which
 // (unlike azurerm_postgresql_flexible_server_database's server_id)
-// identifies its parent server by resource_group_name + server_name,
-// not a single reference attribute -- confirmed against the real
-// provider schema after the same terraform validate failure that found
-// MySQLFlexibleServer's storage_mb bug above.
+// identifies its parent server by resource_group_name + server_name.
 type MySQLFlexibleDatabase struct {
 	Name              string `json:"name"`
 	ResourceGroupName string `json:"resource_group_name"`
@@ -419,9 +341,8 @@ func NewMySQLFlexibleDatabase() MySQLFlexibleDatabase {
 	return MySQLFlexibleDatabase{Charset: "utf8mb4", Collation: "utf8mb4_unicode_ci"}
 }
 
-// PrivateDnsZone mirrors PrivateDnsZone: a server on a delegated subnet is
-// unreachable by name without one, and Azure refuses to create the server
-// otherwise (EmptyPrivateDnsZoneArmResourceId).
+// PrivateDnsZone mirrors azurerm_private_dns_zone: a server on a
+// delegated subnet is unreachable by name without one.
 type PrivateDnsZone struct {
 	Name              string            `json:"name"`
 	ResourceGroupName string            `json:"resource_group_name"`
@@ -439,11 +360,8 @@ type PrivateDnsZoneVirtualNetworkLink struct {
 
 // PrivateEndpoint mirrors azurerm_private_endpoint. Used for Azure
 // Managed Redis: unlike PostgreSQL/MySQL Flexible Server (which take a
-// delegated_subnet_id/private_dns_zone_id directly on the server
-// resource itself), Managed Redis's private connectivity is a genuinely
-// separate resource -- azurerm_managed_redis has no networking-related
-// attributes/blocks at all beyond public_network_access
-// (confirmed against the real provider schema). A private endpoint
+// delegated_subnet_id/private_dns_zone_id directly on the server),
+// Managed Redis's private connectivity is a separate resource. It
 // attaches to a plain (non-delegated) subnet and references the target
 // resource by ID + subresource name.
 type PrivateEndpoint struct {
@@ -466,9 +384,7 @@ type PrivateServiceConnection struct {
 }
 
 // PrivateEndpointDnsZoneGroup is the `private_dns_zone_group` block:
-// which private DNS zone(s) get an A-record for this endpoint's IP,
-// so the resource's own FQDN resolves privately from inside the VNet
-// without any application-level configuration change.
+// which private DNS zone(s) get an A-record for this endpoint's IP.
 type PrivateEndpointDnsZoneGroup struct {
 	Name              string   `json:"name"`
 	PrivateDnsZoneIDs []string `json:"private_dns_zone_ids"`
@@ -487,28 +403,23 @@ type KeyVault struct {
 }
 
 func NewKeyVault() KeyVault {
-	// RBAC mode, not the classic access-policy model: every consumer of
-	// a secret this Key Vault holds (see azure/permissions.go) is granted
-	// access via azurerm_role_assignment, the same primitive used for
-	// storage access -- one access-control mechanism, not two.
+	// RBAC mode, not the classic access-policy model: access is granted
+	// via azurerm_role_assignment, the same primitive used for storage
+	// access.
 	return KeyVault{SkuName: "standard", SoftDeleteRetentionDays: 7, RbacAuthorizationEnabled: true}
 }
 
-// KeyVaultSecret mirrors KeyVaultSecret. Lifecycle defaults to ignoring
-// "value" so the secret's value never shows in Terraform's own plan/apply
+// KeyVaultSecret mirrors azurerm_key_vault_secret. Lifecycle ignores
+// "value" so the secret's value never shows in Terraform's plan/apply
 // output.
 type KeyVaultSecret struct {
 	Name       string              `json:"name"`
 	KeyVaultID string              `json:"key_vault_id"`
 	Value      string              `json:"value"`
 	Lifecycle  map[string][]string `json:"lifecycle"`
-	// DependsOn holds a reference to the RBAC-propagation time_sleep
-	// (see TimeSleep's own doc comment) whenever this secret was
-	// created after a role assignment its own reference graph doesn't
-	// mention -- every azurerm_key_vault_secret in this codebase is
-	// created after granting some identity read access to the vault,
-	// so this is set unconditionally by every constructor of this
-	// type, not left for callers to remember individually.
+	// DependsOn references the RBAC-propagation time_sleep, set
+	// unconditionally since every secret here is created after
+	// granting some identity read access to the vault.
 	DependsOn []string `json:"depends_on,omitempty"`
 }
 
@@ -520,17 +431,11 @@ func NewKeyVaultSecret() KeyVaultSecret {
 }
 
 // UserAssignedIdentity is created once per app that has any service
-// consuming a managed-service credential (database/cache password,
-// storage access), so it can be granted RoleAssignments *before* any
-// Container App exists to reference it -- see azure/permissions.go's
-// inferManagedServiceIdentity for why this must be user-assigned rather
-// than the system-assigned identity Container Apps would otherwise use
-// by default: a system-assigned identity's principal_id doesn't exist
-// until the resource that owns it is created, so it can't be granted a
-// role before that resource's own creation, but that resource's creation
-// is exactly when the role is needed (to resolve a Key Vault secret
-// reference). A pre-created, standalone user-assigned identity has no
-// such ordering cycle.
+// consuming a managed-service credential, so it can be granted
+// RoleAssignments before any Container App exists to reference it: a
+// system-assigned identity's principal_id doesn't exist until its
+// owning resource is created, which is too late for that resource's
+// own credential lookups during creation.
 type UserAssignedIdentity struct {
 	Name              string            `json:"name"`
 	ResourceGroupName string            `json:"resource_group_name"`
@@ -539,49 +444,33 @@ type UserAssignedIdentity struct {
 }
 
 // RoleAssignment grants a scoped Azure RBAC role to a principal (here,
-// always a UserAssignedIdentity's principal_id), mirroring
-// aws/permissions.go's IamRolePolicy attachments. Used for Key Vault
-// Secrets User (reading managed-service credentials) and Storage Blob
-// Data Contributor (object-storage access) -- see
-// azure/permissions.go.
+// always a UserAssignedIdentity's principal_id). Used for Key Vault
+// Secrets User and Storage Blob Data Contributor.
 type RoleAssignment struct {
 	Scope              string `json:"scope"`
 	RoleDefinitionName string `json:"role_definition_name"`
 	PrincipalID        string `json:"principal_id"`
 }
 
-// TimeSleep mirrors time_sleep (hashicorp/time provider) -- a resource
-// whose only purpose is to make Terraform wait, used here to work
-// around a real, Microsoft-documented gap Terraform's own dependency
-// graph can't express: `azurerm_role_assignment.kv_role` reporting
-// "created" does not mean the grant has actually propagated on Azure's
-// side. Microsoft's own RBAC troubleshooting docs put worst-case
-// propagation at up to 10 minutes; confirmed as a real, not
-// theoretical, failure mode against a live francecentral run -- every
-// azurerm_key_vault_secret created in the same apply failed with
-// 403/AuthorizationFailed because Terraform tried to read them back
-// before the grant had actually taken effect, despite
-// azurerm_role_assignment.kv_role itself reporting success.
+// TimeSleep mirrors time_sleep (hashicorp/time provider): a resource
+// whose only purpose is to make Terraform wait. Used to work around a
+// real gap in Azure's RBAC propagation -- azurerm_role_assignment
+// reporting "created" does not mean the grant has actually propagated,
+// which can take up to 10 minutes and causes 403/AuthorizationFailed on
+// any Key Vault secret read attempted too soon.
 //
-// DependsOn must name azurerm_role_assignment.kv_role explicitly (not
-// left to Terraform to infer): nothing in this resource's own
-// arguments references the role assignment, so without an explicit
-// depends_on Terraform would have no reason to order this after it at
-// all, let alone wait the intended duration before anything that reads
-// Key Vault runs.
+// DependsOn must name azurerm_role_assignment.kv_role explicitly:
+// nothing in this resource's own arguments references it, so Terraform
+// has no other reason to order this after it.
 type TimeSleep struct {
 	CreateDuration string   `json:"create_duration"`
 	DependsOn      []string `json:"depends_on"`
 }
 
-// KeyVaultRoleAssignmentPropagationDelay is Terraform's own
-// create_duration for the RBAC-propagation time_sleep, chosen as a
-// balance: Microsoft's documented worst case is up to 10 minutes, but
-// waiting the full worst case on every single deployment that creates
-// any managed-service credential -- including the overwhelming majority
-// that would never hit this race -- trades a rare failure for a
-// guaranteed, large delay on every real deployment. 90s is long enough
-// to clear typical propagation without imposing that cost.
+// KeyVaultRoleAssignmentPropagationDelay is the create_duration for the
+// RBAC-propagation time_sleep. 90s balances against Microsoft's
+// documented worst case of up to 10 minutes, which would impose a large
+// delay on every deployment to guard against a rare race.
 const KeyVaultRoleAssignmentPropagationDelay = "90s"
 
 type StorageAccount struct {
@@ -616,11 +505,9 @@ func NewStorageContainer() StorageContainer {
 	return StorageContainer{ContainerAccessType: "private"}
 }
 
-// FrontDoorProfile mirrors FrontDoorProfile: the top-level container for an
-// endpoint, origin groups and origins. Replaces CdnProfile/CdnEndpoint
-// (Azure CDN from Microsoft, classic), which no longer accepts new
-// profiles. Has no Location field: Front Door is a global resource, unlike
-// everything else this inference creates.
+// FrontDoorProfile mirrors azurerm_cdn_frontdoor_profile: the top-level
+// container for an endpoint, origin groups and origins. Has no Location
+// field: Front Door is a global resource.
 type FrontDoorProfile struct {
 	Name              string            `json:"name"`
 	ResourceGroupName string            `json:"resource_group_name"`
@@ -646,17 +533,7 @@ type FrontDoorOriginGroup struct {
 }
 
 // FrontDoorHealthProbe mirrors azurerm_cdn_frontdoor_origin_group's
-// health_probe block -- confirmed against the real schema that this is
-// capped at one entry (nesting_mode: list, max_items: 1), unlike the
-// Container Apps probe blocks (see ContainerAppProbe's own doc comment
-// for that contrast), so a bare struct is correct here, not a slice.
-//
-// This is not an AWS-parity item: CloudFront's own `origin` block has no
-// health-probe/origin-health concept at all (it routes on origin
-// failover config, not periodic polling) -- populating this is a
-// genuine Azure-side capability improvement using a signal
-// (service.Ingress.HealthCheck.Path) already collected for Container
-// Apps' own liveness_probe, not something to mirror from AWS.
+// health_probe block, capped at one entry -- a bare struct, not a slice.
 type FrontDoorHealthProbe struct {
 	Protocol          string `json:"protocol"`
 	IntervalInSeconds int    `json:"interval_in_seconds"`
@@ -664,8 +541,9 @@ type FrontDoorHealthProbe struct {
 	RequestType       string `json:"request_type,omitempty"`
 }
 
-// FrontDoorOrigin mirrors FrontDoorOrigin: the backend Front Door forwards
-// traffic to -- a Container App's ingress FQDN, in this codebase's case.
+// FrontDoorOrigin mirrors azurerm_cdn_frontdoor_origin: the backend
+// Front Door forwards traffic to -- a Container App's ingress FQDN,
+// in this codebase's case.
 type FrontDoorOrigin struct {
 	Name                        string  `json:"name"`
 	CdnFrontdoorOriginGroupID   string  `json:"cdn_frontdoor_origin_group_id"`
@@ -680,11 +558,10 @@ func NewFrontDoorOrigin() FrontDoorOrigin {
 	return FrontDoorOrigin{CertificateNameCheckEnabled: true, HttpPort: 80, HttpsPort: 443}
 }
 
-// FrontDoorRoute mirrors FrontDoorRoute: ties an endpoint to an origin
-// group and says which request paths and protocols reach it.
-// CdnFrontdoorOriginIds is not sent to the Azure API -- Terraform uses it
-// only to order creation and destruction against the FrontDoorOrigin(s) it
-// lists, since the API itself infers origins from the origin group.
+// FrontDoorRoute mirrors azurerm_cdn_frontdoor_route: ties an endpoint
+// to an origin group and says which request paths and protocols reach
+// it. CdnFrontdoorOriginIds is not sent to the Azure API -- Terraform
+// uses it only to order creation/destruction against the origins.
 type FrontDoorRoute struct {
 	Name                      string   `json:"name"`
 	CdnFrontdoorEndpointID    string   `json:"cdn_frontdoor_endpoint_id"`
@@ -706,23 +583,12 @@ func NewFrontDoorRoute() FrontDoorRoute {
 }
 
 // FrontDoorFirewallPolicy mirrors azurerm_cdn_frontdoor_firewall_policy
-// -- Front Door's WAF equivalent to AWS's aws_wafv2_web_acl
-// (docs/azure-aws-parity-todo.md's WAF/security-policy item).
+// -- Front Door's WAF equivalent to AWS's aws_wafv2_web_acl.
 //
-// Not a like-for-like mirror of AWS's own default: AWS attaches
-// AWSManagedRulesCommonRuleSet (a managed, OWASP-style rule group) to
-// every CDN-enabled service for free. Front Door's equivalent
-// (`managed_rule`) requires the Premium_AzureFrontDoor SKU --
-// Standard_AzureFrontDoor (this codebase's current SKU,
-// NewFrontDoorProfile) may only contain `custom_rule` blocks at all,
-// confirmed against the real provider schema and docs, not assumed.
-// Upgrading every CDN-enabled environment to Premium to get managed-rule
-// parity was a real option, rejected here: it changes cost for every
-// existing Azure deployment using cdn: true, not just newly-added WAF
-// behavior. What's actually created (see NewFrontDoorFirewallPolicy) is
-// a rate-limit custom_rule -- a real, always-available Standard-SKU
-// protection, honestly short of what AWS's managed ruleset covers, not
-// a re-skinned version of the same thing.
+// Not a like-for-like mirror of AWS's default: the Standard_AzureFrontDoor
+// SKU (this codebase's current SKU) cannot use managed rule sets, which
+// require Premium. What's created (see NewFrontDoorFirewallPolicy) is a
+// rate-limit custom_rule instead.
 type FrontDoorFirewallPolicy struct {
 	Name              string            `json:"name"`
 	ResourceGroupName string            `json:"resource_group_name"`
@@ -733,24 +599,10 @@ type FrontDoorFirewallPolicy struct {
 }
 
 // NewFrontDoorFirewallPolicy returns a FrontDoorFirewallPolicy in
-// Prevention mode (rules that match are actually enforced, not just
-// logged -- Detection mode, the other option, would create the
-// resource but never protect anything) with one rate-limit custom_rule
-// matching every request.
-//
-// The match condition (RequestHeader/Host,
-// GreaterThanOrEqual, "0") is Microsoft's own documented pattern for
-// "match every request" (learn.microsoft.com/azure/web-application-firewall/afds/waf-front-door-rate-limit):
-// every valid HTTP request carries a Host header, and a size constraint
-// of "length >= 0 bytes" is true of any header that exists at all,
-// confirmed against the "Size constraint" example in Microsoft's own
-// custom-rules documentation, not guessed from the operator's name.
-// 100 requests/minute per client IP is a starting-point default, not a
-// number derived from any AWS equivalent (AWS's own managed rule set
-// has no rate-limit component to match against) -- a real app may need
-// a different threshold, which is exactly why this stays inferred, not
-// hardcoded past this initial value: adjusting it is a model-level
-// change, not a re-architecture.
+// Prevention mode (rules are actually enforced, not just logged) with
+// one rate-limit custom_rule matching every request via a Host-header
+// size check. 100 requests/minute per client IP is a starting default,
+// not derived from any AWS equivalent.
 func NewFrontDoorFirewallPolicy() FrontDoorFirewallPolicy {
 	return FrontDoorFirewallPolicy{
 		Mode: "Prevention",
@@ -778,10 +630,7 @@ func NewFrontDoorFirewallPolicy() FrontDoorFirewallPolicy {
 }
 
 // FrontDoorSecurityPolicy mirrors azurerm_cdn_frontdoor_security_policy
-// -- the resource that actually attaches a FrontDoorFirewallPolicy to a
-// domain (CloudFront's aws_cloudfront_distribution.web_acl_id has no
-// separate attachment step; Front Door's WAF policy and its association
-// to an endpoint are two different resources).
+// -- the resource that attaches a FrontDoorFirewallPolicy to a domain.
 type FrontDoorSecurityPolicy struct {
 	Name                  string           `json:"name"`
 	CdnFrontdoorProfileID string           `json:"cdn_frontdoor_profile_id"`
@@ -789,8 +638,7 @@ type FrontDoorSecurityPolicy struct {
 }
 
 // NewFrontDoorSecurityPolicy attaches firewallPolicyID to every path
-// (`/*`, the only value azurerm's own schema allows for
-// patterns_to_match) on the endpoint domainID references.
+// (`/*`) on the endpoint domainID references.
 func NewFrontDoorSecurityPolicy(name, profileID, firewallPolicyID, domainID string) FrontDoorSecurityPolicy {
 	return FrontDoorSecurityPolicy{
 		Name:                  name,
@@ -813,13 +661,9 @@ func NewFrontDoorSecurityPolicy(name, profileID, firewallPolicyID, domainID stri
 	}
 }
 
-// ManagedRedis mirrors ManagedRedis: replaces Azure Cache for Redis
-// (azurerm_redis_cache), which no longer accepts new instances. Only
-// azurerm 4.x exposes this; the 3.x alternative,
-// azurerm_redis_enterprise_cluster, rejects the Balanced SKUs outright and
-// starts at Enterprise_E5. The connection details live on the nested
-// DefaultDatabase block rather than on the cluster: port and
-// primary_access_key both hang off it.
+// ManagedRedis mirrors azurerm_managed_redis: replaces Azure Cache for
+// Redis, which no longer accepts new instances. Connection details live
+// on the nested DefaultDatabase block rather than on the cluster.
 type ManagedRedis struct {
 	Name                    string           `json:"name"`
 	ResourceGroupName       string           `json:"resource_group_name"`
@@ -828,28 +672,18 @@ type ManagedRedis struct {
 	HighAvailabilityEnabled bool             `json:"high_availability_enabled"`
 	DefaultDatabase         []map[string]any `json:"default_database"`
 
-	// PublicNetworkAccess is a string ("Enabled"/"Disabled"), matching
-	// azurerm_managed_redis's own attribute name/type exactly -- unlike
-	// the two Flexible Server resources, Managed Redis has only ever had
-	// one shape for this (no bool-vs-string inconsistency to account
-	// for). Omitted (nil) when public access is genuinely wanted, since
-	// the provider's own default is already "Enabled" -- only set
-	// explicitly to "Disabled" once a private endpoint exists, mirroring
-	// MySQLFlexibleServer's own "only set when it deviates from the
-	// default" convention.
+	// PublicNetworkAccess is a string ("Enabled"/"Disabled"). Omitted
+	// (nil) when public access is wanted (the provider default);
+	// set explicitly to "Disabled" once a private endpoint exists.
 	PublicNetworkAccess *string `json:"public_network_access,omitempty"`
 
 	Tags map[string]string `json:"tags,omitempty"`
 }
 
-// NewManagedRedis returns a ManagedRedis with the default_database default
-// reproduced: a single-element list containing a 3-key dict in this exact
-// order.
-//
-// Managed Redis can require Entra ID auth instead; this application wires
-// a password into containers, so the access keys have to be available --
-// confirmed as the deliberate reason for AccessKeysAuthenticationEnabled
-// being true, not an oversight.
+// NewManagedRedis returns a ManagedRedis with the default_database
+// default reproduced. Managed Redis can require Entra ID auth instead,
+// but this application wires a password into containers, so access
+// keys must stay enabled.
 func NewManagedRedis() ManagedRedis {
 	return ManagedRedis{
 		SkuName: "Balanced_B0",
@@ -864,7 +698,7 @@ func NewManagedRedis() ManagedRedis {
 }
 
 // AzureResources is a registry of the Azure resources the compiler
-// supports, mirroring AzureResources.
+// supports.
 type AzureResources struct {
 	ContainerApp                     map[string]ContainerApp                     `json:"azurerm_container_app,omitempty"`
 	ContainerAppJob                  map[string]ContainerAppJob                  `json:"azurerm_container_app_job,omitempty"`
@@ -896,22 +730,17 @@ type AzureResources struct {
 	DiagnosticSetting                map[string]DiagnosticSetting                `json:"azurerm_monitor_diagnostic_setting,omitempty"`
 
 	// Docker provider resources (same models as AWS: build locally, push
-	// to ACR instead of ECR). See handleBuildContext in
-	// compiler/azure_compute.go for how these get populated.
+	// to ACR instead of ECR).
 	DockerImage         map[string]DockerImage         `json:"docker_image,omitempty"`
 	DockerRegistryImage map[string]DockerRegistryImage `json:"docker_registry_image,omitempty"`
 
-	// Random resources for passwords. Typed as RandomPassword directly,
-	// since every call site assigns a RandomPassword instance in
-	// practice -- confirmed by grepping every resources.RandomPassword[...]
-	// assignment in compiler/azure/managed.go.
+	// Random resources for passwords.
 	RandomPassword map[string]RandomPassword `json:"random_password,omitempty"`
 }
 
 // NewAzureResources returns an AzureResources with every map initialized,
 // so inference functions can assign into resources.Foo[key] without a
-// nil-map panic. Empty maps are still omitted from JSON output (see struct
-// tags).
+// nil-map panic.
 func NewAzureResources() *AzureResources {
 	return &AzureResources{
 		ContainerApp:                     map[string]ContainerApp{},

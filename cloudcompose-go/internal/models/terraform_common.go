@@ -1,13 +1,6 @@
 package models
 
 // Cloud-agnostic Terraform resource models, shared across cloud backends.
-//
-// Every backend that builds from source pushes through the same Docker provider resources
-// (ECR, ACR, Artifact Registry all speak the same registry protocol from
-// Docker's perspective), and every backend that provisions a managed
-// database generates its own master password the same way rather than
-// accepting one from the compose file, which never had a real secret to
-// give in the first place.
 
 type DockerImage struct {
 	Name     string            `json:"name"`

@@ -7,9 +7,8 @@ import (
 )
 
 // ComposeFileCandidates is the filename precedence order used when no
-// -f/--file is given, matching `docker compose`'s own default-file
-// search order exactly (compose.yaml/compose.yml take precedence over
-// the legacy docker-compose.yaml/docker-compose.yml names).
+// -f/--file is given, matching `docker compose`'s default file search
+// order.
 var ComposeFileCandidates = []string{
 	"compose.yaml",
 	"compose.yml",
@@ -18,11 +17,7 @@ var ComposeFileCandidates = []string{
 }
 
 // FindComposeFile looks in dir for each of ComposeFileCandidates in
-// order and returns the path to the first one that exists, mirroring
-// `docker compose`'s own no-flag default-file behavior so cloudcompose
-// only requires -f/--file when there's genuine ambiguity (more than one
-// compose file, or a non-default name/location), not on every
-// invocation.
+// order and returns the path to the first one that exists.
 func FindComposeFile(dir string) (string, error) {
 	for _, name := range ComposeFileCandidates {
 		candidate := filepath.Join(dir, name)

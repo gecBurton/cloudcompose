@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Azure resource naming, mirroring compiler/inference/azure/naming.py.
+// Azure resource naming.
 //
 // Azure constrains names per resource type, and the constraints disagree
 // with each other: a container registry takes alphanumerics only, a
@@ -16,17 +16,13 @@ import (
 // the length of a readable "{environment}-{application}-{resource}" name.
 //
 // When a name is too long it is truncated and given a short digest of the
-// full name. Plain truncation would silently collide:
-// "nginx-flask-mysql" and "nginx-flask-mysqlx" share a prefix and would
-// otherwise land on the same key vault, with the second deployment failing
-// against the first's resource. Names that already fit are left alone, so
-// the common case stays readable.
+// full name, to avoid collisions between similarly-prefixed names. Names
+// that already fit are left alone.
 
 const azureDigestLen = 6
 
 // azureDigest is a short, stable discriminator for names that have to be
-// truncated: sha256 of the UTF-8 encoding of the string, hex-encoded and
-// sliced to 6 chars.
+// truncated: sha256 hex-encoded and sliced to 6 chars.
 func azureDigest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])[:azureDigestLen]
@@ -97,14 +93,8 @@ func FrontDoorProfileName(envName, appName string) string {
 }
 
 // FrontDoorFirewallPolicyName names an azurerm_cdn_frontdoor_firewall_policy:
-// 1-128 characters, alphanumeric only -- confirmed via a real terraform
-// validate failure ("name" did not match regex "(^[a-zA-Z])([\\da-zA-Z]{0,127})$"),
-// not assumed from this file's other, dash-permitting Front Door names
-// (FrontDoorProfileName above accepts dashes just fine; this resource is
-// the odd one out). Starting with a digit is separately impossible here
-// in practice (envName/appName/serviceName all come from
-// user-authored names that are themselves constrained elsewhere), so
-// unlike KeyVaultName this doesn't guard for it.
+// 1-128 characters, alphanumeric only (unlike FrontDoorProfileName, which
+// accepts dashes).
 func FrontDoorFirewallPolicyName(envName, appName, serviceName string) string {
 	full := envName + "-" + appName + "-" + serviceName + "-waf"
 	candidate := nonAlphanumeric.ReplaceAllString(full, "")

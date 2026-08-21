@@ -14,23 +14,10 @@ import (
 )
 
 // envDestroyCmd runs `terraform destroy` against a shared environment
-// directory (env-<name>, written by a previous `cloudcompose init`),
-// the counterpart down.go never provides for the environment side of
-// the "environment is shared, apps are not" split (see down.go's own
-// doc comment).
-//
+// directory (env-<name>, written by a previous `cloudcompose init`).
 // Unlike down.go's app-level teardown, this first checks whether any
 // app still depends on the environment (via each cloud's own
-// ListDependentApps, listing every app's own state object under this
-// environment's backend-key prefix -- see
-// docs/multi-user-state.md's "Safe environment teardown" section) and
-// refuses by default if any are found. This check requires the
-// environment to have a configured backend (see
-// docs/multi-user-state.md's "no backend configured" default) -- an
-// environment with no backend at all has no shared state for apps'
-// keys to live in, so there is nothing this check could list; env
-// destroy proceeds with only a warning in that case, exactly the
-// behavior it had before this check existed.
+// ListDependentApps) and refuses by default if any are found.
 var envDestroyCmd = &cobra.Command{
 	Use:   "env-destroy",
 	Short: "Destroy a shared environment's infrastructure (refuses if apps still depend on it)",
@@ -92,15 +79,9 @@ func runEnvDestroy(cmd *cobra.Command, args []string) {
 
 // checkNoDependentApps returns an error listing every app that still
 // depends on env (via each cloud's own ListDependentApps), or nil if
-// none do -- including the case where env has no backend configured at
-// all, or the list call itself fails (e.g. on a permissions error),
-// both of which print a warning to stderr and return nil rather than
-// blocking teardown: see envDestroyCmd's own doc comment for why an
-// environment with no backend has nothing for this check to list
-// against, and docs/multi-user-state.md's "IAM footprint" note for why
-// a permissions failure specifically must degrade the same way, not
-// escalate into a hard block on top of whatever already made the list
-// call fail.
+// none do. If env has no backend configured, or the list call itself
+// fails, this prints a warning and returns nil rather than blocking
+// teardown.
 func checkNoDependentApps(env any) error {
 	backend, err := environmentBackend(env)
 	if err != nil {
@@ -137,13 +118,6 @@ func checkNoDependentApps(env any) error {
 		if client, clientErr := gcp.NewObjectLister(ctx, backend.Gcp.Bucket); clientErr != nil {
 			listErr = clientErr
 		} else {
-			// Unlike aws.NewS3Client/azure.NewBlobContainerClient's own
-			// clients, GCP's own *storage.Client holds a connection pool
-			// that its own SDK docs recommend explicitly releasing once
-			// no longer needed -- see gcp.objectLister's own doc
-			// comment. AWS/Azure's clients expose no equivalent Close,
-			// so this defer has no counterpart in the other two cases
-			// above.
 			defer client.Close()
 			projectNames, listErr = gcp.ListDependentApps(ctx, client, envName)
 		}
@@ -151,13 +125,6 @@ func checkNoDependentApps(env any) error {
 		return fmt.Errorf("backend has no aws/azure/gcp block set")
 	}
 
-	// A failure anywhere above (building the client at all, or the list
-	// call itself, e.g. no credentials in this environment or an
-	// AccessDenied/403 response) degrades to a warning, not a hard
-	// block on teardown -- consistent treatment for every way this
-	// check can fail to run, matching docs/multi-user-state.md's own
-	// "IAM footprint" note that a locked-down org may reasonably not
-	// grant the permission this check needs at all.
 	if listErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not check for dependent apps: %v. Confirm none exist before continuing.\n", listErr)
 		return nil

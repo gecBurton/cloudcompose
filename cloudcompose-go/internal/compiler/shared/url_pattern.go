@@ -4,9 +4,7 @@ import "regexp"
 
 // URLPattern matches a URL whose host is exactly serviceName. Used both
 // by inference (deciding whether a connection string references a
-// managed service) and by the cloud-agnostic --explain reporting
-// (deciding whether a service's environment variables actually reference
-// another service by name).
+// managed service) and by --explain reporting.
 func URLPattern(serviceName string) *regexp.Regexp {
 	return regexp.MustCompile(
 		`^(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*)://` +

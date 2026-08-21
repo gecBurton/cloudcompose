@@ -1,10 +1,4 @@
 // Package aws contains AWS-specific inference and Terraform generation.
-// This file adds a separate concern: listing every app's own state
-// object under an environment's own backend-key prefix, the mechanism
-// environment teardown's dependent-app safety check depends on to
-// refuse (by default) tearing down an environment other apps still
-// depend on. See docs/multi-user-state.md's "Safe environment
-// teardown" section.
 package aws
 
 import (
@@ -21,15 +15,12 @@ import (
 )
 
 // s3Lister is the subset of *s3.Client that ListDependentApps needs,
-// mirroring status.go's own ecsClient/elbClient rationale: lets tests
-// substitute a fake without real AWS calls or credentials.
+// letting tests substitute a fake without real AWS calls.
 type s3Lister interface {
 	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 }
 
-// NewS3Client builds the real S3 client ListDependentApps needs from the
-// ambient credential chain, mirroring NewAWSClients' own rationale
-// (status.go) exactly.
+// NewS3Client builds a real S3 client from the ambient credential chain.
 func NewS3Client(ctx context.Context, region string) (s3Lister, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
@@ -38,28 +29,16 @@ func NewS3Client(ctx context.Context, region string) (s3Lister, error) {
 	return s3.NewFromConfig(cfg), nil
 }
 
-// ErrBackendListPermissionDenied is returned by ListDependentApps when
-// the list call itself fails on what looks like a permissions problem
-// (AccessDenied -- confirmed against the real S3 API's own error code,
-// not guessed from an HTTP status alone), as opposed to any other
-// failure. Callers should treat this the same way they treat "no
-// backend configured at all" -- a warning, not a hard block on
-// environment teardown -- since docs/multi-user-state.md's own "IAM
-// footprint" section notes s3:ListBucket is a broader permission than a
-// backend strictly needs, and a locked-down org may reasonably not
-// grant it.
+// ErrBackendListPermissionDenied is returned by ListDependentApps when the
+// list call fails with an AccessDenied error. Callers should treat this
+// the same as "no backend configured" -- a warning, not a hard block on
+// environment teardown.
 var ErrBackendListPermissionDenied = errors.New("permission denied listing backend state objects")
 
-// ListDependentApps lists every project name with its own state object
-// under envName's own apps/ prefix in bucket (see
-// shared.BackendAppsPrefix), the check environment teardown's
-// dependent-app safety relies on. Returns project names only (recovered
-// from each object's own key via shared.ProjectNameFromAppKey -- no
-// need to open any app's state to find out what it's called), sorted
-// for deterministic output.
-//
-// Paginates automatically: ListObjectsV2 returns at most 1000 keys per
-// call, so environments with many apps need more than one round trip.
+// ListDependentApps lists every project with its own state object under
+// envName's apps/ prefix in bucket, used by environment teardown's
+// dependent-app safety check. Paginates automatically. Returns project
+// names sorted for deterministic output.
 func ListDependentApps(ctx context.Context, client s3Lister, bucket, envName string) ([]string, error) {
 	prefix := shared.BackendAppsPrefix(envName)
 

@@ -19,19 +19,10 @@ func azureIngressFQDN(resources *models.AzureResources) *string {
 }
 
 // azureCdnFQDN is the Terraform reference to the hostname of the first
-// Front Door endpoint, if any service has cdn:true. Once traffic is
-// fronted by Front Door, that hostname -- not the Container App's own
-// ingress FQDN azureIngressFQDN already publishes -- is the address a
-// real client should actually be sent to: the Container App's ingress
-// FQDN keeps working directly (Front Door does not disable it), but
-// bypasses the CDN/WAF layer entirely, which is exactly the case
-// docs/azure-todo.md's Front Door item flagged as unverified -- a clean
-// `terraform apply` had only ever been checked by polling the Container
-// App's own FQDN, never Front Door's.
-//
-// host_name is azurerm_cdn_frontdoor_endpoint's own computed attribute
-// (confirmed against the real provider schema, not assumed from the
-// other resources' `name`/`id` pattern).
+// Front Door endpoint, if any service has cdn:true. This is a distinct
+// output from azureIngressFQDN: the Container App's own ingress FQDN
+// keeps working directly but bypasses the CDN/WAF layer, so a client
+// should be sent to Front Door's hostname instead once it exists.
 func azureCdnFQDN(resources *models.AzureResources) *string {
 	keys := make([]string, 0, len(resources.CdnFrontdoorEndpoint))
 	for k := range resources.CdnFrontdoorEndpoint {
@@ -45,13 +36,10 @@ func azureCdnFQDN(resources *models.AzureResources) *string {
 	return &fqdn
 }
 
-// azureKeyVaultName is the Terraform reference to the Key Vault's own
-// `name` attribute, published so callers outside Terraform (the smoke
-// test's Key Vault RBAC propagation poll, docs/azure-todo.md) can query
-// the vault's data plane directly (`az keyvault secret list`) without
-// having to re-derive KeyVaultName's own naming scheme in bash. Only
-// present when a Key Vault actually exists ("main" is the one resource
-// key azure/infer.go ever populates, InferAzure.go:159).
+// azureKeyVaultName is the Terraform reference to the Key Vault's `name`
+// attribute, published so callers outside Terraform can query the
+// vault's data plane directly without re-deriving KeyVaultName's naming
+// scheme. Only present when a Key Vault exists.
 func azureKeyVaultName(resources *models.AzureResources) *string {
 	if _, ok := resources.KeyVault["main"]; !ok {
 		return nil
@@ -61,8 +49,7 @@ func azureKeyVaultName(resources *models.AzureResources) *string {
 }
 
 // sortedStringKeysAzureApp returns ContainerApp map keys sorted, so
-// azureIngressFQDN's "first" match is deterministic rather than dependent
-// on Go's randomized map iteration order.
+// azureIngressFQDN's "first" match is deterministic.
 func sortedStringKeysAzureApp(m map[string]models.ContainerApp) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -74,10 +61,6 @@ func sortedStringKeysAzureApp(m map[string]models.ContainerApp) []string {
 
 // GenerateAzure renders a Terraform JSON manifest for the given Azure
 // resources and environment.
-//
-// projectName mirrors aws.GenerateAWS's own parameter of the same name
-// -- see its doc comment for what it's used for and when it has no
-// effect.
 func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironment, projectName string) (string, error) {
 	requiredProviders := map[string]any{
 		"azurerm": map[string]any{"source": "hashicorp/azurerm", "version": "~> 4.0"},
@@ -89,12 +72,8 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 	}
 
 	// Only wire up the docker provider if something actually builds an
-	// image. Auth is against the ACR admin account
-	// (azurerm_container_registry has admin_enabled=true whenever it
-	// exists) rather than a short-lived token like AWS's
-	// aws_ecr_authorization_token data source: ACR's admin credentials
-	// are stable resource attributes, so no data source is needed to
-	// fetch them.
+	// image. Auth is against the ACR admin account, whose credentials
+	// are stable resource attributes.
 	if len(resources.DockerImage) > 0 {
 		requiredProviders["docker"] = map[string]any{"source": "kreuzwerker/docker", "version": "~> 3.0"}
 		provider["docker"] = map[string]any{
@@ -109,10 +88,7 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 	}
 
 	// Only wire up the time provider if grantKeyVaultAccessOnce actually
-	// created the RBAC-propagation time_sleep (see TimeSleep's own doc
-	// comment) -- apps with no managed-service credentials never create
-	// a Key Vault at all, and shouldn't declare a provider they have no
-	// resource of.
+	// created the RBAC-propagation time_sleep.
 	if len(resources.TimeSleep) > 0 {
 		requiredProviders["time"] = map[string]any{"source": "hashicorp/time", "version": "~> 0.13"}
 		provider["time"] = map[string]any{}
@@ -137,10 +113,8 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 		manifest.Terraform["backend"] = backendBlock
 	}
 
-	// On AWS the public hostname belongs to the environment's shared load
-	// balancer, so the environment stack publishes it. A Container App
-	// carries its own ingress hostname, so it has to be published here or
-	// nothing downstream can reach the deployed application.
+	// A Container App carries its own ingress hostname, so it has to be
+	// published here.
 	if fqdn := azureIngressFQDN(resources); fqdn != nil {
 		manifest.Output = map[string]any{
 			"fqdn": map[string]any{
@@ -150,9 +124,7 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 		}
 	}
 
-	// Only present when a service has cdn:true (azureCdnFQDN returns nil
-	// otherwise). See azureCdnFQDN's own doc comment for why this is a
-	// distinct output from "fqdn" above, not a replacement for it.
+	// Only present when a service has cdn:true.
 	if cdnFqdn := azureCdnFQDN(resources); cdnFqdn != nil {
 		if manifest.Output == nil {
 			manifest.Output = map[string]any{}
@@ -163,12 +135,7 @@ func GenerateAzure(resources *models.AzureResources, env *models.AzureEnvironmen
 		}
 	}
 
-	// Only present when a Key Vault exists (azureKeyVaultName returns nil
-	// otherwise). Lets callers outside Terraform poll the vault's own
-	// data plane directly (docs/azure-todo.md's Key Vault RBAC
-	// propagation item) instead of re-deriving KeyVaultName's naming
-	// scheme in bash, or discovering propagation delay only via a full
-	// `terraform apply` failing and retrying.
+	// Only present when a Key Vault exists.
 	if kvName := azureKeyVaultName(resources); kvName != nil {
 		if manifest.Output == nil {
 			manifest.Output = map[string]any{}

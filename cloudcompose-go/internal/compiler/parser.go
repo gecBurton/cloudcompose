@@ -5,12 +5,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// ParseCompose parses a Docker Compose file using compose-go. Thin
-// re-export of shared.ParseCompose: the implementation lives in the
-// cloud-agnostic shared package so aws/azure/gcp package tests (which
-// exercise real compose fixtures through the parser -> normalizer
-// boundary) can call it without an import cycle back to this root
-// orchestration package.
+// ParseCompose parses a Docker Compose file using compose-go.
 func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	return shared.ParseCompose(filePath)
 }
@@ -21,8 +16,7 @@ func ParseComposeJSON(filePath string) (string, error) {
 }
 
 // Normalize transforms a parsed Compose application into the
-// cloud-agnostic semantic model. Thin re-export of shared.Normalize, for
-// the same reason as ParseCompose above.
+// cloud-agnostic semantic model.
 func Normalize(composeApp *models.ComposeApplication, projectName string) (*models.Application, error) {
 	return shared.Normalize(composeApp, projectName)
 }

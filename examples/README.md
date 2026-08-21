@@ -12,7 +12,7 @@ files" note for why).
 ## The fastest path: `--demo`, no setup at all
 
 To see what any example compiles to on a given cloud, with no cloud
-account, no credentials, and no `cloudcompose init` step:
+account, no credentials, and no `cloud-compose env init` step:
 
 ```bash
 cd cloudcompose-go
@@ -26,33 +26,34 @@ as-is — it's for evaluation only. See
 `docs/authored-environment-config.md`'s "Evaluating without a live
 environment" section for the full design.
 
-## The fast path to a real deployment: `cloudcompose up`
+## The fast path to a real deployment: `env up` + `compose up`
 
-For the common case -- one app, one environment -- `cloudcompose up`
-runs the whole init -> apply -> compile -> apply flow described below in
-one command, stopping to show you each `terraform apply`'s plan and
-prompt for confirmation exactly as it would if you ran the four steps by
-hand (no `-auto-approve` anywhere). Note that `--env` means something
-different here than it does on `compile`/`ps`/`logs`/`down` below: on
-`up` (and `init`, which `up` calls internally), it's the authored
-environment.yaml file being applied; on the others, it's the
-already-applied environment *directory* `init`/`up` wrote (see the
-two-step flow's own note on this below).
+For the common case -- one app, one environment -- `cloud-compose env up`
+runs the environment's `init` -> `apply` flow described below in one
+command, and `cloud-compose compose up` does the same for the app's own
+`compile` -> `apply` flow, each stopping to show you its own `terraform
+apply`'s plan and prompt for confirmation exactly as it would if you ran
+the steps by hand (no `-auto-approve` anywhere). `--env` means the
+authored environment.yaml file on `env up`/`env init`, and the
+already-applied environment *directory* on `compose up`/`compile`/`ps`/
+`logs`/`compose down`/`env down` (see the step-by-step flow's own note on
+this below).
 
 ```bash
 cd cloudcompose-go
-go run ./cmd/cloudcompose up -f ../examples/hello/compose.yml --env ../examples/hello/environment.yaml
+go run ./cmd/cloudcompose env up --env ../examples/hello/environment.yaml
+go run ./cmd/cloudcompose compose up -f ../examples/hello/compose.yml --env ../examples/hello/env-demo
 ```
 
 If you're deploying more than one app into the same environment, or want
 to see each generated Terraform manifest before running `terraform
-apply` at all, use the two-step flow below instead -- `up` always
-re-runs the environment's own `apply` (Terraform reports "No changes"
-if it's already up to date), which is fine for a single app but means
-running `up` again for a second app re-prompts you on the shared
-environment's plan too, not just the new app's.
+apply` at all, use the step-by-step flow below instead -- `env up`
+always re-runs the environment's own `apply` (Terraform reports "No
+changes" if it's already up to date), which is fine the first time but
+means running it again before deploying a second app re-prompts you on
+the shared environment's plan too, even though nothing changed.
 
-## The two-step flow: `init` once, `compile` many times
+## The step-by-step flow: `env init` once, `compile` many times
 
 Deploying any of these examples for real is a two-step process — bootstrap
 a shared environment once, then deploy one or more apps into it:
@@ -68,11 +69,11 @@ cd cloudcompose-go
 # does). Run once per environment, typically by whoever owns the cloud
 # account, not by every developer.
 #
-# Neither init nor compile take an output-location flag: init always
-# writes to <dir of -e>/env-<name> (here, next to
+# Neither env init nor compile take an output-location flag: env init
+# always writes to <dir of -e>/env-<name> (here, next to
 # examples/hello/environment.yaml, so env-demo/ lands in
 # ../examples/hello/, since that file's `name:` is `demo`).
-go run ./cmd/cloudcompose init -e ../examples/hello/environment.yaml
+go run ./cmd/cloudcompose env init -e ../examples/hello/environment.yaml
 cd ../examples/hello/env-demo && terraform init && terraform apply
 cd -
 
@@ -89,11 +90,11 @@ cd -
 # environment's reserved address space if more than one app shares this
 # environment.
 #
-# -e must be the applied environment directory -- the one `init` wrote
-# main.tf.json into and you just ran `terraform apply` in above, not
-# environment.yaml itself (that's what `init`'s/`up`'s own --env means
-# instead -- see this file's "fast path" section above). compile's own
-# output lands at
+# -e must be the applied environment directory -- the one `env init`
+# wrote main.tf.json into and you just ran `terraform apply` in above,
+# not environment.yaml itself (that's what `env init`'s/`env up`'s own
+# --env means instead -- see this file's "fast path" section above).
+# compile's own output lands at
 # <dir of -f>/app-<environment name>-<project name> (here, app-demo-hello/,
 # "hello" being -f's own containing directory name, compile's default
 # --project) -- named after both the environment and the project so the
@@ -106,16 +107,16 @@ go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml -e ../example
 
 `examples/hello/environment.yaml` (and its `environment.azure.yaml`/
 `environment.gcp.yaml` siblings) are real, `terraform validate`-checked
-authored environment files — the *decisions* `cloudcompose init` needs
-(region, VPC CIDR, whether to create a load balancer), and `cloudcompose
-init`'s **only** input; there are no decision flags. They are **not**
-the same thing as the `environment.yaml` that ends up sitting next to
-`main.tf.json` after `init` actually runs (that one is just a copy of
-whichever input file you gave it, written there so the file that
-produced a given environment is always visible next to it — not
-something to hand-edit) — and neither is the same thing as an
+authored environment files — the *decisions* `cloud-compose env init`
+needs (region, VPC CIDR, whether to create a load balancer), and
+`cloud-compose env init`'s **only** input; there are no decision flags.
+They are **not** the same thing as the `environment.yaml` that ends up
+sitting next to `main.tf.json` after `env init` actually runs (that one
+is just a copy of whichever input file you gave it, written there so
+the file that produced a given environment is always visible next to
+it — not something to hand-edit) — and neither is the same thing as an
 environment's *facts* (its actual VPC ID, ALB ARN, etc. once Terraform
-creates them), which are never written to a file at all: `cloudcompose
+creates them), which are never written to a file at all: `cloud-compose
 compile -e <dir>` reads those live via `terraform output -json` against
 the applied environment directory. See
 `docs/authored-environment-config.md` for the full design and the
@@ -161,7 +162,7 @@ per run (on Azure, this also means `--subnet-index` is never passed —
 see `scripts/smoke-test.sh`'s own comment at that call site for why
 defaulting to `0` is correct here).
 Each run substitutes a unique `name:` into a generated copy of that
-shared file before calling `cloudcompose init -e <generated file>` — see
+shared file before calling `cloud-compose env init -e <generated file>` — see
 the comments in the smoke-test script for exactly how.
 
 ## Running the golden tests yourself
@@ -178,8 +179,8 @@ updating alongside a new `expected/` fixture.
 
 ## Sharing one environment across multiple users
 
-Everything above assumes a single machine applying `cloudcompose init`/
-`up` against its own local Terraform state. Once more than one person
+Everything above assumes a single machine applying `cloud-compose env init`/
+`env up` against its own local Terraform state. Once more than one person
 (or a laptop and CI) needs to apply against the *same* environment,
 state has to live somewhere shared, with locking -- see
 `docs/authored-environment-config.md`'s "Sharing one environment across

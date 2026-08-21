@@ -39,6 +39,6 @@ jobs:
       run: go run ./cmd/schema-check
       working-directory: cloudcompose-go
 
-    - name: Build cloudcompose binary
-      run: go build -tags disable_grpc_modules -o cloudcompose ./cmd/cloudcompose
+    - name: Build cloud-compose binary
+      run: go build -tags disable_grpc_modules -o cloud-compose ./cmd/cloudcompose
       working-directory: cloudcompose-go

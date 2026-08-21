@@ -1,16 +1,16 @@
 # Authored environment.yaml for the "hello" example, used by
-# `cloudcompose init` to bootstrap the shared platform infrastructure this
+# `cloud-compose env init` to bootstrap the shared platform infrastructure this
 # app deploys into. See docs/authored-environment-config.md for the
 # full design and examples/README.md for how this fits into the overall
-# init -> apply -> main flow.
+# init -> apply -> compile flow.
 #
 # This is the *decisions* half of environment config (region, VPC CIDR,
 # whether to create a load balancer) -- not to be confused with the
 # environment.yaml that ends up sitting next to main.tf.json after
-# `cloudcompose init` runs (that one is the resolved, machine-written copy
+# `cloud-compose env init` runs (that one is the resolved, machine-written copy
 # of this file, not something to hand-edit). The *facts* Terraform
 # assigns once this infrastructure actually exists (a VPC ID, an ALB
-# ARN) are never in a file at all -- `cloudcompose main` reads them live via
+# ARN) are never in a file at all -- `cloud-compose compile` reads them live via
 # `terraform output -json` against the applied environment directory.
 provider: aws
 name: demo

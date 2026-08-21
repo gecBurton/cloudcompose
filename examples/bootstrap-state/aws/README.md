@@ -3,7 +3,7 @@
 Provisions the S3 bucket and DynamoDB lock table `backend.aws:` in
 `environment.yaml` expects to already exist (see
 `docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" and `docs/multi-user-state.md`). `cloudcompose` never
+multiple users" and `docs/multi-user-state.md`). `cloud-compose` never
 creates this itself -- it's a one-time, manually-applied setup per
 organization/account, run before any `environment.yaml` references it.
 
@@ -34,7 +34,7 @@ backend:
 ## What this does not do
 
 - Does not create IAM policies granting access to the bucket/table --
-  every identity that runs `cloudcompose init`/`up`/`compile`/`down`/
+  every identity that runs `cloud-compose init`/`up`/`compile`/`down`/
   `env-destroy` against a backend-configured environment needs
   `s3:GetObject`/`PutObject`/`DeleteObject` on the bucket and
   `dynamodb:GetItem`/`PutItem`/`DeleteItem` on the table (Terraform's

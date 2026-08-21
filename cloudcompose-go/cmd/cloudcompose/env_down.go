@@ -13,23 +13,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// envDestroyCmd runs `terraform destroy` against a shared environment
-// directory (env-<name>, written by a previous `cloudcompose init`).
-// Unlike down.go's app-level teardown, this first checks whether any
-// app still depends on the environment (via each cloud's own
-// ListDependentApps) and refuses by default if any are found.
-var envDestroyCmd = &cobra.Command{
-	Use:   "env-destroy",
+// envDownCmd runs `terraform destroy` against a shared environment
+// directory (env-<name>, written by a previous `cloud-compose env
+// init`/`env up`). Unlike compose_down.go's app-level teardown, this
+// first checks whether any app still depends on the environment (via
+// each cloud's own ListDependentApps) and refuses by default if any
+// are found.
+var envDownCmd = &cobra.Command{
+	Use:   "down",
 	Short: "Destroy a shared environment's infrastructure (refuses if apps still depend on it)",
 	Long: "Runs `terraform destroy` in the environment's own Terraform directory " +
-		"(env-<name>, written by a previous `cloudcompose init`).\n\n" +
-		"Unlike `cloudcompose down` (which only ever destroys a single app), " +
-		"this destroys the shared environment itself -- so it first checks " +
+		"(env-<name>, written by a previous `cloud-compose env init`/`env up`).\n\n" +
+		"Unlike `cloud-compose compose down` (which only ever destroys a single " +
+		"app), this destroys the shared environment itself -- so it first checks " +
 		"whether any app still depends on it (every app compiled against a " +
 		"backend-configured environment registers its own state under that " +
 		"environment's own backend, see docs/multi-user-state.md) and refuses " +
 		"by default if any are found, listing their project names and " +
-		"suggesting `cloudcompose down` for each first.\n\n" +
+		"suggesting `cloud-compose compose down` for each first.\n\n" +
 		"Without a configured backend, this check has nothing to list against " +
 		"and is skipped with a warning -- the same as if it found no dependent " +
 		"apps, but without the guarantee that none exist.\n\n" +
@@ -40,10 +41,10 @@ var envDestroyCmd = &cobra.Command{
 		"Shows its plan and prompts for confirmation interactively by default, " +
 		"like every other command that runs Terraform. --auto-approve skips " +
 		"that prompt, for non-interactive callers (CI, scripts).",
-	Run: runEnvDestroy,
+	Run: runEnvDown,
 }
 
-func runEnvDestroy(cmd *cobra.Command, args []string) {
+func runEnvDown(cmd *cobra.Command, args []string) {
 	envDir, _ := cmd.Flags().GetString("env")
 	force, _ := cmd.Flags().GetBool("force")
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
@@ -53,7 +54,7 @@ func runEnvDestroy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	if _, statErr := os.Stat(envDir); statErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s does not exist -- has `cloudcompose init` run for this environment yet?\n", envDir)
+		fmt.Fprintf(os.Stderr, "Error: %s does not exist -- has `cloud-compose env init` run for this environment yet?\n", envDir)
 		os.Exit(1)
 	}
 
@@ -66,7 +67,7 @@ func runEnvDestroy(cmd *cobra.Command, args []string) {
 	if !force {
 		if err := checkNoDependentApps(env); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			fmt.Fprintln(os.Stderr, "\nRun `cloudcompose down` for each app listed above first, or pass --force to skip this check.")
+			fmt.Fprintln(os.Stderr, "\nRun `cloud-compose compose down` for each app listed above first, or pass --force to skip this check.")
 			os.Exit(1)
 		}
 	}
@@ -137,9 +138,9 @@ func checkNoDependentApps(env any) error {
 }
 
 func init() {
-	rootCmd.AddCommand(envDestroyCmd)
+	envCmd.AddCommand(envDownCmd)
 
-	envDestroyCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
-	envDestroyCmd.Flags().Bool("force", false, "Skip the dependent-app check entirely. Off by default -- normally the check itself, or a human confirming by other means, should establish no apps depend on this environment first.")
-	envDestroyCmd.Flags().Bool("auto-approve", false, "Skip the terraform destroy confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
+	envDownCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	envDownCmd.Flags().Bool("force", false, "Skip the dependent-app check entirely. Off by default -- normally the check itself, or a human confirming by other means, should establish no apps depend on this environment first.")
+	envDownCmd.Flags().Bool("auto-approve", false, "Skip the terraform destroy confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

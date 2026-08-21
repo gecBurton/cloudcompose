@@ -288,7 +288,7 @@ func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", "hello")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose compile --demo aws failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose compile --demo aws failed: %v\n%s", err, out)
 	}
 	if !contains(string(out), "DEMO MODE") {
 		t.Errorf("expected a demo-mode warning, got:\n%s", out)
@@ -300,11 +300,11 @@ func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 
 // TestMain_FileFlagWorksBeforeOrAfterSubcommand confirms -f/--file is a
 // persistent root flag, not a local one repeated per-subcommand: it
-// must work both before the subcommand (`cloudcompose -f x.yml
-// compile`) and after it (`cloudcompose compile -f x.yml`), exactly
+// must work both before the subcommand (`cloud-compose -f x.yml
+// compile`) and after it (`cloud-compose compile -f x.yml`), exactly
 // like real `docker compose`'s own -f positioning. This split is
 // deliberate, not cosmetic -- see main.go's own doc comment: it's what
-// lets `cloudcompose logs` define a *local* -f/--follow later (like
+// lets `cloud-compose logs` define a *local* -f/--follow later (like
 // real `docker compose logs -f`) without colliding with this one.
 func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	t.Parallel()
@@ -323,7 +323,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	beforeSubcommand := exec.Command(bin, "-f", composeFile, "compile", "-d", "aws")
 	out, err := beforeSubcommand.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose -f %s compile failed: %v\n%s", composeFile, err, out)
+		t.Fatalf("cloud-compose -f %s compile failed: %v\n%s", composeFile, err, out)
 	}
 	// compile defaults --project to composeDir's own basename, so the
 	// output directory is app-demo-<composeDir's basename> here rather
@@ -339,7 +339,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	afterSubcommand := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
 	out, err = afterSubcommand.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose compile -f %s failed: %v\n%s", composeFile, err, out)
+		t.Fatalf("cloud-compose compile -f %s failed: %v\n%s", composeFile, err, out)
 	}
 	if _, statErr := os.Stat(filepath.Join(composeDir, appDirName, "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json from -f after the subcommand, got: %v", statErr)
@@ -349,7 +349,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 // TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd confirms -f/
 // --file is only required when there's genuine ambiguity, matching
 // `docker compose`'s own behavior: with a compose.yml present in the
-// working directory and no -f given at all, `cloudcompose compile`
+// working directory and no -f given at all, `cloud-compose compile`
 // should still find and use it (see shared.FindComposeFile).
 func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
 	t.Parallel()
@@ -368,7 +368,7 @@ func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
 	cmd.Dir = composeDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose compile with no -f failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose compile with no -f failed: %v\n%s", err, out)
 	}
 	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo-hello", "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
@@ -425,7 +425,7 @@ func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) 
 	for _, project := range []string{"appA", "appB"} {
 		cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", project)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("cloudcompose compile -p %s failed: %v\n%s", project, err, out)
+			t.Fatalf("cloud-compose compile -p %s failed: %v\n%s", project, err, out)
 		}
 	}
 
@@ -474,7 +474,7 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 
 	explainOut, err := exec.Command(bin, "compile", "-f", composeFile, "--explain").CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose compile --explain failed: %v\n%s", err, explainOut)
+		t.Fatalf("cloud-compose compile --explain failed: %v\n%s", err, explainOut)
 	}
 	if !contains(string(explainOut), "3001") || !contains(string(explainOut), "not exposed") {
 		t.Errorf("expected --explain to report ports 3001 are not exposed, got:\n%s", explainOut)
@@ -482,7 +482,7 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 
 	compileOut, err := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", "portstest").CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloudcompose compile failed: %v\n%s", err, compileOut)
+		t.Fatalf("cloud-compose compile failed: %v\n%s", err, compileOut)
 	}
 	if !contains(string(compileOut), "3001") {
 		t.Errorf("expected a normal compile's own warning summary to also report the dropped port, got:\n%s", compileOut)

@@ -11,7 +11,7 @@ Running services locally with Docker Compose is easy. Deploying the same app to 
 docker compose up
 
 # Production deployment (same file!)
-cloudcompose compile -f docker-compose.yml -e env-prod
+cloud-compose compile -f docker-compose.yml -e env-prod
 ```
 
 No `--flags` describing your infrastructure, no new config format to learn, it infers what it can (`image: postgres` → a managed database) and lets you override the rest with a small `x-cloud:` block when you need to.
@@ -25,9 +25,9 @@ Download a prebuilt binary from the
 archives are published for Linux, macOS, and Windows (amd64 and arm64):
 
 ```bash
-curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloudcompose_<version>_darwin_arm64.tar.gz
-tar -xzf cloudcompose_<version>_darwin_arm64.tar.gz
-chmod +x cloudcompose
+curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloud-compose_<version>_darwin_arm64.tar.gz
+tar -xzf cloud-compose_<version>_darwin_arm64.tar.gz
+chmod +x cloud-compose
 ```
 
 Or build from source (requires Go 1.26+):
@@ -35,7 +35,7 @@ Or build from source (requires Go 1.26+):
 ```bash
 git clone https://github.com/gecBurton/cloudcompose.git
 cd cloudcompose/cloudcompose-go
-go build -o cloudcompose ./cmd/cloudcompose
+go build -o cloud-compose ./cmd/cloudcompose
 ```
 
 You'll also need the **Terraform CLI**, **Docker** (only if a service has a `build:` section), and credentials for whichever cloud you're deploying to.
@@ -46,13 +46,13 @@ You'll also need the **Terraform CLI**, **Docker** (only if a service has a `bui
 
 ```bash
 # From the cloudcompose-go directory
-./cloudcompose compile -f ../examples/hello/compose.yml -d aws   # or -d azure / -d gcp
+./cloud-compose compile -f ../examples/hello/compose.yml -d aws   # or -d azure / -d gcp
 ```
 
 See exactly what it inferred and why, before compiling anything for real:
 
 ```bash
-cloudcompose compile -f docker-compose.yml --explain
+cloud-compose compile -f docker-compose.yml --explain
 ```
 ```
 api
@@ -85,27 +85,28 @@ You'll also need a `docker-compose.yml` for the app itself. Every command below 
 
 From here, pick one:
 
-### Fast path: one command
+### Fast path: two commands
 
-`cloudcompose up` runs `init` → `terraform apply` → `compile` → `terraform apply` in one go. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the four steps by hand:
+`cloud-compose env up` runs `env init` → `terraform apply` on the shared environment. `cloud-compose compose up` then runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand:
 
 ```bash
-cloudcompose up --env environment.yaml
+cloud-compose env up --env environment.yaml
+cloud-compose compose up --env env-prod
 ```
 
 That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
-### Two-step path: review each stage
+### Step-by-step path: review each stage
 
 Use this if you're deploying more than one app into the same environment, or want to see the generated Terraform before anything applies.
 
 ```bash
-cloudcompose init
+cloud-compose env init
 cd env-prod && terraform init && terraform apply && cd ..
-cloudcompose compile -e env-prod
+cloud-compose compile -e env-prod
 ```
 
-`cloudcompose init` writes a copy of `environment.yaml` alongside the generated `main.tf.json`. Once `terraform apply` runs, `cloudcompose compile` reads the resulting facts (VPC ID, ALB ARN, …) directly from Terraform's own state, no separate generated file to keep in sync. Deploying to Azure or GCP instead just means starting from `environment.azure.yaml`/`environment.gcp.yaml`.
+`cloud-compose env init` writes a copy of `environment.yaml` alongside the generated `main.tf.json`. Once `terraform apply` runs, `cloud-compose compile` reads the resulting facts (VPC ID, ALB ARN, …) directly from Terraform's own state, no separate generated file to keep in sync. Deploying to Azure or GCP instead just means starting from `environment.azure.yaml`/`environment.gcp.yaml`.
 
 See `docs/authored-environment-config.md` for the full `environment.yaml` schema, or `examples/README.md` for a real, runnable walkthrough.
 
@@ -115,17 +116,20 @@ See `docs/authored-environment-config.md` for the full `environment.yaml` schema
 
 ```bash
 # Live status of each service -- ECS/ALB on AWS, Container Apps on Azure
-cloudcompose ps -e env-prod
+cloud-compose compose ps -e env-prod
 
 # Recent logs, one service or every service, interleaved by timestamp
-cloudcompose logs -e env-prod
-cloudcompose logs -e env-prod web --since 1h --tail 500
+cloud-compose compose logs -e env-prod
+cloud-compose compose logs -e env-prod web --since 1h --tail 500
 
 # Tear the app down again (never touches the shared environment)
-cloudcompose down -e env-prod
+cloud-compose compose down -e env-prod
+
+# Tear the shared environment down too, once no app depends on it
+cloud-compose env down -e env-prod
 ```
 
-`ps`/`logs` query the cloud directly, not anything already implied by `compose.yml` or Terraform state, AWS and Azure are supported; GCP is not yet. Both take `--json` for scripting. Every command that runs Terraform (`up`, `down`) stays interactive by default; pass `--auto-approve` for non-interactive callers like CI.
+`ps`/`logs` query the cloud directly, not anything already implied by `compose.yml` or Terraform state, AWS and Azure are supported; GCP is not yet. Both take `--json` for scripting. Every command that runs Terraform (`env up`, `env down`, `compose up`, `compose down`) stays interactive by default; pass `--auto-approve` for non-interactive callers like CI.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cloud Compose Compiler (CLI binary: `cloudcompose`) is a Docker
+Cloud Compose Compiler (CLI binary: `cloud-compose`) is a Docker
 Compose to Terraform compiler that provides a PaaS-like deployment
 experience for AWS, Azure, and GCP. It transforms annotated Docker
 Compose files into cloud infrastructure using intent-based abstractions.
@@ -27,10 +27,10 @@ The compiler is implemented entirely in Go, in `cloudcompose-go/`.
 cd cloudcompose-go
 
 # Build the binary
-go build -o cloudcompose ./cmd/cloudcompose
+go build -o cloud-compose ./cmd/cloudcompose
 
 # Run the compiler
-./cloudcompose compile -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
+./cloud-compose compile -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
 
 # Run tests
 go test ./...
@@ -47,13 +47,29 @@ Or via the `Makefile` at the repo root (`make build`, `make test`,
 ```
 cloudcompose-go/
 ├── cmd/cloudcompose/            # CLI entry point (cobra)
-│   ├── main.go                 # root command, parse-only/normalize-only
-│   │                            #   subcommands, version
-│   ├── compile.go               # `main` command: parse -> normalize ->
-│   │                            #   explain/compile -> write, build-context
-│   │                            #   copying
-│   └── init.go                  # `init` command: shared platform
-│                                  #   infrastructure bootstrap
+│   ├── main.go                 # root command, version subcommand
+│   ├── compile.go               # `compile` command (top-level): parse ->
+│   │                            #   normalize -> explain/compile -> write,
+│   │                            #   build-context copying
+│   ├── env.go                   # `env` parent command (shared
+│   │                            #   infrastructure)
+│   ├── env_init.go              # `env init`: writes the environment's
+│   │                            #   Terraform manifest, no apply
+│   ├── env_up.go                # `env up`: env init + terraform apply
+│   ├── env_down.go              # `env down`: terraform destroy on the
+│   │                            #   environment, refuses if apps depend
+│   │                            #   on it
+│   ├── compose.go               # `compose` parent command (single app)
+│   ├── compose_up.go            # `compose up`: compile + terraform apply
+│   ├── compose_down.go          # `compose down`: terraform destroy on a
+│   │                            #   single app, never the environment
+│   ├── compose_ps.go            # `compose ps`: live service status
+│   │                            #   (AWS/Azure)
+│   ├── compose_logs.go          # `compose logs`: recent log output
+│   │                            #   (AWS/Azure)
+│   └── terraform.go             # shared terraformApply/terraformInit/
+│                                  #   terraformDestroy helpers used by
+│                                  #   env up/down and compose up/down
 ├── cmd/schema-check/            # Dev tool (not shipped): cross-checks
 │                                  #   internal/models's structs against
 │                                  #   the real Terraform provider schema
@@ -93,7 +109,7 @@ cloudcompose-go/
 │       │   ├── terraform_json.go   # Shared Terraform-JSON marshalling
 │       │   │                       #   helpers used by every generator
 │       │   ├── environment_helpers.go
-│       │   │                       # CIDR/tag helpers for `cloudcompose init`'s
+│       │   │                       # CIDR/tag helpers for `cloud-compose env init`'s
 │       │   │                       #   per-cloud platform generators
 │       │   ├── sorted_keys.go, url_pattern.go, schedule.go
 │       │                           # Small cloud-agnostic helpers used by
@@ -110,7 +126,7 @@ cloudcompose-go/
 │       │   ├── environment.go, environment_yaml.go
 │       │   │                       # AWS environment YAML loader/writer
 │       │   └── environment_generator.go
-│       │                           # `cloudcompose init`'s AWS platform
+│       │                           # `cloud-compose env init`'s AWS platform
 │       │                           #   bootstrap Terraform generator
 │       ├── azure/                 # Azure inference + generation
 │       │   ├── infer.go            # Stage 3 orchestrator (InferAzure)
@@ -125,7 +141,7 @@ cloudcompose-go/
 │       │   ├── generator.go        # Stage 4: Terraform JSON generation
 │       │   ├── environment.go      # Azure environment YAML loader
 │       │   └── environment_generator.go
-│       │                           # `cloudcompose init`'s Azure platform
+│       │                           # `cloud-compose env init`'s Azure platform
 │       │                           #   bootstrap Terraform generator
 │       └── gcp/                   # GCP inference + generation
 │           ├── infer.go            # Stage 3 orchestrator (InferGcp) +
@@ -135,7 +151,7 @@ cloudcompose-go/
 │           ├── generator.go        # Stage 4: Terraform JSON generation
 │           ├── environment.go      # GCP environment YAML loader
 │           └── environment_generator.go
-│                                   # `cloudcompose init`'s GCP platform
+│                                   # `cloud-compose env init`'s GCP platform
 │                                   #   bootstrap Terraform generator
 └── go.mod
 ```
@@ -206,14 +222,14 @@ go run ./cmd/schema-check
 ```
 
 This shells out to `terraform providers schema -json` for every provider
-cloudcompose generates config for, at the exact versions pinned in each
+cloud-compose generates config for, at the exact versions pinned in each
 cloud's `generator.go`, and reflects over the models package's
 `*Resources` structs to flag any nested block whose Go shape (slice vs.
 non-slice) disagrees with the schema's cardinality. It's run in CI
 (`.github/workflows/ci.yml`) so a provider version bump that changes a
 block's cardinality fails the build rather than shipping silently wrong
 JSON. Requires network access and the `terraform` CLI; not part of the
-shipped `cloudcompose` binary.
+shipped `cloud-compose` binary.
 
 ### Code Style
 
@@ -303,16 +319,18 @@ library).
 
 ### Adding a CLI Command
 
-1. Add a new `cobra.Command` in `cmd/cloudcompose/` (see `compile.go`/`init.go`
-   for the existing pattern).
+1. Add a new `cobra.Command` in `cmd/cloudcompose/` (see `compile.go`/`env_init.go`
+   for the existing pattern). If it belongs to the shared-environment half
+   of the tree, register it on `envCmd` (env.go); if it operates on a
+   single app, register it on `composeCmd` (compose.go).
 2. Keep business logic in `internal/compiler/` (or its `shared`/`aws`/
    `azure`/`gcp` sub-packages) as plain functions returning
    `(result, error)`, and keep `cmd/cloudcompose/`'s command handlers thin
    wrappers that call `os.Exit(1)` on error — this is what makes the
    business logic unit-testable without needing to capture `os.Exit`
    (see `environmentTarget`/`compileTerraform` in `compile.go` for the
-   pattern; `init.go` is simple enough — two flags, no decision-merging
-   logic since `cloudcompose init` takes its input from `environment.yaml`
+   pattern; `env_init.go` is simple enough — one flag, no decision-merging
+   logic since `cloud-compose env init` takes its input from `environment.yaml`
    alone — that it doesn't need the same extraction, but follow
    `compile.go`'s pattern for anything with real branching).
 3. Update README.md with usage.
@@ -351,8 +369,8 @@ library).
 cd cloudcompose-go
 
 # Show inference decisions without compiling
-./cloudcompose compile -f compose.yml --explain
+./cloud-compose compile -f compose.yml --explain
 
 # Debug with a full Go panic/stack trace on error
-CLOUDCOMPOSE_DEBUG=1 ./cloudcompose compile -f compose.yml -e env.yaml
+CLOUDCOMPOSE_DEBUG=1 ./cloud-compose compile -f compose.yml -e env.yaml
 ```

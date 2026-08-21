@@ -3,7 +3,7 @@
 Provisions the storage account and blob container `backend.azure:` in
 `environment.yaml` expects to already exist (see
 `docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" and `docs/multi-user-state.md`). `cloudcompose` never
+multiple users" and `docs/multi-user-state.md`). `cloud-compose` never
 creates this itself -- it's a one-time, manually-applied setup per
 organization/subscription, run before any `environment.yaml` references
 it.
@@ -27,7 +27,7 @@ terraform apply -var="name=myorg" -var="resource_group_name=myorg-tfstate-rg"
 ```
 
 Then grant **Storage Blob Data Contributor** on the storage account to
-every identity that will run `cloudcompose init`/`up`/`compile`/`down`/
+every identity that will run `cloud-compose init`/`up`/`compile`/`down`/
 `env-destroy` against a backend-configured environment -- shared-key
 access is disabled below (`allow_shared_key_access = false`), so
 Terraform's own `azurerm` backend authenticates via Entra ID

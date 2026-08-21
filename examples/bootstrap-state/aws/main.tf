@@ -69,7 +69,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
 }
 
 # The lock table `backend.aws.dynamodb_table:` points at --
-# `cloudcompose init` warns if a configured AWS backend omits this, since
+# `cloud-compose env init` warns if a configured AWS backend omits this, since
 # unlocked S3 state has the same concurrent-apply race as no backend at
 # all (see docs/multi-user-state.md). PAY_PER_REQUEST: lock traffic is
 # proportional to how often humans/CI run `terraform apply`/`destroy`

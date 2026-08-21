@@ -15,14 +15,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// psCmd shows live status for the services in a compose file, the way
-// `docker compose ps` shows live container status -- but queried
-// directly from the cloud, not from Terraform state or compose.yml.
-var psCmd = &cobra.Command{
+// composePsCmd shows live status for the services in a compose file,
+// the way `docker compose ps` shows live container status -- but
+// queried directly from the cloud, not from Terraform state or
+// compose.yml.
+var composePsCmd = &cobra.Command{
 	Use:   "ps",
 	Short: "Show live status of deployed services",
 	Long:  "Query the cloud directly for each compose service's live running status (AWS and Azure).",
-	Run:   runPs,
+	Run:   runComposePs,
 }
 
 // psRowJSON is the cloud-agnostic shape `ps --json` emits -- one row
@@ -35,7 +36,7 @@ type psRowJSON struct {
 	Health  string `json:"health,omitempty"`
 }
 
-func runPs(cmd *cobra.Command, args []string) {
+func runComposePs(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
 	projectName, _ := cmd.Flags().GetString("project")
@@ -133,7 +134,7 @@ func runPs(cmd *cobra.Command, args []string) {
 		// Unreachable: requireAwsOrAzure above already rejected
 		// anything but AWS/Azure.
 		target, _ := environmentTarget(env)
-		fmt.Fprintf(os.Stderr, "Error: `cloudcompose ps` does not support %s environments yet\n", target)
+		fmt.Fprintf(os.Stderr, "Error: `cloud-compose compose ps` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
 }
@@ -228,9 +229,9 @@ func azurePsRowsJSON(statuses []azure.ServiceStatus) []psRowJSON {
 }
 
 func init() {
-	rootCmd.AddCommand(psCmd)
+	composeCmd.AddCommand(composePsCmd)
 
-	psCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloudcompose init` (terraform apply must have run there already)")
-	psCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
-	psCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")
+	composePsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	composePsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
+	composePsCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")
 }

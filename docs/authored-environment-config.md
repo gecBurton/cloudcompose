@@ -1,7 +1,7 @@
 # Authored Environment Configuration
 
 `environment.yaml` is the authored, reviewable input for
-`cloudcompose init` — the environment-config equivalent of
+`cloud-compose init` — the environment-config equivalent of
 `docker-compose.yml`. Two things are cleanly separated:
 
 | | What | Lifecycle |
@@ -9,10 +9,10 @@
 | **Input** | `environment.yaml` | Authored, committed, reviewed |
 | **Output** | Terraform's own state, read live via `terraform output -json` | Never a file Cloud Compose Compiler writes; always current by construction |
 
-`cloudcompose init` reads `environment.yaml` as its **only** input — no
+`cloud-compose init` reads `environment.yaml` as its **only** input — no
 decision flags. To change a decision, edit the file and re-run `init`.
 
-`cloudcompose compile -e <environment-directory>` reads the environment's
+`cloud-compose compile -e <environment-directory>` reads the environment's
 facts by running `terraform output -json` in that directory (which must
 already have `terraform apply` run in it) and decoding its `environment`
 output. Multiple apps can `compile` against the same environment
@@ -24,11 +24,11 @@ per app).
 
 ## Evaluating without a live environment: `--demo`
 
-`cloudcompose compile -d <cloud>` (`aws`/`azure`/`gcp`) generates the same
+`cloud-compose compile -d <cloud>` (`aws`/`azure`/`gcp`) generates the same
 Terraform JSON a real compile would, using a built-in synthetic
 environment with plausible-looking placeholder resource IDs instead of
 reading a real one — for a prospective user to see what their compose
-file becomes on a given cloud without first running `cloudcompose init`
+file becomes on a given cloud without first running `cloud-compose init`
 or holding any cloud credentials at all.
 
 `-e` and `-d` are mutually exclusive and one is required: there is no
@@ -37,7 +37,7 @@ reasoning `init`'s own flag set follows. The output is genuinely valid
 Terraform JSON (every demo environment is checked against the real
 provider schema via `terraform validate`), but it is not deployable
 as-is — the placeholder IDs (`vpc-demo...`, fake ARNs, etc.) don't
-correspond to anything real. `cloudcompose compile` prints a stderr
+correspond to anything real. `cloud-compose compile` prints a stderr
 banner saying so whenever `-d` is used.
 
 ## Schema: common envelope + discriminated provider block
@@ -158,7 +158,7 @@ backend:
 ```
 
 `backend:` is entirely optional. Omitted (today's default), state stays
-local — `cloudcompose init` warns about this explicitly (*"no backend
+local — `cloud-compose init` warns about this explicitly (*"no backend
 configured — state is local to this machine"*), rather than silently
 assuming one; this is a deliberate choice a human must see, not a trap.
 If AWS's `backend.aws` is configured without `dynamodb_table`, `init`
@@ -175,7 +175,7 @@ hyphens: an unrestricted name could otherwise be crafted to collide
 with a different environment's or app's own backend key.
 
 `backend:` assumes the bucket/storage account/lock table it points at
-already exists — `cloudcompose` never provisions one itself (the same
+already exists — `cloud-compose` never provisions one itself (the same
 chicken-and-egg reason most infra tools don't: state needs a bucket,
 provisioning a bucket is itself infrastructure). See
 `examples/bootstrap-state/` for a ready-to-copy, manually-applied
@@ -184,12 +184,12 @@ block expects, one time per organization/account, before any
 `environment.yaml` references it.
 
 Tearing down a shared environment (as opposed to a single app —
-`cloudcompose down`) is `cloudcompose env-destroy`: unlike `down`, it
+`cloud-compose down`) is `cloud-compose env-destroy`: unlike `down`, it
 first checks (when `backend:` is configured) whether any app still
 depends on the environment — every app compiled against a
 backend-configured environment shares that same backend, under its own
 key — and refuses by default if any are found, naming them and
-suggesting `cloudcompose down` for each first. `--force` skips that
+suggesting `cloud-compose down` for each first. `--force` skips that
 check. See `docs/multi-user-state.md` for the full design (locking
 details per cloud, the dependent-app check's own IAM footprint and
 degrade-to-warning behavior, and how to resolve a stale registration
@@ -207,7 +207,7 @@ left behind by a deleted app directory that never ran `down`).
 | `high_availability_enabled` | default `false`; AWS `multi_az`/Azure `ZoneRedundant`; not wired for GCP (Cloud SQL has its own equivalent settings) |
 | `backup_retention_days` | default `7` |
 | `log_retention_days` | default `7`; applied uniformly, not per-service. Azure's Log Analytics Workspace has a hard minimum of 30 days — `GenerateAzureEnvironment` clamps up if a lower value is given; AWS keeps whatever value is given |
-| `domain` | optional on AWS/Azure (each gets a free CloudFront/Front Door hostname); required for GCP if any service declares `cdn: true` (Google-managed cert requires domain ownership) — not enforced at `init` time, since whether `cdn: true` is used isn't known until `cloudcompose compile` parses the compose file |
+| `domain` | optional on AWS/Azure (each gets a free CloudFront/Front Door hostname); required for GCP if any service declares `cdn: true` (Google-managed cert requires domain ownership) — not enforced at `init` time, since whether `cdn: true` is used isn't known until `cloud-compose compile` parses the compose file |
 
 | `aws:` block | |
 |---|---|
@@ -246,7 +246,7 @@ closure), so a different `--project` really does produce a different,
 non-interchangeable deployment, not a re-compile of the same one; the
 output directory naming must not imply otherwise. `app-<env>-<project>`
 pairs with `init`'s own `env-<name>`, naming both halves of one
-deployment consistently. `cloudcompose down` (see its own doc comment)
+deployment consistently. `cloud-compose down` (see its own doc comment)
 must be given the same `--project` value `compile` used to find the
 matching output directory to destroy — there is nowhere else `down` can
 recover it from.
@@ -260,9 +260,9 @@ schema change once it's built, not because anything consumes it yet.
 
 ## Non-goals
 
-- `cloudcompose init`/`compile` themselves still never run `terraform
+- `cloud-compose init`/`compile` themselves still never run `terraform
   apply`/`destroy` or manage Terraform state — they only ever write
-  `main.tf.json`. `cloudcompose up`/`down`/`env-destroy` are the
+  `main.tf.json`. `cloud-compose up`/`down`/`env-destroy` are the
   exceptions: `up` orchestrates `init` + `terraform apply` + `compile` +
   `terraform apply` for the common one-app-one-environment case, `down`
   runs `terraform destroy` against a single already-compiled app's own
@@ -275,7 +275,7 @@ schema change once it's built, not because anything consumes it yet.
   All three offer an opt-in, off-by-default `--auto-approve` for
   non-interactive callers (CI, scripts) that have already decided not
   to have a human review the plan for a given run — see
-  `cmd/cloudcompose/up.go`'s, `down.go`'s, and `env_destroy.go`'s own
+  `cmd/cloudcompose/env_up.go`'s, `compose_down.go`'s, and `env_down.go`'s own
   doc comments for the reasoning.
 - No multi-environment-per-file support (Terraform-workspace-style) —
   one `environment.yaml` = one directory = one environment.
@@ -294,11 +294,11 @@ schema change once it's built, not because anything consumes it yet.
 - `internal/compiler/initconfig` — `Load` (reads `environment.yaml`,
   returns `(nil, nil)` if missing), `Validate` (strict/discriminated
   checks, including `backend:`), and `BackendWarnings` (the non-fatal
-  "no backend configured"/"no lock table" warnings `cloudcompose init`
+  "no backend configured"/"no lock table" warnings `cloud-compose init`
   prints).
-- `cmd/cloudcompose/init.go` — `-e`/`--env` (default
+- `cmd/cloudcompose/env_init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
-- `cmd/cloudcompose/env_destroy.go` — `env-destroy`'s dependent-app
+- `cmd/cloudcompose/env_down.go` — `env down`'s dependent-app
   safety check and `--force` escape hatch.
 - `internal/compiler/{aws,azure,gcp}/environment_generator.go` — each
   declares a plain `output "environment"` block (and, when `backend:`
@@ -325,5 +325,5 @@ schema change once it's built, not because anything consumes it yet.
 - CI note: `scripts/ci-environment.{aws,azure}.yaml` are shared,
   committed environment configs; `scripts/smoke-test.sh` substitutes a
   per-run `name:`/`region:` into a generated copy under `build/` before
-  passing it to `cloudcompose init -e`, since a single committed file
+  passing it to `cloud-compose init -e`, since a single committed file
   can't express a unique name per CI run.

@@ -2,7 +2,7 @@
 
 ## The problem
 
-`cloudcompose` today has no story for more than one person (or CI run,
+`cloud-compose` today has no story for more than one person (or CI run,
 or laptop) working against the same environment or the same app at the
 same time.
 
@@ -22,10 +22,10 @@ detects or prevents this today.
 The only remote-backend support that exists at all is
 `scripts/smoke-test.sh`'s `write_backend()`, a CI-only convenience that
 writes an uncommitted `backend_ci.tf` next to `main.tf.json` — not a
-`cloudcompose` feature, and with no state locking (S3: `encrypt = true`
+`cloud-compose` feature, and with no state locking (S3: `encrypt = true`
 only, no `dynamodb_table`; see `ci/main.tf`).
 
-A related, second-order problem: `cloudcompose down` only ever destroys
+A related, second-order problem: `cloud-compose compose down` only ever destroys
 a single app's directory, deliberately never the shared environment
 (`down.go`'s own doc comment) — the right safety default, but it leaves
 tearing an environment down as a bare `terraform destroy` a human runs
@@ -83,7 +83,7 @@ Rules, matching `initconfig.Validate`'s existing discriminated-union
 style:
 
 - `backend:` is optional. Omitted entirely → today's behavior (local
-  state), with `cloudcompose init` printing a one-line warning: *"No
+  state), with `cloud-compose env init` printing a one-line warning: *"No
   backend configured — state is local to this machine. Multiple users
   sharing this environment must configure `backend:` in
   environment.yaml."* Never silently assume a backend; local state must
@@ -104,7 +104,7 @@ style:
 `initconfig.Validate` gains the discriminated-block check above, plus:
 GCP's `dynamodb_table`-equivalent doesn't exist (GCS locking is native,
 no separate resource), so only AWS's block has an optional
-`dynamodb_table` field — its absence is allowed but `cloudcompose init`
+`dynamodb_table` field — its absence is allowed but `cloud-compose env init`
 warns the same way it does for no backend at all, since unlocked S3
 state has the exact same concurrent-apply race this whole doc exists to
 close.
@@ -140,7 +140,7 @@ they're already passed.
 
 ### 3. Apps get backends too, derived the same way
 
-Apps (`cloudcompose up`/`cloudcompose down`) read their environment's
+Apps (`cloud-compose compose up`/`cloud-compose compose down`) read their environment's
 facts via `LoadEnvironment(envDir)` (`internal/compiler/environment.go`),
 which already shells out to `terraform output -json` in `envDir` — a
 call that works identically whether that directory's state is local or
@@ -213,7 +213,7 @@ run from.
 
 ### 5. Bootstrapping the backend itself
 
-`cloudcompose` never creates the S3 bucket/Azure storage account/GCS
+`cloud-compose` never creates the S3 bucket/Azure storage account/GCS
 bucket a backend points at — that chicken-and-egg problem (state needs
 a bucket; provisioning a bucket is itself infrastructure) is
 deliberately out of scope for this feature to solve generically. But
@@ -224,7 +224,7 @@ server-side-encryption), missing only a lock table. Rather than have
 every team reinvent this, add a small `examples/bootstrap-state/`
 directory (one `main.tf.json`-generating example per cloud, or a plain
 checked-in `.tf` file if that's simpler here since it's a one-time,
-manually-applied bootstrap and not something `cloudcompose` itself
+manually-applied bootstrap and not something `cloud-compose` itself
 generates) that provisions exactly what `backend:` in
 `environment.yaml` expects to already exist, including the AWS lock
 table `ci/main.tf` is currently missing. Document this in
@@ -254,7 +254,7 @@ moving part.
 - **Behavior**: if dependent app state keys exist, environment teardown
   refuses by default, listing the offending project names (recovered
   from each key's own filename, no need to open the state itself) and
-  suggesting `cloudcompose down` for each first. `--force` skips the
+  suggesting `cloud-compose compose down` for each first. `--force` skips the
   check entirely (documented as exactly that — a deliberate override,
   matching `--auto-approve`'s own framing in `up.go`/`down.go`'s doc
   comments).
@@ -297,39 +297,36 @@ moving part.
 
 ## Non-goals
 
-- **No automatic backend bootstrap as part of `cloudcompose` itself.**
+- **No automatic backend bootstrap as part of `cloud-compose` itself.**
   §5's example directory is a manually-applied, one-time-per-org
   Terraform project a human runs directly — not something any
-  `cloudcompose` command generates or applies.
+  `cloud-compose` command generates or applies.
 - **No migration tooling.** Moving an existing local-state
   `env-<name>`/`app-<env>-<project>` directory to a newly-configured
   remote backend is a `terraform init -migrate-state` a human runs by
-  hand, same as any other Terraform project; `cloudcompose` doesn't
+  hand, same as any other Terraform project; `cloud-compose` doesn't
   wrap it.
 - **No cross-environment or cross-app locking beyond what each backend
-  already provides natively.** Two people running `cloudcompose init`
+  already provides natively.** Two people running `cloud-compose env init`
   + `terraform apply` against the *same* environment concurrently are
   protected by Terraform's own state lock (once configured); two people
   compiling and upping *different* apps against the same environment
   concurrently were already safe before this doc, since they touch
   disjoint state keys.
 - **No UI/registry beyond the dependent-apps listing needed for safe
-  environment teardown** — no general `cloudcompose ls`-style command
+  environment teardown** — no general `cloud-compose ls`-style command
   to enumerate every app in an environment is proposed here, though the
   same prefix-listing mechanism would make one straightforward to add
   later.
 
 ## Related but out of scope
 
-A separate proposal covers renaming the `cloudcompose` binary and
-restructuring its CLI into `env`/`compose` subcommand groups (motivated
-by reducing how much a human has to type, following Docker Compose's
-own UX). That's an independent, purely cosmetic decision from this
-doc's correctness fix, and is written up on its own so it can be
-decided, scheduled, or dropped without blocking the backend/locking
-work here. If both land, this doc's command names (`cloudcompose
-init`/`up`/`down`) should be read as whatever that proposal's
-equivalents end up being.
+The CLI has since been renamed to `cloud-compose` and restructured into
+`env`/`compose` subcommand groups (see `docs/cli-rename-proposal.md`
+for the original motivation). This doc's command names (`cloudcompose
+init`/`up`/`down`) should be read as their current equivalents:
+`cloud-compose env init`, `cloud-compose env up`, and
+`cloud-compose env down`/`cloud-compose compose down` respectively.
 
 ## Implementation reference (once built)
 

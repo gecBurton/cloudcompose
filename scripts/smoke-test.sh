@@ -597,11 +597,13 @@ log "Asserting cloud-compose compose ps reports the deployed service as runningâ
 # already gotten a real response through it, while ECS's own
 # RunningCount still read 0. Retry rather than a single shot, bounded
 # rather than open-ended, mirroring the logs assertion below --
-# PS_ASSERT_TIMEOUT defaults to 60s: this convergence gap is normally a
+# PS_ASSERT_TIMEOUT defaults to 120s: this convergence gap is normally a
 # few seconds on AWS, nowhere near log ingestion's own multi-minute
 # ceiling, so a much shorter budget than LOGS_ASSERT_TIMEOUT is
-# deliberate, not copied from it verbatim.
-PS_ASSERT_TIMEOUT="${PS_ASSERT_TIMEOUT:-60}"
+# deliberate, not copied from it verbatim. Azure can take longer due to
+# HTTP scaling rules and replica count eventual consistency, so 120s
+# accommodates both clouds without being open-ended.
+PS_ASSERT_TIMEOUT="${PS_ASSERT_TIMEOUT:-120}"
 ps_deadline=$(( SECONDS + PS_ASSERT_TIMEOUT ))
 ps_ok=0
 while (( SECONDS < ps_deadline )); do

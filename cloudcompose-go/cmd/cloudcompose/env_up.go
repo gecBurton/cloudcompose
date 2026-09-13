@@ -51,6 +51,6 @@ func runEnvUp(cmd *cobra.Command, args []string) {
 func init() {
 	envCmd.AddCommand(envUpCmd)
 
-	envUpCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). Unlike --env on compose compile/ps/logs/down (an already-applied environment directory), this is the input file up itself applies.")
+	envUpCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). up itself applies (writes main.tf.json for, then terraform applies) this file -- everywhere else, --env means the same file, but already applied.")
 	envUpCmd.Flags().Bool("auto-approve", false, "Skip the terraform apply confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

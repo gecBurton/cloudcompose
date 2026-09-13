@@ -52,11 +52,24 @@ func TestComposeDown_RequiresEnv(t *testing.T) {
 // declares a minimal-but-valid GCP environment instead -- used by
 // compose_ps_test.go/compose_logs_test.go to confirm `ps`/`logs` reject a GCP
 // environment immediately after LoadEnvironment succeeds, not only
-// after also parsing/normalizing compose.yml (see requireAwsOrAzure's
-// own doc comment in compile.go for why that ordering matters).
+// writeGcpEnvironmentFixture creates a scratch directory containing an
+// environment.yaml (name only matters for the derived env-<name>
+// directory name; its own content is irrelevant to LoadEnvironment,
+// which reads env-<name>'s Terraform outputs directly, not the file)
+// and an already-applied env-<name> directory with a single `output
+// "environment"` block (no providers, no resources) declaring a
+// minimal-but-valid GCP environment. Returns the environment.yaml path,
+// the form --env now takes everywhere. No network access needed: a
+// config with zero providers has nothing to fetch, so `terraform init`
+// completes offline.
 func writeGcpEnvironmentFixture(t *testing.T, name string) string {
 	t.Helper()
-	dir := t.TempDir()
+	scratchDir := t.TempDir()
+	envFile := writeMinimalEnvironmentYAML(t, scratchDir, name)
+	dir := filepath.Join(scratchDir, "env-"+name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir env-%s: %v", name, err)
+	}
 
 	mainTF := fmt.Sprintf(`output "environment" {
   value = {
@@ -82,22 +95,45 @@ func writeGcpEnvironmentFixture(t *testing.T, name string) string {
 		t.Fatalf("terraform apply: %v\n%s", err, out)
 	}
 
-	return dir
+	return envFile
 }
 
-// writeAwsEnvironmentFixture creates a scratch directory containing
-// only a single `output "environment"` block (no providers, no
-// resources) declaring a minimal-but-valid AWS environment, then runs
-// `terraform init`/`apply` in it so LoadEnvironment's own `terraform
-// output -json` call has real state to read -- mirrors
+// writeMinimalEnvironmentYAML writes a syntactically valid
+// environment.yaml named name to dir, only so environmentDirFromDefinition
+// (which reads config.Name to derive env-<name>, but never touches the
+// rest of the file) has something to load -- the fixture's own facts
+// live in env-<name>/main.tf's `output "environment"` block instead,
+// written separately by each fixture helper.
+func writeMinimalEnvironmentYAML(t *testing.T, dir, name string) string {
+	t.Helper()
+	envFile := filepath.Join(dir, "environment.yaml")
+	envYAML := fmt.Sprintf("provider: aws\nname: %s\naws:\n  vpc_cidr: 10.0.0.0/16\nbackend:\n  local:\n    path: ./tfstate\n", name)
+	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
+		t.Fatalf("write environment.yaml: %v", err)
+	}
+	return envFile
+}
+
+// writeAwsEnvironmentFixture creates a scratch directory containing an
+// environment.yaml and an already-applied env-<name> directory with a
+// single `output "environment"` block (no providers, no resources)
+// declaring a minimal-but-valid AWS environment, then runs `terraform
+// init`/`apply` in it so LoadEnvironment's own `terraform output
+// -json` call has real state to read -- mirrors
 // internal/compiler/environment_test.go's writeTerraformOutputsFixture,
 // duplicated here rather than exported cross-package since it's a test
-// helper, not part of either package's public API. No network access
-// needed: a config with zero providers has nothing to fetch, so
-// `terraform init` completes offline.
+// helper, not part of either package's public API. Returns the
+// environment.yaml path, the form --env now takes everywhere. No
+// network access needed: a config with zero providers has nothing to
+// fetch, so `terraform init` completes offline.
 func writeAwsEnvironmentFixture(t *testing.T, name string) string {
 	t.Helper()
-	dir := t.TempDir()
+	scratchDir := t.TempDir()
+	envFile := writeMinimalEnvironmentYAML(t, scratchDir, name)
+	dir := filepath.Join(scratchDir, "env-"+name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir env-%s: %v", name, err)
+	}
 
 	mainTF := fmt.Sprintf(`output "environment" {
   value = {
@@ -126,7 +162,7 @@ func writeAwsEnvironmentFixture(t *testing.T, name string) string {
 		t.Fatalf("terraform apply: %v\n%s", err, out)
 	}
 
-	return dir
+	return envFile
 }
 
 // TestComposeDown_FailsWhenAppNeverCompiled confirms `down` fails clearly, and
@@ -139,13 +175,13 @@ func TestComposeDown_FailsWhenAppNeverCompiled(t *testing.T) {
 	bin := buildCloudComposeBinary(t)
 	scratchDir := t.TempDir()
 
-	envDir := writeAwsEnvironmentFixture(t, "demo")
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 	composeFile := filepath.Join(scratchDir, "compose.yml")
 	if err := os.WriteFile(composeFile, []byte("name: hello\nservices:\n  web:\n    image: nginx\n"), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir)
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envFile)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected cloud-compose compose down to fail when the app was never compiled, got:\n%s", out)
@@ -166,15 +202,15 @@ func TestComposeDown_RunsTerraformDestroyInAppDir(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeAwsEnvironmentFixture(t, "demo")
-	appDir := filepath.Join(filepath.Dir(envDir), "app-demo-hello")
+	envFile := writeAwsEnvironmentFixture(t, "demo")
+	appDir := filepath.Join(filepath.Dir(envFile), "app-demo-hello")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		t.Fatalf("mkdir app-demo-hello: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "main.tf.json"), []byte(`{}`), 0644); err != nil {
 		t.Fatalf("write main.tf.json: %v", err)
 	}
-	composeFile := filepath.Join(filepath.Dir(envDir), "compose.yml")
+	composeFile := filepath.Join(filepath.Dir(envFile), "compose.yml")
 	if err := os.WriteFile(composeFile, []byte("name: hello\nservices:\n  web:\n    image: nginx\n    ports:\n      - 80:80\n"), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
@@ -182,7 +218,7 @@ func TestComposeDown_RunsTerraformDestroyInAppDir(t *testing.T) {
 	fakeTerraformDir := t.TempDir()
 	logFile := filepath.Join(fakeTerraformDir, "invocations.log")
 	fakeTerraform := filepath.Join(fakeTerraformDir, "terraform")
-	// down also needs to resolve envDir's own `environment` output (to
+	// down also needs to resolve envFile's own `environment` output (to
 	// learn its name, "demo", and build app-demo-hello) before it ever
 	// runs terraform in appDir -- since the fake terraform below
 	// intercepts every invocation on PATH, including that one, it has to
@@ -199,7 +235,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir)
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envFile)
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -229,15 +265,15 @@ func TestComposeDown_AutoApprovePassesFlagToTerraform(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeAwsEnvironmentFixture(t, "demo")
-	appDir := filepath.Join(filepath.Dir(envDir), "app-demo-hello")
+	envFile := writeAwsEnvironmentFixture(t, "demo")
+	appDir := filepath.Join(filepath.Dir(envFile), "app-demo-hello")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		t.Fatalf("mkdir app-demo-hello: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(appDir, "main.tf.json"), []byte(`{}`), 0644); err != nil {
 		t.Fatalf("write main.tf.json: %v", err)
 	}
-	composeFile := filepath.Join(filepath.Dir(envDir), "compose.yml")
+	composeFile := filepath.Join(filepath.Dir(envFile), "compose.yml")
 	if err := os.WriteFile(composeFile, []byte("name: hello\nservices:\n  web:\n    image: nginx\n    ports:\n      - 80:80\n"), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
@@ -256,7 +292,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir, "--auto-approve")
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envFile, "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// No stdin attached at all -- see env_up_test.go's/compose_up_test.go's identical note on why
 	// this matters for --auto-approve specifically.

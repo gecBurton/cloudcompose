@@ -38,10 +38,10 @@ type psRowJSON struct {
 
 func runComposePs(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
-	envDir, _ := cmd.Flags().GetString("env")
+	envFile, _ := cmd.Flags().GetString("env")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	if envDir == "" {
+	if envFile == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
 		os.Exit(1)
 	}
@@ -62,7 +62,7 @@ func runComposePs(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	env, err := compiler.LoadEnvironment(envDir)
+	env, err := resolveEnvironmentByDefinition(envFile)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -227,6 +227,6 @@ func azurePsRowsJSON(statuses []azure.ServiceStatus) []psRowJSON {
 func init() {
 	composeCmd.AddCommand(composePsCmd)
 
-	composePsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	composePsCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment this app was compiled against (must already be applied).")
 	composePsCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")
 }

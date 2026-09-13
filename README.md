@@ -11,7 +11,7 @@ Running services locally with Docker Compose is easy. Deploying the same app to 
 docker compose up
 
 # Production deployment (same file!)
-cloud-compose compile -f docker-compose.yml -e env-prod
+cloud-compose compile -f docker-compose.yml -e environment.yaml
 ```
 
 No `--flags` describing your infrastructure, no new config format to learn, it infers what it can (`image: postgres` → a managed database) and lets you override the rest with a small `x-cloud:` block when you need to.
@@ -93,38 +93,31 @@ See `docs/authored-environment-config.md` for the remote-backend shapes.
 
 You'll also need a `docker-compose.yml` for the app itself, with a top-level `name:` — this is the app's own durable identity (see `docs/deployment-identity-design.md`), not a `-p`/`--project` flag or a directory name. Every command below auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass `-f` explicitly, the same way `docker compose` itself does.
 
-From here, pick one:
-
-### Fast path: two commands
-
-`cloud-compose env up` runs `env init` → `terraform apply` on the shared environment. `cloud-compose compose up` then runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand:
+`--env`/`-e` always means the authored `environment.yaml`, on every command, including this next step:
 
 ```bash
 cloud-compose env up --env environment.yaml
-cloud-compose compose up --env env-prod
 ```
 
-That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
-
-`compose up` can also be pointed straight at `environment.yaml` itself instead of `env-prod`'s own directory:
+`env up` runs `env init` (writes the environment's Terraform manifest) → `terraform apply`, in one step. Once that succeeds, deploy an app into it:
 
 ```bash
-cloud-compose compose up --environment environment.yaml
+cloud-compose compose up --env environment.yaml
 ```
 
-See `docs/deployment-identity-design.md` for why: it's a portable handle that resolves to the same environment whether or not `env-prod` currently exists on disk — `environment.yaml`'s own `backend:` (whether `local:` or a real remote backend) tells `cloud-compose` exactly how to reconnect to it.
+`compose up` runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand. That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
-### Step-by-step path: review each stage
+`--env` resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `compose up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-identity-design.md` for the full reasoning.
 
-Use this if you're deploying more than one app into the same environment, or want to see the generated Terraform before anything applies.
+If you'd rather review each stage yourself instead of `env up`'s one-step apply:
 
 ```bash
-cloud-compose env init
-cd env-prod && terraform init && terraform apply && cd ..
-cloud-compose compile -e env-prod
+cloud-compose env init --env environment.yaml
+cd env-<name> && terraform init && terraform apply && cd ..
+cloud-compose compile --env environment.yaml
 ```
 
-`cloud-compose env init` writes a copy of `environment.yaml` alongside the generated `main.tf.json`. Once `terraform apply` runs, `cloud-compose compile` reads the resulting facts (VPC ID, ALB ARN, …) directly from Terraform's own state, no separate generated file to keep in sync. Deploying to Azure or GCP instead just means starting from `environment.azure.yaml`/`environment.gcp.yaml`.
+(`env init` derives `env-<name>` from `environment.yaml`'s own `name:` field, alongside `environment.yaml` itself, and writes a copy of the resolved config there too.) Deploying to Azure or GCP instead just means starting from `environment.azure.yaml`/`environment.gcp.yaml`.
 
 See `docs/authored-environment-config.md` for the full `environment.yaml` schema, or `examples/README.md` for a real, runnable walkthrough.
 
@@ -134,17 +127,17 @@ See `docs/authored-environment-config.md` for the full `environment.yaml` schema
 
 ```bash
 # Live status of each service -- ECS/ALB on AWS, Container Apps on Azure
-cloud-compose compose ps -e env-prod
+cloud-compose compose ps --env environment.yaml
 
 # Recent logs, one service or every service, interleaved by timestamp
-cloud-compose compose logs -e env-prod
-cloud-compose compose logs -e env-prod web --since 1h --tail 500
+cloud-compose compose logs --env environment.yaml
+cloud-compose compose logs --env environment.yaml web --since 1h --tail 500
 
 # Tear the app down again (never touches the shared environment)
-cloud-compose compose down -e env-prod
+cloud-compose compose down --env environment.yaml
 
 # Tear the shared environment down too, once no app depends on it
-cloud-compose env down -e env-prod
+cloud-compose env down --env environment.yaml
 ```
 
 `ps`/`logs` query the cloud directly, not anything already implied by `compose.yml` or Terraform state, AWS and Azure are supported; GCP is not yet. Both take `--json` for scripting. Every command that runs Terraform (`env up`, `env down`, `compose up`, `compose down`) stays interactive by default; pass `--auto-approve` for non-interactive callers like CI.

@@ -24,6 +24,9 @@ var composeDownCmd = &cobra.Command{
 		"environment `cloud-compose env init` created, since other apps may " +
 		"still depend on it. Destroy an environment itself with " +
 		"`cloud-compose env down`.\n\n" +
+		"--env is the authored environment.yaml that produced the " +
+		"environment this app was compiled against, the same meaning --env " +
+		"has everywhere else.\n\n" +
 		"Shows its plan and prompts for confirmation interactively by " +
 		"default, like every other command that runs Terraform. " +
 		"--auto-approve skips that prompt, for non-interactive callers " +
@@ -34,10 +37,10 @@ var composeDownCmd = &cobra.Command{
 
 func runComposeDown(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
-	envDir, _ := cmd.Flags().GetString("env")
+	envFile, _ := cmd.Flags().GetString("env")
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
 
-	if envDir == "" {
+	if envFile == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
 		os.Exit(1)
 	}
@@ -48,7 +51,7 @@ func runComposeDown(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	dir, err := appDir(composeFile, envDir)
+	dir, err := appDir(composeFile, envFile)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -67,6 +70,6 @@ func runComposeDown(cmd *cobra.Command, args []string) {
 func init() {
 	composeCmd.AddCommand(composeDownCmd)
 
-	composeDownCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	composeDownCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment this app was compiled against (must already be applied).")
 	composeDownCmd.Flags().Bool("auto-approve", false, "Skip the terraform destroy confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

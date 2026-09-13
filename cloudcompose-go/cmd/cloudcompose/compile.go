@@ -30,8 +30,7 @@ func runMain(cmd *cobra.Command, args []string) {
 	}
 
 	composeFileFlag, _ := cmd.Flags().GetString("file")
-	envDir, _ := cmd.Flags().GetString("env")
-	environmentFile, _ := cmd.Flags().GetString("environment")
+	envFile, _ := cmd.Flags().GetString("env")
 	demoCloud, _ := cmd.Flags().GetString("demo")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
 
@@ -67,23 +66,17 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Exactly one of --env, --environment, --demo selects the target.
-	given := 0
-	for _, v := range []string{envDir, environmentFile, demoCloud} {
-		if v != "" {
-			given++
-		}
-	}
-	if given == 0 {
-		fmt.Fprintln(os.Stderr, "Error: one of --env, --environment, or --demo is required to compile")
+	// Exactly one of --env, --demo selects the target.
+	if envFile == "" && demoCloud == "" {
+		fmt.Fprintln(os.Stderr, "Error: one of --env or --demo is required to compile")
 		os.Exit(1)
 	}
-	if given > 1 {
-		fmt.Fprintln(os.Stderr, "Error: --env, --environment, and --demo are mutually exclusive")
+	if envFile != "" && demoCloud != "" {
+		fmt.Fprintln(os.Stderr, "Error: --env and --demo are mutually exclusive")
 		os.Exit(1)
 	}
 
-	outputDir, err := compileApp(composeFile, envDir, environmentFile, demoCloud)
+	outputDir, err := compileApp(composeFile, envFile, demoCloud)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -92,12 +85,13 @@ func runMain(cmd *cobra.Command, args []string) {
 	fmt.Printf("Success! Terraform manifest written to %s\n", filepath.Join(outputDir, "main.tf.json"))
 }
 
-// compileApp loads the environment -- from envDir, environmentFile, or
-// demoCloud (exactly one must be set) -- then parses/normalizes
-// composeFile and writes the generated Terraform JSON to <dir of
-// composeFile>/app-<environment name>-<project name>, returning that
-// directory. Project name is composeFile's own top-level `name:`.
-func compileApp(composeFile, envDir, environmentFile, demoCloud string) (string, error) {
+// compileApp loads the environment -- from envFile (an authored
+// environment.yaml; exactly one of envFile/demoCloud must be set) or
+// demoCloud -- then parses/normalizes composeFile and writes the
+// generated Terraform JSON to <dir of composeFile>/app-<environment
+// name>-<project name>, returning that directory. Project name is
+// composeFile's own top-level `name:`.
+func compileApp(composeFile, envFile, demoCloud string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
@@ -126,15 +120,9 @@ func compileApp(composeFile, envDir, environmentFile, demoCloud string) (string,
 		fmt.Fprintln(os.Stderr, "DEMO MODE: using placeholder resource IDs, not a real environment. "+
 			"The generated Terraform is for evaluation only and is not deployable as-is — "+
 			"run `cloud-compose env init` to set up a real one.")
-	case environmentFile != "":
-		fmt.Printf("Resolving environment: %s\n", environmentFile)
-		env, err = resolveEnvironmentByDefinition(environmentFile)
-		if err != nil {
-			return "", err
-		}
 	default:
-		fmt.Printf("Loading environment: %s\n", envDir)
-		env, err = compiler.LoadEnvironment(envDir)
+		fmt.Printf("Resolving environment: %s\n", envFile)
+		env, err = resolveEnvironmentByDefinition(envFile)
 		if err != nil {
 			return "", err
 		}
@@ -273,7 +261,12 @@ func environmentBackend(env any) (*models.BackendConfig, error) {
 // appDir reports the app-<environment name>-<project name> output
 // directory compileApp writes to, without compiling anything. The
 // project name comes from composeFile's own top-level `name:` field.
-func appDir(composeFile, envDir string) (string, error) {
+// appDir reports the app-<environment name>-<project name> output
+// directory compileApp writes to, without compiling anything. The
+// project name comes from composeFile's own top-level `name:` field;
+// the environment is resolved from envFile the same way compile itself
+// does.
+func appDir(composeFile, envFile string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
@@ -282,7 +275,7 @@ func appDir(composeFile, envDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	env, err := compiler.LoadEnvironment(envDir)
+	env, err := resolveEnvironmentByDefinition(envFile)
 	if err != nil {
 		return "", err
 	}
@@ -424,9 +417,8 @@ func copyDir(src, dst string) error {
 func init() {
 	rootCmd.AddCommand(mainCmd)
 
-	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already). Mutually exclusive with --environment and --demo.")
-	mainCmd.Flags().String("environment", "", "Path to the authored environment.yaml that produced the environment to deploy into (requires a `backend:` block; see docs/deployment-identity-design.md). Resolved directly, with no need to already know its generated output directory. Mutually exclusive with --env and --demo.")
-	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env and --environment.")
+	mainCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment to deploy into (must already be applied -- `cloud-compose env init`/`env up` first). Mutually exclusive with --demo.")
+	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
 	mainCmd.Flags().BoolP("version", "v", false, "Show the version and exit")
 }

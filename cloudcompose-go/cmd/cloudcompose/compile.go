@@ -10,7 +10,6 @@ import (
 	"github.com/gecburton/cloudcompose/internal/compiler/aws"
 	"github.com/gecburton/cloudcompose/internal/compiler/azure"
 	"github.com/gecburton/cloudcompose/internal/compiler/gcp"
-	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -32,10 +31,13 @@ func runMain(cmd *cobra.Command, args []string) {
 
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
+	environmentFile, _ := cmd.Flags().GetString("environment")
 	demoCloud, _ := cmd.Flags().GetString("demo")
-	projectName, _ := cmd.Flags().GetString("project")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
-	subnetIndex, _ := cmd.Flags().GetInt("subnet-index")
+	subnetIndex, subnetIndexSet := int(0), cmd.Flags().Changed("subnet-index")
+	if subnetIndexSet {
+		subnetIndex, _ = cmd.Flags().GetInt("subnet-index")
+	}
 
 	composeFile, err := resolveComposeFile(composeFileFlag)
 	if err != nil {
@@ -55,15 +57,12 @@ func runMain(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stderr, "Error: %s does not exist or is not readable\n", composeFile)
 			os.Exit(1)
 		}
-		if projectName == "" {
-			projectName = filepath.Base(filepath.Dir(absCompose))
-		}
 		composeApp, err := compiler.ParseCompose(composeFile)
 		if err != nil {
 			printUnexpectedError(err)
 			os.Exit(1)
 		}
-		semantic, err := compiler.Normalize(composeApp, projectName)
+		semantic, err := compiler.Normalize(composeApp, composeApp.Name)
 		if err != nil {
 			printUnexpectedError(err)
 			os.Exit(1)
@@ -72,17 +71,23 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// --env and --demo are mutually exclusive: exactly one is required.
-	if envDir == "" && demoCloud == "" {
-		fmt.Fprintln(os.Stderr, "Error: --env or --demo is required to compile")
+	// Exactly one of --env, --environment, --demo selects the target.
+	given := 0
+	for _, v := range []string{envDir, environmentFile, demoCloud} {
+		if v != "" {
+			given++
+		}
+	}
+	if given == 0 {
+		fmt.Fprintln(os.Stderr, "Error: one of --env, --environment, or --demo is required to compile")
 		os.Exit(1)
 	}
-	if envDir != "" && demoCloud != "" {
-		fmt.Fprintln(os.Stderr, "Error: --env and --demo are mutually exclusive")
+	if given > 1 {
+		fmt.Fprintln(os.Stderr, "Error: --env, --environment, and --demo are mutually exclusive")
 		os.Exit(1)
 	}
 
-	outputDir, err := compileApp(composeFile, envDir, demoCloud, projectName, subnetIndex)
+	outputDir, err := compileApp(composeFile, envDir, environmentFile, demoCloud, subnetIndex, subnetIndexSet)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -91,13 +96,12 @@ func runMain(cmd *cobra.Command, args []string) {
 	fmt.Printf("Success! Terraform manifest written to %s\n", filepath.Join(outputDir, "main.tf.json"))
 }
 
-// compileApp loads the environment (from envDir, or synthesizes one
-// from demoCloud), parses and normalizes composeFile, infers and
-// generates Terraform JSON, and writes it (plus any Docker build
-// contexts) to <dir of composeFile>/app-<environment name>-<project
-// name>, returning that output directory. Exactly one of
-// envDir/demoCloud must be non-empty.
-func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex int) (string, error) {
+// compileApp loads the environment -- from envDir, environmentFile, or
+// demoCloud (exactly one must be set) -- then parses/normalizes
+// composeFile and writes the generated Terraform JSON to <dir of
+// composeFile>/app-<environment name>-<project name>, returning that
+// directory. Project name is composeFile's own top-level `name:`.
+func compileApp(composeFile, envDir, environmentFile, demoCloud string, subnetIndex int, subnetIndexSet bool) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
@@ -106,13 +110,15 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		return "", fmt.Errorf("%s does not exist or is not readable", composeFile)
 	}
 
-	projectName, err = resolveProjectName(composeFile, projectName)
+	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {
 		return "", err
 	}
+	projectName := composeApp.Name
 
 	var env any
-	if demoCloud != "" {
+	switch {
+	case demoCloud != "":
 		env, err = demoEnvironment(demoCloud)
 		if err != nil {
 			return "", err
@@ -120,7 +126,13 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		fmt.Fprintln(os.Stderr, "DEMO MODE: using placeholder resource IDs, not a real environment. "+
 			"The generated Terraform is for evaluation only and is not deployable as-is — "+
 			"run `cloud-compose env init` to set up a real one.")
-	} else {
+	case environmentFile != "":
+		fmt.Printf("Resolving environment: %s\n", environmentFile)
+		env, err = resolveEnvironmentByDefinition(environmentFile)
+		if err != nil {
+			return "", err
+		}
+	default:
 		fmt.Printf("Loading environment: %s\n", envDir)
 		env, err = compiler.LoadEnvironment(envDir)
 		if err != nil {
@@ -132,27 +144,23 @@ func compileApp(composeFile, envDir, demoCloud, projectName string, subnetIndex 
 		return "", err
 	}
 
-	// Output lands in <dir of -f>/app-<environment name>-<project name>,
-	// not a fixed "terraform" directory, so different environments or
-	// projects compiled from the same compose file don't overwrite each
-	// other's output.
 	envName, err := environmentName(env)
 	if err != nil {
 		return "", err
 	}
 	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName)
 
-	// --subnet-index only means something on Azure; ignored on AWS/GCP.
+	// Required on Azure, ignored elsewhere -- no default, since an
+	// unspecified value isn't the same as explicitly choosing subnet 0.
 	if azureEnv, ok := env.(*models.AzureEnvironment); ok {
+		if !subnetIndexSet {
+			return "", fmt.Errorf("--subnet-index is required when compiling for Azure")
+		}
 		azureEnv.SubnetIndex = subnetIndex
 	}
 
 	fmt.Printf("Compiling: %s -> %s (%s)\n", composeFile, projectName, target)
 
-	composeApp, err := compiler.ParseCompose(composeFile)
-	if err != nil {
-		return "", err
-	}
 	semantic, err := compiler.Normalize(composeApp, projectName)
 	if err != nil {
 		return "", err
@@ -251,10 +259,14 @@ func environmentBackend(env any) (*models.BackendConfig, error) {
 }
 
 // appDir reports the app-<environment name>-<project name> output
-// directory compileApp writes to, without compiling anything.
-// projectName must already be resolved by the caller.
-func appDir(composeFile, envDir, projectName string) (string, error) {
+// directory compileApp writes to, without compiling anything. The
+// project name comes from composeFile's own top-level `name:` field.
+func appDir(composeFile, envDir string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
+	if err != nil {
+		return "", err
+	}
+	composeApp, err := compiler.ParseCompose(composeFile)
 	if err != nil {
 		return "", err
 	}
@@ -266,26 +278,7 @@ func appDir(composeFile, envDir, projectName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName), nil
-}
-
-// resolveProjectName returns projectName unchanged if given explicitly
-// via -p/--project; otherwise it defaults to composeFile's own
-// containing directory name. Validates the resolved name via
-// shared.ValidateBackendName, since it's used to build backend state
-// keys and an unsanitized name could collide with another app's key.
-func resolveProjectName(composeFile, projectName string) (string, error) {
-	if projectName == "" {
-		absCompose, err := filepath.Abs(composeFile)
-		if err != nil {
-			return "", err
-		}
-		projectName = filepath.Base(filepath.Dir(absCompose))
-	}
-	if err := shared.ValidateBackendName("project", projectName); err != nil {
-		return "", err
-	}
-	return projectName, nil
+	return filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+composeApp.Name), nil
 }
 
 // demoEnvironment builds a synthetic environment for --demo.
@@ -419,12 +412,12 @@ func copyDir(src, dst string) error {
 func init() {
 	rootCmd.AddCommand(mainCmd)
 
-	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
-	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
-	mainCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
+	mainCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already). Mutually exclusive with --environment and --demo.")
+	mainCmd.Flags().String("environment", "", "Path to the authored environment.yaml that produced the environment to deploy into (requires a `backend:` block; see docs/deployment-identity-design.md). Resolved directly, with no need to already know its generated output directory. Mutually exclusive with --env and --demo.")
+	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env and --environment.")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
 	mainCmd.Flags().BoolP("version", "v", false, "Show the version and exit")
-	mainCmd.Flags().Int("subnet-index", 0, "Azure only: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
+	mainCmd.Flags().Int("subnet-index", 0, "Azure only, required: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
 }
 
 // cloudcomposeVersion returns a short identifying string for the CLI.

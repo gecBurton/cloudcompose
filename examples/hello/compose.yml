@@ -1,6 +1,7 @@
 # Minimal smoke-test app: one public container, no build/ECR, no managed services.
 # nginxdemos/hello serves a page on port 80 that shows the server name and
 # request details — handy for proving the request really reached Fargate.
+name: hello
 services:
   web:
     image: nginxdemos/hello:plain-text

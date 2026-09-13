@@ -37,7 +37,6 @@ type logEventJSON struct {
 func runComposeLogs(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
-	projectName, _ := cmd.Flags().GetString("project")
 	since, _ := cmd.Flags().GetDuration("since")
 	tail, _ := cmd.Flags().GetInt("tail")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -62,9 +61,6 @@ func runComposeLogs(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %s does not exist or is not readable\n", composeFile)
 		os.Exit(1)
 	}
-	if projectName == "" {
-		projectName = filepath.Base(filepath.Dir(absCompose))
-	}
 
 	env, err := compiler.LoadEnvironment(envDir)
 	if err != nil {
@@ -82,7 +78,7 @@ func runComposeLogs(cmd *cobra.Command, args []string) {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
-	semanticApp, err := compiler.Normalize(composeApp, projectName)
+	semanticApp, err := compiler.Normalize(composeApp, composeApp.Name)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -210,7 +206,6 @@ func init() {
 	composeCmd.AddCommand(composeLogsCmd)
 
 	composeLogsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
-	composeLogsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	composeLogsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")
 	composeLogsCmd.Flags().Int("tail", 200, "Number of log lines to fetch per service")
 	composeLogsCmd.Flags().Bool("json", false, "Output as a JSON array instead of human-readable lines")

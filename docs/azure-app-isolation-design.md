@@ -51,8 +51,10 @@ claimed subnet ranges). Rather than hashing app names into CIDR offsets
 (collision risk) or querying Azure directly for a free slot (new API
 surface), placement is explicit: a required `--subnet-index` flag
 (Azure-only; AWS's `main` ignores it), a small `0`-based integer unique
-per app within one environment — the same pattern `-p`/`--project`
-already uses for app identity, applied to app *placement*.
+per app within one environment. `--subnet-index` has no default (an
+unspecified value is not the same as explicitly choosing subnet 0,
+see docs/deployment-identity-design.md) -- it must always be given
+explicitly when compiling for Azure.
 
 ### CIDR math
 

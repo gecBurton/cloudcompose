@@ -39,7 +39,6 @@ type psRowJSON struct {
 func runComposePs(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
-	projectName, _ := cmd.Flags().GetString("project")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
 	if envDir == "" {
@@ -62,9 +61,6 @@ func runComposePs(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %s does not exist or is not readable\n", composeFile)
 		os.Exit(1)
 	}
-	if projectName == "" {
-		projectName = filepath.Base(filepath.Dir(absCompose))
-	}
 
 	env, err := compiler.LoadEnvironment(envDir)
 	if err != nil {
@@ -82,7 +78,7 @@ func runComposePs(cmd *cobra.Command, args []string) {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
-	semanticApp, err := compiler.Normalize(composeApp, projectName)
+	semanticApp, err := compiler.Normalize(composeApp, composeApp.Name)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -232,6 +228,5 @@ func init() {
 	composeCmd.AddCommand(composePsCmd)
 
 	composePsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
-	composePsCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
 	composePsCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")
 }

@@ -22,6 +22,14 @@ environment this way, which is the main practical reason to use a shared
 environment at all (fewer NAT Gateways/ALBs paid for, rather than one
 per app).
 
+`cloud-compose compile --environment <environment.yaml>` is the portable
+alternative to `-e`: given the same authored `environment.yaml` (which
+must have a `backend:` block configured — see "Sharing one environment
+across multiple users" below), it resolves the environment directly,
+without needing to already know where a previous `env init`/`env up`
+wrote its output directory. See `docs/deployment-identity-design.md`
+for the design rationale — `-e` still works as before.
+
 ## Evaluating without a live environment: `--demo`
 
 `cloud-compose compile -d <cloud>` (`aws`/`azure`/`gcp`) generates the same
@@ -31,14 +39,14 @@ reading a real one — for a prospective user to see what their compose
 file becomes on a given cloud without first running `cloud-compose init`
 or holding any cloud credentials at all.
 
-`-e` and `-d` are mutually exclusive and one is required: there is no
-default when neither is given, the same "one way to configure, not two"
-reasoning `init`'s own flag set follows. The output is genuinely valid
-Terraform JSON (every demo environment is checked against the real
-provider schema via `terraform validate`), but it is not deployable
-as-is — the placeholder IDs (`vpc-demo...`, fake ARNs, etc.) don't
-correspond to anything real. `cloud-compose compile` prints a stderr
-banner saying so whenever `-d` is used.
+`-e`, `--environment`, and `-d` are mutually exclusive and exactly one is
+required: there is no default when none is given, the same "one way to
+configure, not two" reasoning `init`'s own flag set follows. The output
+is genuinely valid Terraform JSON (every demo environment is checked
+against the real provider schema via `terraform validate`), but it is not
+deployable as-is — the placeholder IDs (`vpc-demo...`, fake ARNs, etc.)
+don't correspond to anything real. `cloud-compose compile` prints a
+stderr banner saying so whenever `-d` is used.
 
 ## Schema: common envelope + discriminated provider block
 
@@ -167,12 +175,14 @@ race as no backend at all.
 
 The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
 authored here — it's always derived mechanically from `name:` (for the
-environment) or `--project` (for each app compiled against it), the
+environment) or the compose file's own top-level `name:` (for each app
+compiled against it — see docs/deployment-identity-design.md), the
 same way `env-<name>`/`app-<env>-<project>` output directory names are
-never authored either. This is why environment `name:` and every app's
-`--project` are restricted to letters, digits, underscores, and
-hyphens: an unrestricted name could otherwise be crafted to collide
-with a different environment's or app's own backend key.
+never authored either. This is why environment `name:` and every
+compose file's own `name:` are restricted to letters, digits,
+underscores, and hyphens: an unrestricted name could otherwise be
+crafted to collide with a different environment's or app's own backend
+key.
 
 `backend:` assumes the bucket/storage account/lock table it points at
 already exists — `cloud-compose` never provisions one itself (the same
@@ -237,19 +247,18 @@ writes to `<dir of -e>/env-<name>`, and `compile` always writes to
 both derived from the input file's own location, not the shell's
 current directory, so output never depends on where a command happens
 to be run from. `compile`'s output directory name includes both the
-environment's name and the project's name specifically so the same
-compose.yml can be compiled against more than one environment (e.g. dev
-and prod), or under more than one `--project`, without one overwriting
-another's output — every actual Terraform resource `compile` produces
-is named `env.Name-app.Name-...` (see e.g. `aws/infer.go`'s `getName`
-closure), so a different `--project` really does produce a different,
-non-interchangeable deployment, not a re-compile of the same one; the
-output directory naming must not imply otherwise. `app-<env>-<project>`
-pairs with `init`'s own `env-<name>`, naming both halves of one
-deployment consistently. `cloud-compose down` (see its own doc comment)
-must be given the same `--project` value `compile` used to find the
-matching output directory to destroy — there is nowhere else `down` can
-recover it from.
+environment's name and the project's name so the same compose.yml can
+be compiled against more than one environment (e.g. dev and prod)
+without one overwriting another's output — every actual Terraform
+resource `compile` produces is named `env.Name-app.Name-...` (see e.g.
+`aws/infer.go`'s `getName` closure). The project name is the compose
+file's own top-level `name:` field, not a flag: there is no
+`-p`/`--project` override and no directory-basename fallback, and a
+compose file with no `name:` is rejected outright (see
+docs/deployment-identity-design.md for why). Deploying the same
+codebase more than once within one environment needs a second compose
+file with its own `name:`. `app-<env>-<project>` pairs with `init`'s
+own `env-<name>`, naming both halves of one deployment consistently.
 
 ## Known gap: GCP CDN inference
 
@@ -298,6 +307,12 @@ schema change once it's built, not because anything consumes it yet.
   prints).
 - `cmd/cloudcompose/env_init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
+- `cmd/cloudcompose/environment_resolve.go` — `resolveEnvironmentByDefinition`,
+  reached via `compile`/`compose up`'s `--environment <environment.yaml>`
+  flag: resolves an environment directly from its authored config,
+  without the caller needing to already know its generated output
+  directory (requires `backend:`; see
+  `docs/deployment-identity-design.md`).
 - `cmd/cloudcompose/env_down.go` — `env down`'s dependent-app
   safety check and `--force` escape hatch.
 - `internal/compiler/{aws,azure,gcp}/environment_generator.go` — each

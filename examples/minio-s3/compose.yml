@@ -5,6 +5,7 @@
 #
 # `web` is a plain public image so the stack actually deploys and serves — it
 # doesn't use S3 itself; it's here to prove the substitution + wiring landed.
+name: minio-s3
 services:
   web:
     image: nginxdemos/hello:plain-text

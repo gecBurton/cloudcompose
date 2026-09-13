@@ -1,4 +1,5 @@
 # Adapted from https://github.com/docker/awesome-compose/tree/master/nginx-flask-mysql
+name: nginx-flask-mysql
 services:
   db:
     # We use a mariadb image which supports both amd64 & arm64 architecture

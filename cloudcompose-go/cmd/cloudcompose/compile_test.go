@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gecburton/cloudcompose/internal/models"
@@ -210,10 +211,10 @@ func TestCopyDockerBuildContexts_NoDockerImagesIsANoOp(t *testing.T) {
 	}
 }
 
-// TestMain_RequiresEnvOrDemo confirms --env and --demo really are the
-// only two ways to supply an environment: neither given is an error, not
-// a silent default (see runMain's own "one way to configure, not two"
-// comment, mirroring init.go's).
+// TestMain_RequiresEnvOrDemo confirms --env, --environment, and --demo
+// really are the only three ways to supply an environment: none given
+// is an error, not a silent default (see runMain's own "one way to
+// configure, not two" comment, mirroring init.go's).
 func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -221,10 +222,10 @@ func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected a non-zero exit when neither --env nor --demo is given, got success:\n%s", out)
+		t.Fatalf("expected a non-zero exit when neither --env nor --environment nor --demo is given, got success:\n%s", out)
 	}
-	if !contains(string(out), "--env or --demo is required") {
-		t.Errorf("expected the error to name both flags, got:\n%s", out)
+	if !contains(string(out), "--env, --environment, or --demo is required") {
+		t.Errorf("expected the error to name all three flags, got:\n%s", out)
 	}
 }
 
@@ -247,6 +248,25 @@ func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
 	}
 }
 
+// TestMain_RejectsBothEnvAndEnvironment confirms --env and --environment
+// are also mutually exclusive.
+func TestMain_RejectsBothEnvAndEnvironment(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	cmd := exec.Command(bin, "compile",
+		"-f", "../../../examples/hello/compose.yml",
+		"-e", "../../../examples/hello",
+		"--environment", "../../../examples/hello/environment.yaml")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit when both --env and --environment are given, got success:\n%s", out)
+	}
+	if !contains(string(out), "mutually exclusive") {
+		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)
+	}
+}
+
 // TestMain_DemoRejectsUnknownCloud confirms --demo validates its argument
 // against the known cloud set rather than passing an unrecognised value
 // through to LoadEnvironment-shaped code.
@@ -261,6 +281,45 @@ func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
 	}
 	if !contains(string(out), "aws, azure, gcp") {
 		t.Errorf("expected the error to list the valid clouds, got:\n%s", out)
+	}
+}
+
+// TestMain_AzureRequiresExplicitSubnetIndex confirms --subnet-index has
+// no default: compiling for Azure without it must fail.
+func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-d", "azure")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit compiling for Azure with no --subnet-index, got success:\n%s", out)
+	}
+	if !contains(string(out), "--subnet-index") {
+		t.Errorf("expected the error to name --subnet-index, got:\n%s", out)
+	}
+}
+
+// TestMain_AzureAcceptsExplicitSubnetIndex confirms --subnet-index 0 is
+// accepted like any other explicit value.
+func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	composeDir := t.TempDir()
+
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "azure", "--subnet-index", "0")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cloud-compose compile -d azure --subnet-index 0 failed: %v\n%s", err, out)
 	}
 }
 
@@ -285,7 +344,7 @@ func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", "hello")
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloud-compose compile --demo aws failed: %v\n%s", err, out)
@@ -325,10 +384,10 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cloud-compose -f %s compile failed: %v\n%s", composeFile, err, out)
 	}
-	// compile defaults --project to composeDir's own basename, so the
-	// output directory is app-demo-<composeDir's basename> here rather
-	// than a fixed name.
-	appDirName := "app-demo-" + filepath.Base(composeDir)
+	// Project name comes from the compose file's own top-level `name:`
+	// (here "hello", from examples/hello/compose.yml), not composeDir's
+	// basename -- see docs/deployment-identity-design.md.
+	appDirName := "app-demo-hello"
 	if _, statErr := os.Stat(filepath.Join(composeDir, appDirName, "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json from -f before the subcommand, got: %v", statErr)
 	}
@@ -364,7 +423,7 @@ func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-d", "aws", "-p", "hello")
+	cmd := exec.Command(bin, "compile", "-d", "aws")
 	cmd.Dir = composeDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -398,16 +457,14 @@ func TestMain_FileFlagMissingWithNoComposeFileInCwd(t *testing.T) {
 // TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide is a
 // regression test for a real bug found in review: compileApp's output
 // directory used to be app-<environment name> alone, so two different
-// --project values compiled against the same compose.yml/environment
-// pair silently overwrote each other's main.tf.json on disk, even
-// though every actual Terraform resource they produce is genuinely
-// different (every resource name is env.Name-app.Name-..., so a
-// different --project really is a different deployment, not a
-// re-compile of the same one). The fix folds --project into the output
-// directory (app-<environment name>-<project name>); this test compiles
-// the same compose file against the same environment under two
-// different --project values and asserts both outputs exist
-// side-by-side with different content, neither overwriting the other.
+// project names compiled against the same environment silently
+// overwrote each other's main.tf.json on disk, even though every
+// actual resource they produce is genuinely different. The fix folds
+// the project name into the output directory (app-<environment
+// name>-<project name>); this test compiles two compose files --
+// identical except for `name:` -- against the same environment and
+// asserts both outputs exist side-by-side, neither overwriting the
+// other.
 func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -417,20 +474,24 @@ func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) 
 	if err != nil {
 		t.Fatalf("read example compose.yml: %v", err)
 	}
-	composeFile := filepath.Join(composeDir, "compose.yml")
-	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
-		t.Fatalf("write compose.yml: %v", err)
-	}
 
-	for _, project := range []string{"appA", "appB"} {
-		cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", project)
+	for _, project := range []string{"app-a", "app-b"} {
+		renamed := strings.Replace(string(composeSrc), "name: hello\n", "name: "+project+"\n", 1)
+		if renamed == string(composeSrc) {
+			t.Fatalf("expected to find and replace examples/hello/compose.yml's `name: hello` line")
+		}
+		composeFile := filepath.Join(composeDir, project+".compose.yml")
+		if err := os.WriteFile(composeFile, []byte(renamed), 0644); err != nil {
+			t.Fatalf("write %s: %v", composeFile, err)
+		}
+		cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("cloud-compose compile -p %s failed: %v\n%s", project, err, out)
+			t.Fatalf("cloud-compose compile for %s failed: %v\n%s", project, err, out)
 		}
 	}
 
-	appADir := filepath.Join(composeDir, "app-demo-appA", "main.tf.json")
-	appBDir := filepath.Join(composeDir, "app-demo-appB", "main.tf.json")
+	appADir := filepath.Join(composeDir, "app-demo-app-a", "main.tf.json")
+	appBDir := filepath.Join(composeDir, "app-demo-app-b", "main.tf.json")
 	appAContent, err := os.ReadFile(appADir)
 	if err != nil {
 		t.Fatalf("expected %s to exist: %v", appADir, err)
@@ -442,10 +503,10 @@ func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) 
 	if string(appAContent) == string(appBContent) {
 		t.Error("expected appA's and appB's manifests to differ (different project names produce different resource names), got identical content")
 	}
-	if !contains(string(appAContent), "appA") {
+	if !contains(string(appAContent), "app-a") {
 		t.Error("expected appA's manifest to reference its own project name")
 	}
-	if !contains(string(appBContent), "appB") {
+	if !contains(string(appBContent), "app-b") {
 		t.Error("expected appB's manifest to reference its own project name")
 	}
 }
@@ -467,7 +528,7 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 	composeDir := t.TempDir()
 
 	composeFile := filepath.Join(composeDir, "compose.yml")
-	composeContent := "services:\n  backend:\n    image: nginx\n    ports:\n      - \"3000:3000\"\n      - \"3001:3001\"\n"
+	composeContent := "name: portstest\nservices:\n  backend:\n    image: nginx\n    ports:\n      - \"3000:3000\"\n      - \"3001:3001\"\n"
 	if err := os.WriteFile(composeFile, []byte(composeContent), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
@@ -480,7 +541,7 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 		t.Errorf("expected --explain to report ports 3001 are not exposed, got:\n%s", explainOut)
 	}
 
-	compileOut, err := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws", "-p", "portstest").CombinedOutput()
+	compileOut, err := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws").CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloud-compose compile failed: %v\n%s", err, compileOut)
 	}
@@ -489,52 +550,9 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 	}
 }
 
-// TestResolveProjectName_RejectsExplicitProjectContainingSlash is the
-// regression test for the backend-state-key collision
-// shared.ValidateBackendName exists to prevent (see its own doc
-// comment): a project name is also the input to
-// shared.BackendKeyForApp, so it must be rejected here before it can
-// ever reach that function -- mirroring
-// initconfig.TestLoad_RejectsNameContainingSlash's identical check on
-// an environment's own `name:`.
-func TestResolveProjectName_RejectsExplicitProjectContainingSlash(t *testing.T) {
-	t.Parallel()
-	_, err := resolveProjectName("compose.yml", "prod/apps")
-	if err == nil {
-		t.Fatal("expected an error when --project contains '/'")
-	}
-}
-
-// TestResolveProjectName_DefaultedNameIsStillValidated confirms the
-// same check applies even when the project name is defaulted from the
-// compose file's own containing directory name, not just an explicit
-// --project -- a directory name is still an untrusted string as far as
-// backend key construction is concerned.
-func TestResolveProjectName_DefaultedNameIsStillValidated(t *testing.T) {
-	t.Parallel()
-	dir := filepath.Join(t.TempDir(), "prod-apps")
-	// Deliberately does not create dir/compose.yml on disk --
-	// resolveProjectName never stats the file itself, only
-	// filepath.Abs/Dir/Base on the path string, so this doesn't need to
-	// exist. "prod-apps" contains no "/", so this confirms a safe
-	// defaulted name is accepted; the explicit-project case above
-	// exercises the actual slash-rejection regression.
-	if _, err := resolveProjectName(filepath.Join(dir, "compose.yml"), ""); err != nil {
-		t.Errorf("expected a safe defaulted project name to be accepted, got: %v", err)
-	}
-}
-
-// TestResolveProjectName_AcceptsSafeNames confirms ordinary project
-// names (explicit or defaulted) are unaffected by the new validation.
-func TestResolveProjectName_AcceptsSafeNames(t *testing.T) {
-	t.Parallel()
-	for _, name := range []string{"checkout-api", "web_api", "hello"} {
-		got, err := resolveProjectName("compose.yml", name)
-		if err != nil {
-			t.Errorf("resolveProjectName(%q) failed: %v", name, err)
-		}
-		if got != name {
-			t.Errorf("resolveProjectName(%q) = %q, want unchanged", name, got)
-		}
-	}
-}
+// Project-name validation (rejecting slashes, requiring a name at all)
+// now lives on shared.ParseCompose itself, since the compose file's own
+// top-level `name:` is the sole source of an application's identity --
+// see internal/compiler/shared/parser_test.go's
+// TestParseCompose_RequiresTopLevelName/RejectsNameContainingSlash/
+// AcceptsSafeNames, and docs/deployment-identity-design.md.

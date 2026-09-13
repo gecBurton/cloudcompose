@@ -122,6 +122,7 @@ func TestParseAndNormalizeRejectsNamedVolumesFromRealComposeFiles(t *testing.T) 
 		{
 			name: "short-form named volume",
 			compose: `
+name: test
 services:
   web:
     image: nginx
@@ -134,6 +135,7 @@ volumes:
 		{
 			name: "long-form named volume",
 			compose: `
+name: test
 services:
   web:
     image: nginx
@@ -179,6 +181,7 @@ volumes:
 func TestParseAndNormalizeAcceptsLocalOnlyMountsFromRealComposeFiles(t *testing.T) {
 	t.Parallel()
 	compose := `
+name: test
 services:
   web:
     image: nginx

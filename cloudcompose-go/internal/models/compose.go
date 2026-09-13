@@ -8,6 +8,13 @@ import (
 )
 
 type ComposeApplication struct {
+	// Name is the compose file's own top-level `name:` field -- the
+	// application's durable identity. CloudCompose requires this to be
+	// set (see ParseCompose) rather than falling back to a directory
+	// name, an environment variable, or a CLI flag: identity that isn't
+	// recorded in a file can't survive deleting generated artifacts and
+	// regenerating them elsewhere. See docs/deployment-identity-design.md.
+	Name     string                        `json:"name,omitempty"`
 	Services map[string]ComposeService     `json:"services,omitempty"`
 	Networks map[string]*NetworkDefinition `json:"networks,omitempty"`
 	Volumes  map[string]interface{}        `json:"volumes,omitempty"`

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -103,6 +104,49 @@ func TestResolveContainerResourcesAzure_AllowsMatchedExplicitOverrides(t *testin
 	}
 	if gotMemory != "2048Mi" {
 		t.Errorf("memory = %v, want 2048Mi", gotMemory)
+	}
+}
+
+// TestInferAzure_RealComputeTuningExample exercises the real
+// compute-tuning example through the full InferAzure boundary --
+// previously only covered by the golden byte-diff, not any dedicated
+// unit test. api has an explicit cpu:/memory: pair with no size:;
+// worker has size: medium overridden by an explicit, still-matched
+// cpu:/memory: pair (2.0 vCPU/4Gi) -- both must resolve to the same
+// pairs TestResolveContainerResourcesAzure_AllowsMatchedExplicitOverrides
+// already pins on a hand-built struct, but through the real
+// parser/normalizer boundary this time.
+func TestInferAzure_RealComputeTuningExample(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/compute-tuning/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "compute-tuning")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	env := mockAzureProdEnv()
+	resources, err := InferAzure(app, &env)
+	if err != nil {
+		t.Fatalf("InferAzure failed: %v", err)
+	}
+
+	apiApp, ok := resources.ContainerApp["api"]
+	if !ok {
+		t.Fatalf("expected a container app for api, got keys %v", keysOf(resources.ContainerApp))
+	}
+	if len(apiApp.Template.Container) != 1 || apiApp.Template.Container[0].CPU != 1.0 || apiApp.Template.Container[0].Memory != "2048Mi" {
+		t.Errorf("api cpu/memory = %v/%v, want 1.0/2048Mi", apiApp.Template.Container[0].CPU, apiApp.Template.Container[0].Memory)
+	}
+
+	workerApp, ok := resources.ContainerApp["worker"]
+	if !ok {
+		t.Fatalf("expected a container app for worker, got keys %v", keysOf(resources.ContainerApp))
+	}
+	if len(workerApp.Template.Container) != 1 || workerApp.Template.Container[0].CPU != 2.0 || workerApp.Template.Container[0].Memory != "4096Mi" {
+		t.Errorf("worker cpu/memory = %v/%v, want 2.0/4096Mi", workerApp.Template.Container[0].CPU, workerApp.Template.Container[0].Memory)
 	}
 }
 

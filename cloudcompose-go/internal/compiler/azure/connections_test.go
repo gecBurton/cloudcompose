@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
@@ -332,5 +333,63 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 	}
 	if secrets[0].Identity != "${azurerm_user_assigned_identity.main.id}" {
 		t.Errorf("Identity = %q, want the user-assigned identity's resource ID", secrets[0].Identity)
+	}
+}
+
+// TestInferAzure_RealWebApiExample_PeerContainerReferenceStaysLiteral
+// exercises the full pipeline against the real web-api example: unlike
+// AWS (which rewrites web's API_URL: http://api to api's ECS Cloud Map
+// FQDN, since ECS tasks get no DNS name of their own -- see
+// aws/permissions_test.go's TestInferPermissionsAndWiring_RealWebApiExample),
+// Azure Container Apps already resolve a bare service name natively
+// within their own environment, so no rewrite happens here: connections
+// is only ever populated for managed-service substitutions
+// (managed.go), never for one plain container referencing another.
+// Pinning this literal-pass-through explicitly, not just via the golden
+// byte-diff, since a future change that started populating connections
+// for container peers would otherwise pass unnoticed until the golden
+// file was regenerated to match it.
+func TestInferAzure_RealWebApiExample_PeerContainerReferenceStaysLiteral(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/web-api/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "web-api")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	env := mockAzureProdEnv()
+	resources, err := InferAzure(app, &env)
+	if err != nil {
+		t.Fatalf("InferAzure failed: %v", err)
+	}
+
+	webApp, ok := resources.ContainerApp["web"]
+	if !ok {
+		t.Fatalf("expected a container app for web, got keys %v", keysOf(resources.ContainerApp))
+	}
+	if len(webApp.Template.Container) != 1 {
+		t.Fatalf("expected exactly 1 container in web's template, got %d", len(webApp.Template.Container))
+	}
+
+	var apiURL string
+	found := false
+	for _, e := range webApp.Template.Container[0].Env {
+		if e.Name == "API_URL" {
+			apiURL = e.Value
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an API_URL env var on web, got %+v", webApp.Template.Container[0].Env)
+	}
+	if apiURL != "http://api" {
+		t.Errorf("API_URL = %q, want it to stay exactly as authored (Azure resolves bare service names natively)", apiURL)
+	}
+
+	if _, ok := resources.ContainerApp["api"]; !ok {
+		t.Errorf("expected a container app for api too, got keys %v", keysOf(resources.ContainerApp))
 	}
 }

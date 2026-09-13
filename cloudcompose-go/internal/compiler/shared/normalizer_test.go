@@ -9,9 +9,41 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-func TestNormalizeFlaskExample(t *testing.T) {
+// TestNormalizeDatabaseRelationship pins Normalize's own structural
+// behavior (capability inference, database_name derivation,
+// relationship counting) against a small inline fixture, not a
+// committed example: the shape this test needs (a mariadb db service
+// plus two dependents) isn't itself one of the curated cross-cloud
+// examples under examples/ (see examples/README.md), just a convenient
+// input for this normalizer-level unit test.
+func TestNormalizeDatabaseRelationship(t *testing.T) {
 	t.Parallel()
-	composeApp, err := ParseCompose("../../../../examples/flask/compose.yml")
+	dir := t.TempDir()
+	composePath := filepath.Join(dir, "compose.yml")
+	composeYAML := `name: db-relationship
+services:
+  backend:
+    image: myapp
+    environment:
+      - DATABASE_HOST=db
+    depends_on:
+      - db
+    x-cloud:
+      ingress: {}
+  frontend:
+    image: myfrontend
+    depends_on:
+      - backend
+  db:
+    image: mariadb:10.6.4-focal
+    environment:
+      - MYSQL_DATABASE=example
+`
+	if err := os.WriteFile(composePath, []byte(composeYAML), 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	composeApp, err := ParseCompose(composePath)
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
@@ -64,9 +96,7 @@ func TestNormalizeFlaskExample(t *testing.T) {
 func TestNormalizeAllExamples(t *testing.T) {
 	t.Parallel()
 	examples := []string{
-		"../../../../examples/flask/compose.yml",
-		"../../../../examples/flask-redis/compose.yml",
-		"../../../../examples/minio-s3/compose.yml",
+		"../../../../examples/doctor/compose.yml",
 		"../../../../examples/hello/compose.yml",
 		"../../../../examples/scaling/compose.yml",
 	}

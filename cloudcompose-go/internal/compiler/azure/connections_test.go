@@ -159,9 +159,8 @@ func TestResolveEnvVarAzure_ConfidentialWithNoIdentityFallsBackToPlainValue(t *t
 // service.Env, not just that the helper works in isolation. This is
 // exactly the shape of the real bug found while doing this item --
 // DATABASE_HOST: db shipping literally, unreachable once db is a
-// managed Flexible Server -- confirmed against the doctor/flask/
-// nginx-flask-mysql/minio-s3/flask-s3/flask-redis golden fixtures too,
-// this is the unit-level companion to those.
+// managed Flexible Server -- confirmed against the doctor/production-stack
+// golden fixtures too, this is the unit-level companion to those.
 func TestContainerSpecAzure_AuthoredEnvVarsAreSubstituted(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{

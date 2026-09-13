@@ -81,22 +81,22 @@ func TestInferComputeResources_RealHelloExample(t *testing.T) {
 	}
 }
 
-// TestInferComputeResources_RealBuildWebappExample exercises the
-// build-webapp example (build-from-source, ECR, docker provider wiring)
+// TestInferComputeResources_RealDoctorExample exercises the doctor
+// example's build-from-source service (ECR, docker provider wiring)
 // through the real boundary.
-func TestInferComputeResources_RealBuildWebappExample(t *testing.T) {
+func TestInferComputeResources_RealDoctorExample(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/build-webapp/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/doctor/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "build-webapp")
+	app, err := shared.Normalize(composeApp, "doctor")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
 
 	env := fullMockProdEnv()
-	getName := minimalGetName("prod", "build-webapp")
+	getName := minimalGetName("prod", "doctor")
 
 	resources := models.NewAWSResources()
 	InferNetworking(resources, app, &env, getName, nil)
@@ -104,10 +104,10 @@ func TestInferComputeResources_RealBuildWebappExample(t *testing.T) {
 	namespace := InferServiceDiscovery(resources, app, &env, getName, nil)
 	InferComputeResources(resources, app, &env, getName, nil, false, priorities, namespace)
 
-	if _, ok := resources.EcrRepository["web_ecr"]; !ok {
+	if _, ok := resources.EcrRepository["doctor_ecr"]; !ok {
 		t.Fatalf("expected an ECR repository for a build-from-source service, got keys %v", keysOf(resources.EcrRepository))
 	}
-	image, ok := resources.DockerImage["web_image"]
+	image, ok := resources.DockerImage["doctor_image"]
 	if !ok {
 		t.Fatalf("expected a docker_image resource, got keys %v", keysOf(resources.DockerImage))
 	}
@@ -118,18 +118,18 @@ func TestInferComputeResources_RealBuildWebappExample(t *testing.T) {
 	if build["platform"] != "linux/amd64" {
 		t.Errorf("build.platform = %v, want linux/amd64", build["platform"])
 	}
-	if _, ok := resources.DockerRegistryImage["web_push"]; !ok {
+	if _, ok := resources.DockerRegistryImage["doctor_push"]; !ok {
 		t.Errorf("expected a docker_registry_image push resource")
 	}
 
-	taskDef := resources.EcsTaskDefinition["web_td"]
+	taskDef := resources.EcsTaskDefinition["doctor_td"]
 	var containers []map[string]any
 	json.Unmarshal([]byte(taskDef.ContainerDefinitions), &containers)
 	image0, _ := containers[0]["image"].(string)
 	if image0 == "" {
 		t.Fatalf("expected container image to be set")
 	}
-	if !contains(image0, "docker_registry_image.web_push.sha256_digest") {
+	if !contains(image0, "docker_registry_image.doctor_push.sha256_digest") {
 		t.Errorf("container image = %q, want it to reference the pushed digest", image0)
 	}
 }

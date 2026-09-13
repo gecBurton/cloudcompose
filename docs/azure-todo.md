@@ -14,8 +14,6 @@ cleanly with nothing left in the subscription:
 | `hello` | Container App, ingress, the environment stack |
 | `web-api` | Two services talking to each other |
 | `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs, Front Door (`cdn: true`), end-to-end traffic through Front Door's own CDN endpoint |
-| `minio-s3` | Container-to-managed-service substitution (minio → Storage Account) |
-| `build-webapp` | Image build + push (`docker_image`/`docker_registry_image` → ACR), pull by digest |
 
 Run one with:
 
@@ -25,9 +23,13 @@ gh workflow run azure-acceptance.yml --ref main -f example=hello
 
 ## Open items
 
-- **`nginx-flask-mysql`** compiles and validates but has never had a live
-  run — the only example exercising the MySQL delegated subnet and MySQL
-  private DNS zone. Not in the acceptance menu (names a local-only image).
+- **`doctor`** (build-from-source + S3/RDS/ElastiCache substitution +
+  a compose secret) replaced `minio-s3` and `build-webapp` when the
+  example set was rationalized (see `examples/README.md`) -- those two
+  had each deployed cleanly for real, but `doctor` itself has not yet
+  had a live Azure run since the fold-in added a `secrets:` block to
+  its compose.yml. Needs a run before it can move to "Verified against
+  real Azure" above.
 - **Storage, Key Vault, and Container Registry** haven't been exercised
   with anything unusual configured. Worth an audit rather than
   discovering issues one at a time.

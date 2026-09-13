@@ -85,6 +85,11 @@
             "identity": "${azurerm_user_assigned_identity.main.id}",
             "key_vault_secret_id": "${azurerm_key_vault_secret.cache_secret.versionless_id}",
             "name": "cache-url"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.doctor_notify-token_secret.versionless_id}",
+            "name": "doctor-notify-token"
           }
         ],
         "template": {
@@ -119,6 +124,10 @@
                 {
                   "name": "BLOBS_URL",
                   "value": "${azurerm_storage_account.blobs_storage.primary_blob_endpoint}"
+                },
+                {
+                  "name": "NOTIFY_TOKEN",
+                  "secret_name": "doctor-notify-token"
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",
@@ -223,6 +232,19 @@
         },
         "name": "prod-doctor-doctor-database-url",
         "value": "postgres://cloudcompose:${random_password.postgres_admin.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/doctor_db"
+      },
+      "doctor_notify-token_secret": {
+        "depends_on": [
+          "time_sleep.kv_role_propagation"
+        ],
+        "key_vault_id": "${azurerm_key_vault.main.id}",
+        "lifecycle": {
+          "ignore_changes": [
+            "value"
+          ]
+        },
+        "name": "prod-doctor-doctor-notify-token",
+        "value": "PLACEHOLDER_VALUE_CHANGE_IN_AZURE_PORTAL"
       },
       "doctor_redis_url_url": {
         "depends_on": [

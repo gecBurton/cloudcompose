@@ -1,6 +1,8 @@
 package compiler
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,6 +43,22 @@ func TestExplain_RealExamples(t *testing.T) {
 	}
 }
 
+// writeComposeFixture writes content to a scratch compose.yml and
+// returns its path, for explain-only tests that need real multi-port/
+// volume-mount shapes no longer present in any committed example (the
+// example set is a curated, cross-cloud-parity set -- see
+// examples/README.md -- not a catch-all for every warning-path shape
+// a unit test happens to need).
+func writeComposeFixture(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+	return path
+}
+
 // TestExplain_MultiPortWarnsAboutIgnoredPorts exercises the port-decisions
 // warning branch through the real composeApp (not nil) path -- a branch no
 // current caller actually reaches (every current call site passes a nil
@@ -48,11 +66,22 @@ func TestExplain_RealExamples(t *testing.T) {
 // here rather than left untested because nothing calls it yet.
 func TestExplain_MultiPortWarnsAboutIgnoredPorts(t *testing.T) {
 	t.Parallel()
-	composeApp, err := ParseCompose("../../../examples/flask/compose.yml")
+	composePath := writeComposeFixture(t, `name: multiport
+services:
+  backend:
+    image: myapp
+    ports:
+      - "80:80"
+      - "9229:9229"
+      - "9230:9230"
+    x-cloud:
+      ingress: {}
+`)
+	composeApp, err := ParseCompose(composePath)
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := Normalize(composeApp, "flask")
+	app, err := Normalize(composeApp, "multiport")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -76,11 +105,24 @@ func TestExplain_MultiPortWarnsAboutIgnoredPorts(t *testing.T) {
 // also only reachable through the composeApp-provided path.
 func TestExplain_DroppedMountsWarning(t *testing.T) {
 	t.Parallel()
-	composeApp, err := ParseCompose("../../../examples/flask/compose.yml")
+	composePath := writeComposeFixture(t, `name: dropped-mounts
+services:
+  backend:
+    image: myapp
+    ports:
+      - "80:80"
+    volumes:
+      - ./src:/code/src:ro
+      - ./package.json:/code/package.json
+      - ./package-lock.json:/code/package-lock.json
+    x-cloud:
+      ingress: {}
+`)
+	composeApp, err := ParseCompose(composePath)
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := Normalize(composeApp, "flask")
+	app, err := Normalize(composeApp, "dropped-mounts")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}

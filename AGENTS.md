@@ -30,7 +30,7 @@ cd cloudcompose-go
 go build -o cloud-compose ./cmd/cloudcompose
 
 # Run the compiler
-./cloud-compose compile -f ../examples/flask/compose.yml -e ../examples/prod-env.yaml
+./cloud-compose compile -f ../examples/hello/compose.yml -e ../examples/prod-env.yaml
 
 # Run tests
 go test ./...
@@ -195,13 +195,15 @@ go vet ./...
 ```
 
 There are no golden-file fixtures checked in separately from
-`examples/*/expected/`; those are the actual regression tests for AWS and
-Azure inference (`TestInferAWS_GoldenExamplesByteIdentical`,
-`TestInferAzure_GoldenExamplesByteIdentical`). GCP has no committed golden
-files: it has never been tested against a real deployment, and its test
-coverage remains intentionally lighter than AWS/Azure's -- a scope
-decision made once, not a gap that crept in unnoticed. Its own tests pin
-individual outputs directly or check structural validity instead.
+`examples/*/expected/`; those are the actual regression tests for
+AWS/Azure/GCP inference (`TestInferAWS_GoldenExamplesByteIdentical`,
+`TestInferAzure_GoldenExamplesByteIdentical`,
+`TestInferGcp_GoldenExamplesByteIdentical`). GCP's golden fixtures exist
+alongside AWS/Azure's, but its test coverage remains intentionally
+lighter -- a scope decision made once, not a gap that crept in
+unnoticed: it has never been tested against a real deployment, so its
+golden files pin today's output as a regression baseline, not a
+correctness claim.
 
 ### Verifying Terraform schema compatibility
 

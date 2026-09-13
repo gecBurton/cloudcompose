@@ -17,15 +17,9 @@ import (
 // parity against it.
 var awsGoldenExamples = []string{
 	"hello",
-	"flask",
-	"flask-redis",
-	"flask-s3",
-	"minio-s3",
-	"build-webapp",
 	"scaling",
 	"platform-config",
 	"compute-tuning",
-	"nginx-flask-mysql",
 	"production-stack",
 	"web-api",
 	"doctor",

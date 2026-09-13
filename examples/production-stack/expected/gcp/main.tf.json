@@ -1,0 +1,186 @@
+{
+  "provider": {
+    "docker": {},
+    "google": {
+      "project": "my-project-123",
+      "region": "us-central1"
+    },
+    "random": {}
+  },
+  "resource": {
+    "google_cloud_run_service": {
+      "cleanup": {
+        "autogenerate_revision_name": true,
+        "ingress": "internal",
+        "location": "us-central1",
+        "name": "prod-production-stack-cleanup",
+        "project_id": "my-project-123",
+        "template": {
+          "metadata": {
+            "annotations": {
+              "autoscaling.knative.dev/maxScale": "1",
+              "autoscaling.knative.dev/minScale": "1",
+              "run.googleapis.com/cpu-throttling": "true",
+              "run.googleapis.com/execution-environment": "gen2",
+              "run.googleapis.com/vpc-access-connector": "prod-production-stack-vpc-connector",
+              "run.googleapis.com/vpc-access-egress": "all-traffic"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "command": [
+                  "echo",
+                  "cleaning up..."
+                ],
+                "image": "busybox",
+                "resources": {
+                  "limits": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "service_account_name": "my-project-123-compute@developer.gserviceaccount.com"
+          }
+        },
+        "traffic": [
+          {
+            "latest_revision": true,
+            "percent": 100
+          }
+        ]
+      },
+      "web": {
+        "autogenerate_revision_name": true,
+        "ingress": "all",
+        "location": "us-central1",
+        "name": "prod-production-stack-web",
+        "project_id": "my-project-123",
+        "template": {
+          "metadata": {
+            "annotations": {
+              "autoscaling.knative.dev/maxScale": "10",
+              "autoscaling.knative.dev/minScale": "2",
+              "run.googleapis.com/cpu-throttling": "true",
+              "run.googleapis.com/execution-environment": "gen2",
+              "run.googleapis.com/vpc-access-connector": "prod-production-stack-vpc-connector",
+              "run.googleapis.com/vpc-access-egress": "all-traffic"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "env": [
+                  {
+                    "name": "DB_HOST",
+                    "value": "db"
+                  },
+                  {
+                    "name": "REDIS_URL",
+                    "value": "redis://cache"
+                  },
+                  {
+                    "name": "DB_URL",
+                    "value": "postgresql://cloudcompose:${random_password.db_root.result}@${google_sql_database_instance.main.public_ip_address}:5432/production_stack_db"
+                  },
+                  {
+                    "name": "CACHE_URL",
+                    "value": "${google_redis_instance.cache_redis.host}:6379"
+                  }
+                ],
+                "image": "nginx:latest",
+                "resources": {
+                  "limits": {
+                    "cpu": "1000m",
+                    "memory": "2048Mi"
+                  }
+                }
+              }
+            ],
+            "service_account_name": "my-project-123-compute@developer.gserviceaccount.com"
+          }
+        },
+        "traffic": [
+          {
+            "latest_revision": true,
+            "percent": 100
+          }
+        ]
+      }
+    },
+    "google_redis_instance": {
+      "cache_redis": {
+        "connect_mode": "DIRECT_PEERING",
+        "memory_size_gb": 1,
+        "name": "prod-production-stack-cache",
+        "project_id": "my-project-123",
+        "redis_version": "REDIS_6_X",
+        "region": "us-central1",
+        "tier": "BASIC"
+      }
+    },
+    "google_sql_database": {
+      "db_db": {
+        "instance": "${google_sql_database_instance.main.name}",
+        "name": "production_stack_db",
+        "project_id": "my-project-123"
+      }
+    },
+    "google_sql_database_instance": {
+      "main": {
+        "availability_type": "ZONAL",
+        "backup_configuration": {
+          "enabled": true,
+          "start_time": "03:00"
+        },
+        "database_version": "POSTGRES_14",
+        "ip_configuration": {
+          "ipv4_enabled": true
+        },
+        "name": "prod-production-stack-db",
+        "project_id": "my-project-123",
+        "region": "us-central1",
+        "root_password": "${random_password.db_root.result}",
+        "storage_auto_resize": true,
+        "storage_auto_resize_limit": 100,
+        "tier": "db-f1-micro"
+      }
+    },
+    "google_vpc_access_connector": {
+      "main": {
+        "ip_cidr_range": "10.8.0.0/28",
+        "machine_type": "f1-micro",
+        "max_instances": 10,
+        "min_instances": 2,
+        "name": "prod-production-stack-vpc-connector",
+        "network": "default",
+        "project_id": "my-project-123",
+        "region": "us-central1"
+      }
+    },
+    "random_password": {
+      "db_root": {
+        "length": 20,
+        "special": false
+      }
+    }
+  },
+  "terraform": {
+    "required_providers": {
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "google": {
+        "source": "hashicorp/google",
+        "version": "~> 5.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
+    }
+  }
+}

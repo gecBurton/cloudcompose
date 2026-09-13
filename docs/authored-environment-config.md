@@ -24,8 +24,9 @@ per app).
 
 `cloud-compose compile --environment <environment.yaml>` is the portable
 alternative to `-e`: given the same authored `environment.yaml` (which
-must have a `backend:` block configured — see "Sharing one environment
-across multiple users" below), it resolves the environment directly,
+must declare a real remote `backend:`, not `local` — see "Sharing one
+environment across multiple users" below), it resolves the environment
+directly,
 without needing to already know where a previous `env init`/`env up`
 wrote its output directory. See `docs/deployment-identity-design.md`
 for the design rationale — `-e` still works as before.
@@ -102,7 +103,7 @@ gcp:
 `provider: aws` is a validation error — consistent with this codebase's
 convention that unknown/mismatched `x-cloud` keys are hard errors
 (`AGENTS.md`, `models/compose.go`'s `XCloud.UnmarshalJSON`). The same
-strict rule applies to the optional `backend:` block below.
+strict rule applies to the required `backend:` block below.
 
 Real, `terraform validate`-checked examples for all three clouds exist
 at `examples/hello/environment.yaml` (AWS),
@@ -113,18 +114,29 @@ at `examples/hello/environment.yaml` (AWS),
 
 Everything above describes a single environment's *config*. Two people
 (or a laptop and CI) both running `terraform apply` against the same
-`environment.yaml` is a different concern — *state* — since each
-without further configuration gets its own ordinary local
-`terraform.tfstate`, and the second `apply` doesn't merge with the
-first's: it either fails on a naming collision or silently creates a
-duplicate.
+`environment.yaml` is a different concern — *state* — since local state
+gives each its own ordinary local `terraform.tfstate`, and the second
+`apply` doesn't merge with the first's: it either fails on a naming
+collision or silently creates a duplicate.
 
-`backend:` is an optional block, authored alongside the common envelope
-above, that configures a real Terraform remote backend (with locking)
-for both the environment and every app compiled against it:
+`backend:` is required, authored alongside the common envelope above.
+It's either the bare value `local` (state stays on this machine, the
+single-developer/evaluation case) or a mapping configuring a real
+Terraform remote backend (with locking) for both the environment and
+every app compiled against it:
 
 ```yaml
-# environment.yaml (AWS example, with backend:)
+# environment.yaml (local state -- single developer, evaluation)
+provider: aws
+name: dev
+region: eu-west-2
+aws:
+  vpc_cidr: 10.0.0.0/16
+backend: local
+```
+
+```yaml
+# environment.yaml (AWS example, with a remote backend:)
 provider: aws
 name: prod
 region: eu-west-2
@@ -138,7 +150,7 @@ backend:
 ```
 
 ```yaml
-# environment.yaml (Azure example, with backend:)
+# environment.yaml (Azure example, with a remote backend:)
 provider: azure
 name: prod
 region: eastus
@@ -153,7 +165,7 @@ backend:
 ```
 
 ```yaml
-# environment.yaml (GCP example, with backend:)
+# environment.yaml (GCP example, with a remote backend:)
 provider: gcp
 name: prod
 region: us-central1
@@ -165,13 +177,21 @@ backend:
     bucket: my-org-tfstate
 ```
 
-`backend:` is entirely optional. Omitted (today's default), state stays
-local — `cloud-compose init` warns about this explicitly (*"no backend
-configured — state is local to this machine"*), rather than silently
-assuming one; this is a deliberate choice a human must see, not a trap.
+`backend:` has no default and cannot be omitted: `local` is an
+authored, visible choice rather than a silent one (there is no longer a
+"no backend configured" warning at `init` time -- there's nothing left
+to warn about once every environment.yaml states its choice outright).
 If AWS's `backend.aws` is configured without `dynamodb_table`, `init`
-warns about that too — unlocked S3 state has the same concurrent-apply
-race as no backend at all.
+still warns about that — unlocked S3 state has the same concurrent-apply
+race as `local`.
+
+`local` is also why `cloud-compose compile --environment <file>` (see
+`docs/deployment-identity-design.md`) refuses `backend: local`
+specifically, distinct from refusing a missing `backend:` altogether:
+local state genuinely has no durable locator to resolve from
+`environment.yaml` alone, so that command requires a real remote
+backend even though `local` is otherwise a perfectly valid choice for
+`env init`/`env up`.
 
 The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
 authored here — it's always derived mechanically from `name:` (for the
@@ -184,26 +204,27 @@ underscores, and hyphens: an unrestricted name could otherwise be
 crafted to collide with a different environment's or app's own backend
 key.
 
-`backend:` assumes the bucket/storage account/lock table it points at
-already exists — `cloud-compose` never provisions one itself (the same
-chicken-and-egg reason most infra tools don't: state needs a bucket,
-provisioning a bucket is itself infrastructure). See
-`examples/bootstrap-state/` for a ready-to-copy, manually-applied
+`backend:` (when not `local`) assumes the bucket/storage account/lock
+table it points at already exists — `cloud-compose` never provisions
+one itself (the same chicken-and-egg reason most infra tools don't:
+state needs a bucket, provisioning a bucket is itself infrastructure).
+See `examples/bootstrap-state/` for a ready-to-copy, manually-applied
 Terraform project that provisions exactly what each cloud's `backend:`
 block expects, one time per organization/account, before any
 `environment.yaml` references it.
 
 Tearing down a shared environment (as opposed to a single app —
 `cloud-compose down`) is `cloud-compose env-destroy`: unlike `down`, it
-first checks (when `backend:` is configured) whether any app still
-depends on the environment — every app compiled against a
-backend-configured environment shares that same backend, under its own
-key — and refuses by default if any are found, naming them and
-suggesting `cloud-compose down` for each first. `--force` skips that
-check. See `docs/multi-user-state.md` for the full design (locking
-details per cloud, the dependent-app check's own IAM footprint and
-degrade-to-warning behavior, and how to resolve a stale registration
-left behind by a deleted app directory that never ran `down`).
+first checks (when `backend:` is a real remote backend, not `local`)
+whether any app still depends on the environment — every app compiled
+against a backend-configured environment shares that same backend,
+under its own key — and refuses by default if any are found, naming
+them and suggesting `cloud-compose down` for each first. `--force`
+skips that check. See `docs/multi-user-state.md` for the full design
+(locking details per cloud, the dependent-app check's own IAM footprint
+and degrade-to-warning behavior, and how to resolve a stale
+registration left behind by a deleted app directory that never ran
+`down`).
 
 ## Field reference
 
@@ -234,7 +255,7 @@ left behind by a deleted app directory that never ran `down`).
 
 | `backend:` block | |
 |---|---|
-| optional; entirely omitted by default (local state) | see "Sharing one environment across multiple users" above |
+| **required** — `local`, or a mapping with exactly one of `aws:`/`azure:`/`gcp:` | see "Sharing one environment across multiple users" above |
 | `backend.aws.bucket`, `backend.aws.region` | required if `backend.aws` is present |
 | `backend.aws.dynamodb_table` | optional, but `init` warns if absent |
 | `backend.azure.resource_group_name`, `backend.azure.storage_account_name`, `backend.azure.container_name` | required if `backend.azure` is present |
@@ -303,8 +324,7 @@ schema change once it's built, not because anything consumes it yet.
 - `internal/compiler/initconfig` — `Load` (reads `environment.yaml`,
   returns `(nil, nil)` if missing), `Validate` (strict/discriminated
   checks, including `backend:`), and `BackendWarnings` (the non-fatal
-  "no backend configured"/"no lock table" warnings `cloud-compose init`
-  prints).
+  "no lock table" warning `cloud-compose init` prints).
 - `cmd/cloudcompose/env_init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
 - `cmd/cloudcompose/environment_resolve.go` — `resolveEnvironmentByDefinition`,

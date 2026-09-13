@@ -141,7 +141,7 @@ func initEnvironment(configFile string) (string, error) {
 		terraformJSON, err = aws.GenerateAwsEnvironment(
 			name, region, vpcCIDR, azCount, createALB, certPtr, endpointPtr,
 			fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
-			fileConfig.Backend,
+			&fileConfig.Backend,
 		)
 	case "azure":
 		vpcCIDR := ""
@@ -151,7 +151,7 @@ func initEnvironment(configFile string) (string, error) {
 		}
 		terraformJSON, err = azure.GenerateAzureEnvironment(
 			name, region, vpcCIDR, fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
-			fileConfig.Backend,
+			&fileConfig.Backend,
 		)
 	case "gcp":
 		vpcCIDR, projectID := "", ""
@@ -164,7 +164,7 @@ func initEnvironment(configFile string) (string, error) {
 		if domain != "" {
 			fmt.Printf("Domain: %s\n", domain)
 		}
-		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData, fileConfig.Backend)
+		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData, &fileConfig.Backend)
 	default:
 		// initconfig.Validate already rejects an unsupported provider
 		// before Load returns, so this is unreachable in practice.

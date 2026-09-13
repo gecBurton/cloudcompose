@@ -41,6 +41,7 @@ aws:
   vpc_cidr: 10.0.0.0/16
   az_count: 2
   create_alb: true
+backend: local
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -66,6 +67,7 @@ func TestLoad_RejectsUnknownTopLevelKey(t *testing.T) {
 provider: aws
 name: prod
 bogus_field: oops
+backend: local
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -82,6 +84,7 @@ aws:
   vpc_cidr: 10.0.0.0/16
 azure:
   vnet_cidr: 10.0.0.0/16
+backend: local
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -153,6 +156,7 @@ name: prod
 gcp:
   vpc_cidr: 10.0.0.0/16
   project_id: my-project
+backend: local
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -172,6 +176,7 @@ domain: example.com
 gcp:
   vpc_cidr: 10.0.0.0/16
   project_id: my-project
+backend: local
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -189,6 +194,7 @@ provider: azure
 name: prod
 azure:
   vnet_cidr: 10.0.0.0/16
+backend: local
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -206,6 +212,7 @@ func TestValidate_RejectsBlockNotMatchingProvider(t *testing.T) {
 		Name:     "prod",
 		AWS:      &models.AwsInitConfig{VpcCIDR: "10.0.0.0/16"},
 		Gcp:      &models.GcpInitConfig{ProjectID: "leftover-from-a-copy-paste"},
+		Backend:  models.BackendConfig{IsLocal: true},
 	}
 	if err := Validate(config); err == nil {
 		t.Fatalf("expected an error for a gcp block present alongside provider: aws")
@@ -229,7 +236,7 @@ backend:
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if config.Backend == nil || config.Backend.AWS == nil {
+	if config.Backend.AWS == nil {
 		t.Fatalf("expected backend.aws block, got %+v", config.Backend)
 	}
 	if config.Backend.AWS.Bucket != "my-org-tfstate" || config.Backend.AWS.Region != "eu-west-2" {
@@ -240,7 +247,7 @@ backend:
 	}
 }
 
-func TestLoad_BackendOmittedIsValid(t *testing.T) {
+func TestLoad_RejectsBackendOmitted(t *testing.T) {
 	t.Parallel()
 	path := writeTemp(t, `
 provider: aws
@@ -248,12 +255,27 @@ name: prod
 aws:
   vpc_cidr: 10.0.0.0/16
 `)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatalf("expected an error when backend: is omitted -- it must be authored (local or a real backend), not implicit")
+	}
+}
+
+func TestLoad_BackendLocalIsValid(t *testing.T) {
+	t.Parallel()
+	path := writeTemp(t, `
+provider: aws
+name: prod
+aws:
+  vpc_cidr: 10.0.0.0/16
+backend: local
+`)
 	config, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if config.Backend != nil {
-		t.Errorf("expected nil backend, got %+v", config.Backend)
+	if !config.Backend.IsLocal {
+		t.Errorf("expected Backend.IsLocal = true, got %+v", config.Backend)
 	}
 }
 
@@ -280,7 +302,7 @@ func TestValidate_RejectsBackendBlockNotMatchingProvider(t *testing.T) {
 		Provider: "aws",
 		Name:     "prod",
 		AWS:      &models.AwsInitConfig{VpcCIDR: "10.0.0.0/16"},
-		Backend: &models.BackendConfig{
+		Backend: models.BackendConfig{
 			Azure: &models.AzureBackendConfig{
 				ResourceGroupName:  "rg",
 				StorageAccountName: "acct",
@@ -299,7 +321,7 @@ func TestValidate_RejectsBackendAzureMissingRequiredFields(t *testing.T) {
 		Provider: "azure",
 		Name:     "prod",
 		Azure:    &models.AzureInitConfig{VnetCIDR: "10.0.0.0/16"},
-		Backend: &models.BackendConfig{
+		Backend: models.BackendConfig{
 			Azure: &models.AzureBackendConfig{ResourceGroupName: "rg"},
 		},
 	}
@@ -314,19 +336,19 @@ func TestValidate_RejectsBackendGcpMissingBucket(t *testing.T) {
 		Provider: "gcp",
 		Name:     "prod",
 		Gcp:      &models.GcpInitConfig{ProjectID: "my-project"},
-		Backend:  &models.BackendConfig{Gcp: &models.GcpBackendConfig{}},
+		Backend:  models.BackendConfig{Gcp: &models.GcpBackendConfig{}},
 	}
 	if err := Validate(config); err == nil {
 		t.Fatalf("expected an error when backend.gcp is missing bucket")
 	}
 }
 
-func TestBackendWarnings_NoBackendConfigured(t *testing.T) {
+func TestBackendWarnings_LocalBackendHasNoWarnings(t *testing.T) {
 	t.Parallel()
-	config := &models.InitConfig{Provider: "aws", Name: "prod"}
+	config := &models.InitConfig{Provider: "aws", Name: "prod", Backend: models.BackendConfig{IsLocal: true}}
 	warnings := BackendWarnings(config)
-	if len(warnings) != 1 {
-		t.Fatalf("expected exactly one warning, got %v", warnings)
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings for backend: local, got %v", warnings)
 	}
 }
 
@@ -335,7 +357,7 @@ func TestBackendWarnings_AwsBackendWithoutLockTable(t *testing.T) {
 	config := &models.InitConfig{
 		Provider: "aws",
 		Name:     "prod",
-		Backend: &models.BackendConfig{
+		Backend: models.BackendConfig{
 			AWS: &models.AwsBackendConfig{Bucket: "my-org-tfstate", Region: "eu-west-2"},
 		},
 	}
@@ -350,7 +372,7 @@ func TestBackendWarnings_AwsBackendWithLockTableHasNoWarnings(t *testing.T) {
 	config := &models.InitConfig{
 		Provider: "aws",
 		Name:     "prod",
-		Backend: &models.BackendConfig{
+		Backend: models.BackendConfig{
 			AWS: &models.AwsBackendConfig{Bucket: "my-org-tfstate", Region: "eu-west-2", DynamoDBTable: "my-org-tflocks"},
 		},
 	}
@@ -364,7 +386,7 @@ func TestBackendWarnings_AzureAndGcpHaveNoLockTableWarning(t *testing.T) {
 	config := &models.InitConfig{
 		Provider: "azure",
 		Name:     "prod",
-		Backend: &models.BackendConfig{
+		Backend: models.BackendConfig{
 			Azure: &models.AzureBackendConfig{
 				ResourceGroupName:  "rg",
 				StorageAccountName: "acct",

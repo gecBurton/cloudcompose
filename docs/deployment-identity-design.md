@@ -192,25 +192,41 @@ authored choice, and the one field in `environment.yaml` where "not
 set" silently meant something rather than being an error.
 
 Fix: `models.InitConfig.Backend` is now a required, non-pointer
-`BackendConfig` with custom YAML (un)marshalling accepting either the
-bare scalar `local` or a mapping with exactly one of `aws:`/`azure:`/
-`gcp:` (`IsLocal bool` distinguishes the two internally). `initconfig.
-Validate` rejects a missing/empty `backend:` outright; `BackendWarnings`
-no longer has a "no backend configured" case, since there's nothing
-left to omit -- only backend-specific weaknesses (e.g. AWS with no
-`dynamodb_table`) still warn. Each cloud's `environment_generator.go`
-treats `IsLocal` the same way it treated `nil` before (skip emitting a
-`terraform.backend` block). `resolveEnvironmentByDefinition`'s check
-became "is backend `local`" instead of "is backend nil" -- it still
-refuses `local` specifically, since local state genuinely has no
-durable locator to resolve `environment.yaml` alone into, even though
-`local` is a perfectly valid choice for `env init`/`env up`.
+`BackendConfig` naming exactly one of `local:`/`aws:`/`azure:`/`gcp:`
+(a plain discriminated struct, no custom YAML (un)marshalling needed).
+`initconfig.Validate` rejects a missing/empty `backend:` outright;
+`BackendWarnings` no longer has a "no backend configured" case, since
+there's nothing left to omit -- only backend-specific weaknesses (e.g.
+AWS with no `dynamodb_table`) still warn. Each cloud's
+`environment_generator.go` emits a `terraform { backend "local"
+{path = ...} }` block for `local:` (previously nothing at all), and no
+`output "backend"` (apps compiled against a local-backend environment
+keep using Terraform's own default local state, deliberately not
+wired up as part of this item -- see "Explicitly rejected
+alternatives" below). `resolveEnvironmentByDefinition`'s check became
+"is backend local" instead of "is backend nil" -- it still refuses a
+local backend specifically, since even an authored path is still one
+file on one filesystem, with no durable locator to resolve
+`environment.yaml` alone into across machines/checkouts, even though
+`local:` is a perfectly valid choice for `env init`/`env up`.
+
+`backend.local.path` is itself required, with no default, and always
+resolved relative to `environment.yaml`'s own directory (never an
+absolute path, never relative to the shell's cwd) -- an environment's
+state file location was otherwise an ambient side effect of whichever
+directory `terraform apply` happened to be run in, not an authored
+fact, which is exactly the kind of implicit default this project's
+identity model rules out elsewhere. `env_init.go` resolves it to an
+absolute path before handing it to the generators, so the emitted
+Terraform itself works regardless of which directory `terraform` is
+later run from.
 
 Every committed `environment.yaml` (`examples/hello/environment*.yaml`,
 `scripts/ci-environment.{aws,azure}.yaml`) now declares `backend:
-local` explicitly, since none previously set `backend:` at all.
-`docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" section was rewritten around `backend:` being required.
+{local: {path: ...}}` explicitly, since none previously set `backend:`
+at all. `docs/authored-environment-config.md`'s "Sharing one
+environment across multiple users" section was rewritten around
+`backend:` being required.
 
 ## Explicitly rejected alternatives
 
@@ -227,3 +243,15 @@ multiple users" section was rewritten around `backend:` being required.
 - **Terraform workspaces.** The backend key scheme
   (`cloudcompose/<env>/...`) already gives namespace semantics without
   workspaces' ambient-selected-state weirdness.
+- **Deriving an app-side local backend path from a local-backend
+  environment.** Considered as part of item 4, deferred: for a real
+  remote backend, an app's state key is derived from the environment's
+  own bucket/container plus `BackendKeyForApp` (same bucket, different
+  key) -- `local` has no equivalent, since it names one specific file,
+  not a namespace two apps could share slices of. Solving this would
+  mean inventing a naming scheme for a case (multiple apps, one
+  single-developer/evaluation environment, all wanting distinct local
+  state files) that hasn't come up as a real need; apps compiled
+  against a local-backend environment keep using Terraform's own
+  default local state, unrelated to the environment's own authored
+  path, exactly as they did before this item.

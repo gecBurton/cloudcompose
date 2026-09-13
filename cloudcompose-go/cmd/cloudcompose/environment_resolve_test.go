@@ -35,7 +35,7 @@ func TestCompile_EnvironmentFlagRejectsMissingBackend(t *testing.T) {
 }
 
 // TestCompile_EnvironmentFlagRejectsLocalBackend confirms
-// --environment specifically rejects `backend: local` (as opposed to
+// --environment specifically rejects a local backend (as opposed to
 // backend: being absent, TestCompile_EnvironmentFlagRejectsMissingBackend
 // above): local-only state has no durable locator to resolve from
 // environment.yaml alone, so resolveEnvironmentByDefinition rejects it
@@ -46,7 +46,7 @@ func TestCompile_EnvironmentFlagRejectsLocalBackend(t *testing.T) {
 	scratchDir := t.TempDir()
 
 	envFile := filepath.Join(scratchDir, "environment.yaml")
-	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\nbackend: local\n"
+	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\nbackend:\n  local:\n    path: ./tfstate\n"
 	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
 		t.Fatalf("write environment.yaml: %v", err)
 	}
@@ -56,10 +56,10 @@ func TestCompile_EnvironmentFlagRejectsLocalBackend(t *testing.T) {
 		"--environment", envFile)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected a non-zero exit for backend: local, got success:\n%s", out)
+		t.Fatalf("expected a non-zero exit for a local backend, got success:\n%s", out)
 	}
 	if !contains(string(out), "local") {
-		t.Errorf("expected the error to mention backend: local, got:\n%s", out)
+		t.Errorf("expected the error to mention the local backend, got:\n%s", out)
 	}
 }
 

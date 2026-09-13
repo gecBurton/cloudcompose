@@ -18,9 +18,12 @@ import (
 // VNet. A Container Apps Environment is Azure's actual isolation
 // boundary, so a shared one here would defeat that isolation.
 //
-// backend, if non-nil, is emitted both as this environment's own
-// `terraform { backend "azurerm" {...} }` block (state key derived from
-// name, never authored) and as a plain `output "backend"` block.
+// backend is required: `local` emits a `terraform { backend "local"
+// {...} }` block with the authored path and no `output "backend"`;
+// a real remote backend (`aws`/`azure`/`gcp`) is emitted both as this
+// environment's own `terraform { backend "azurerm" {...} }` block
+// (state key derived from name, never authored) and as a plain
+// `output "backend"` block.
 func GenerateAzureEnvironment(
 	name, location, vnetCIDR string,
 	tags map[string]string,
@@ -50,9 +53,13 @@ func GenerateAzureEnvironment(
 	// backendConfig, if set, is also emitted into the generated
 	// `output "backend"` block below, so LoadAzureEnvironment can hand
 	// it back to `cloudcompose compile` for every app compiled against
-	// this environment.
+	// this environment. Not set for `local` -- see this function's own
+	// doc comment.
 	var backendConfig map[string]any
-	if backend != nil && backend.Azure != nil {
+	switch {
+	case backend != nil && backend.Local != nil:
+		terraform["backend"] = map[string]any{"local": map[string]any{"path": backend.Local.Path}}
+	case backend != nil && backend.Azure != nil:
 		azurermBackend := map[string]any{
 			"resource_group_name":  backend.Azure.ResourceGroupName,
 			"storage_account_name": backend.Azure.StorageAccountName,

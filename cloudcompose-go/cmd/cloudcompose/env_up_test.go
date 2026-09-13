@@ -62,7 +62,7 @@ func TestEnvUp_StopsAfterApplyFails(t *testing.T) {
 	scratchDir := t.TempDir()
 
 	envConfig := filepath.Join(scratchDir, "environment.yaml")
-	envConfigContent := "provider: aws\nname: demo\nregion: eu-west-2\naws:\n  vpc_cidr: 10.0.0.0/16\n  az_count: 2\n  create_alb: true\nbackend: local\n"
+	envConfigContent := "provider: aws\nname: demo\nregion: eu-west-2\naws:\n  vpc_cidr: 10.0.0.0/16\n  az_count: 2\n  create_alb: true\nbackend:\n  local:\n    path: ./tfstate\n"
 	if err := os.WriteFile(envConfig, []byte(envConfigContent), 0644); err != nil {
 		t.Fatalf("write environment.yaml: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestEnvUp_AutoApprovePassesFlagToTerraform(t *testing.T) {
 	scratchDir := t.TempDir()
 
 	envConfig := filepath.Join(scratchDir, "environment.yaml")
-	envConfigContent := "provider: aws\nname: demo\nregion: eu-west-2\naws:\n  vpc_cidr: 10.0.0.0/16\n  az_count: 2\n  create_alb: true\nbackend: local\n"
+	envConfigContent := "provider: aws\nname: demo\nregion: eu-west-2\naws:\n  vpc_cidr: 10.0.0.0/16\n  az_count: 2\n  create_alb: true\nbackend:\n  local:\n    path: ./tfstate\n"
 	if err := os.WriteFile(envConfig, []byte(envConfigContent), 0644); err != nil {
 		t.Fatalf("write environment.yaml: %v", err)
 	}

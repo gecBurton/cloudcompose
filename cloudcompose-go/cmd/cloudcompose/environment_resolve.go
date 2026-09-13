@@ -26,9 +26,9 @@ func resolveEnvironmentByDefinition(environmentYamlPath string) (any, error) {
 			environmentYamlPath,
 		)
 	}
-	if fileConfig.Backend.IsLocal {
+	if fileConfig.Backend.Local != nil {
 		return nil, fmt.Errorf(
-			"%s declares `backend: local` -- required to resolve an "+
+			"%s declares a local backend -- required to resolve an "+
 				"environment from environment.yaml alone (see "+
 				"docs/authored-environment-config.md), or use --env "+
 				"<directory> instead",

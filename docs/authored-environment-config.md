@@ -120,10 +120,10 @@ gives each its own ordinary local `terraform.tfstate`, and the second
 collision or silently creates a duplicate.
 
 `backend:` is required, authored alongside the common envelope above.
-It's either the bare value `local` (state stays on this machine, the
-single-developer/evaluation case) or a mapping configuring a real
-Terraform remote backend (with locking) for both the environment and
-every app compiled against it:
+It's either a `local:` block (state stays on this machine, at an
+authored path — the single-developer/evaluation case) or a mapping
+configuring a real Terraform remote backend (with locking) for both
+the environment and every app compiled against it:
 
 ```yaml
 # environment.yaml (local state -- single developer, evaluation)
@@ -132,7 +132,9 @@ name: dev
 region: eu-west-2
 aws:
   vpc_cidr: 10.0.0.0/16
-backend: local
+backend:
+  local:
+    path: ./terraform.tfstate   # required; resolved relative to this file's own directory
 ```
 
 ```yaml
@@ -177,20 +179,28 @@ backend:
     bucket: my-org-tfstate
 ```
 
-`backend:` has no default and cannot be omitted: `local` is an
-authored, visible choice rather than a silent one (there is no longer a
-"no backend configured" warning at `init` time -- there's nothing left
-to warn about once every environment.yaml states its choice outright).
-If AWS's `backend.aws` is configured without `dynamodb_table`, `init`
-still warns about that — unlocked S3 state has the same concurrent-apply
+`backend:` has no default and cannot be omitted: `local:` is an
+authored, visible choice rather than a silent one (there is no longer
+a "no backend configured" warning at `init` time -- there's nothing
+left to warn about once every environment.yaml states its choice
+outright). `backend.local.path` is itself required, with no default —
+an environment's state file location was otherwise an ambient side
+effect of whichever directory `terraform apply` happened to be run in,
+not an authored fact. It's always resolved relative to
+`environment.yaml`'s own directory, never as an absolute path or
+relative to the shell's current directory (the same rule `init`'s
+own output-location derivation already follows). If AWS's
+`backend.aws` is configured without `dynamodb_table`, `init` still
+warns about that — unlocked S3 state has the same concurrent-apply
 race as `local`.
 
 `local` is also why `cloud-compose compile --environment <file>` (see
-`docs/deployment-identity-design.md`) refuses `backend: local`
+`docs/deployment-identity-design.md`) refuses a `local:` backend
 specifically, distinct from refusing a missing `backend:` altogether:
-local state genuinely has no durable locator to resolve from
-`environment.yaml` alone, so that command requires a real remote
-backend even though `local` is otherwise a perfectly valid choice for
+even an authored path is still just one file on one filesystem, with
+no durable locator to resolve from `environment.yaml` alone across
+machines/checkouts, so that command requires a real remote backend
+even though `local` is otherwise a perfectly valid choice for
 `env init`/`env up`.
 
 The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
@@ -255,7 +265,8 @@ registration left behind by a deleted app directory that never ran
 
 | `backend:` block | |
 |---|---|
-| **required** — `local`, or a mapping with exactly one of `aws:`/`azure:`/`gcp:` | see "Sharing one environment across multiple users" above |
+| **required** — exactly one of `local:`/`aws:`/`azure:`/`gcp:` | see "Sharing one environment across multiple users" above |
+| `backend.local.path` | required if `backend.local` is present; resolved relative to environment.yaml's own directory |
 | `backend.aws.bucket`, `backend.aws.region` | required if `backend.aws` is present |
 | `backend.aws.dynamodb_table` | optional, but `init` warns if absent |
 | `backend.azure.resource_group_name`, `backend.azure.storage_account_name`, `backend.azure.container_name` | required if `backend.azure` is present |

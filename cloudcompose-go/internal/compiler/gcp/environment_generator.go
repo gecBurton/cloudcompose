@@ -11,9 +11,12 @@ import (
 // environment: a VPC network, subnet, VPC connector for Cloud Run, and
 // a service networking connection for Cloud SQL.
 //
-// backend, if non-nil, is emitted both as this environment's
-// `terraform { backend "gcs" {...} }` block and as an `output "backend"`
-// block so it can be reused when compiling apps against this environment.
+// backend is required: `local` emits a `terraform { backend "local"
+// {...} }` block with the authored path and no `output "backend"`; a
+// real remote backend is emitted both as this environment's
+// `terraform { backend "gcs" {...} }` block and as an `output
+// "backend"` block so it can be reused when compiling apps against
+// this environment.
 func GenerateGcpEnvironment(
 	name, region, vpcCIDR, projectID, domain string,
 	tags map[string]string,
@@ -30,12 +33,16 @@ func GenerateGcpEnvironment(
 
 	// backendConfig is also emitted into the `output "backend"` block
 	// below, so LoadGcpEnvironment can hand it back to apps compiled
-	// against this environment.
+	// against this environment. Not set for `local` -- see this
+	// function's own doc comment.
 	//
 	// Terraform's gcs backend uses "prefix", not "key", for the
 	// per-object path within the bucket, unlike s3/azurerm.
 	var backendConfig map[string]any
-	if backend != nil && backend.Gcp != nil {
+	switch {
+	case backend != nil && backend.Local != nil:
+		terraform["backend"] = map[string]any{"local": map[string]any{"path": backend.Local.Path}}
+	case backend != nil && backend.Gcp != nil:
 		terraform["backend"] = map[string]any{
 			"gcs": map[string]any{
 				"bucket": backend.Gcp.Bucket,

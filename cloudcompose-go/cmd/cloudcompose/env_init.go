@@ -9,6 +9,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/compiler/azure"
 	"github.com/gecburton/cloudcompose/internal/compiler/gcp"
 	"github.com/gecburton/cloudcompose/internal/compiler/initconfig"
+	"github.com/gecburton/cloudcompose/internal/models"
 	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/spf13/cobra"
@@ -110,6 +111,22 @@ func initEnvironment(configFile string) (string, error) {
 	}
 	output := filepath.Join(filepath.Dir(absConfigFile), "env-"+name)
 
+	// Local.Path is authored relative to environment.yaml's own
+	// directory (never the shell's cwd, matching how output/every
+	// other input-derived path here is resolved) -- resolved to
+	// absolute before being handed to the generators, so the emitted
+	// `terraform { backend "local" { path = ... } }` block itself
+	// works regardless of which directory `terraform` is later run
+	// from.
+	backend := fileConfig.Backend
+	if backend.Local != nil {
+		resolvedPath := backend.Local.Path
+		if !filepath.IsAbs(resolvedPath) {
+			resolvedPath = filepath.Join(filepath.Dir(absConfigFile), resolvedPath)
+		}
+		backend.Local = &models.LocalBackendConfig{Path: resolvedPath}
+	}
+
 	fmt.Printf("Initializing %s environment: %s\n", fileConfig.Provider, name)
 	fmt.Printf("Region: %s\n", region)
 	fmt.Printf("Output: %s\n", output)
@@ -141,7 +158,7 @@ func initEnvironment(configFile string) (string, error) {
 		terraformJSON, err = aws.GenerateAwsEnvironment(
 			name, region, vpcCIDR, azCount, createALB, certPtr, endpointPtr,
 			fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
-			&fileConfig.Backend,
+			&backend,
 		)
 	case "azure":
 		vpcCIDR := ""
@@ -151,7 +168,7 @@ func initEnvironment(configFile string) (string, error) {
 		}
 		terraformJSON, err = azure.GenerateAzureEnvironment(
 			name, region, vpcCIDR, fileConfig.Tags, retainData, highAvailability, backupRetentionDays, logRetentionDays,
-			&fileConfig.Backend,
+			&backend,
 		)
 	case "gcp":
 		vpcCIDR, projectID := "", ""
@@ -164,7 +181,7 @@ func initEnvironment(configFile string) (string, error) {
 		if domain != "" {
 			fmt.Printf("Domain: %s\n", domain)
 		}
-		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData, &fileConfig.Backend)
+		terraformJSON, err = gcp.GenerateGcpEnvironment(name, region, vpcCIDR, projectID, domain, fileConfig.Tags, retainData, &backend)
 	default:
 		// initconfig.Validate already rejects an unsupported provider
 		// before Load returns, so this is unreachable in practice.

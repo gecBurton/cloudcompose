@@ -83,11 +83,11 @@ Rules, matching `initconfig.Validate`'s existing discriminated-union
 style:
 
 - `backend:` is required (as of docs/deployment-identity-design.md item
-  4): either the bare value `local` (state stays on this machine) or a
-  mapping with exactly one of `aws:`/`azure:`/`gcp:`. There is no
-  longer a way to omit it, and no "no backend configured" warning --
-  `local` is now the explicit, visible choice that omission used to be
-  a silent stand-in for.
+  4): a mapping with exactly one of `local:` (state stays on this
+  machine, at an authored, required `path:`), `aws:`, `azure:`, or
+  `gcp:`. There is no longer a way to omit it, and no "no backend
+  configured" warning -- `local:` is now the explicit, visible choice
+  that omission used to be a silent stand-in for.
 - If present, exactly the block matching `provider:` may be set
   (`backend.aws` requires `provider: aws`, etc.) — same strict rule
   `Validate` already applies to the top-level `aws:`/`azure:`/`gcp:`

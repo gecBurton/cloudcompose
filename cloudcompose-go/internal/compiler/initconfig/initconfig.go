@@ -111,18 +111,26 @@ func Validate(config *models.InitConfig) error {
 // validateBackend enforces the same strict/discriminated rule on
 // backend: as Validate applies to aws:/azure:/gcp:, plus the required
 // fields each backend type needs. backend: itself is required (see
-// models.BackendConfig's own doc comment for why) -- caught upstream by
-// yaml.Unmarshal already requiring some value for the field, so a
-// zero-value BackendConfig here (IsLocal false, every provider block
-// nil) only occurs if backend: was present but empty (e.g. `backend:`
-// with nothing after it, or `backend: {}`), which is rejected outright
-// rather than silently treated as `local`.
+// models.BackendConfig's own doc comment for why) -- caught here by an
+// explicit zero-value check, since a zero-value BackendConfig (every
+// field nil) occurs whenever backend: is missing entirely or present
+// but empty (e.g. `backend:` with nothing after it, or `backend: {}`).
 func validateBackend(config *models.InitConfig) error {
 	backend := config.Backend
-	if !backend.IsLocal && backend.AWS == nil && backend.Azure == nil && backend.Gcp == nil {
-		return fmt.Errorf(`backend: is required -- use "local" or a mapping with aws:/azure:/gcp: (see docs/authored-environment-config.md)`)
+	if backend.Local == nil && backend.AWS == nil && backend.Azure == nil && backend.Gcp == nil {
+		return fmt.Errorf(`backend: is required -- use local:/aws:/azure:/gcp: (see docs/authored-environment-config.md)`)
 	}
-	if backend.IsLocal {
+
+	// local: is provider-agnostic (it says nothing about which cloud
+	// this environment targets), so it's exempt from the
+	// provider-match check below, unlike aws:/azure:/gcp:.
+	if backend.Local != nil {
+		if backend.AWS != nil || backend.Azure != nil || backend.Gcp != nil {
+			return fmt.Errorf("backend has a local: block alongside a remote one; only one of local:/aws:/azure:/gcp: is allowed")
+		}
+		if backend.Local.Path == "" {
+			return fmt.Errorf("backend.local requires path")
+		}
 		return nil
 	}
 
@@ -144,7 +152,7 @@ func validateBackend(config *models.InitConfig) error {
 	case "aws":
 		b := backend.AWS
 		if b == nil {
-			return fmt.Errorf(`declares provider "aws" but backend: has no aws: block (and is not "local")`)
+			return fmt.Errorf(`declares provider "aws" but backend: has no aws: block (and no local: block)`)
 		}
 		if b.Bucket == "" || b.Region == "" {
 			return fmt.Errorf("backend.aws requires bucket and region")
@@ -152,7 +160,7 @@ func validateBackend(config *models.InitConfig) error {
 	case "azure":
 		b := backend.Azure
 		if b == nil {
-			return fmt.Errorf(`declares provider "azure" but backend: has no azure: block (and is not "local")`)
+			return fmt.Errorf(`declares provider "azure" but backend: has no azure: block (and no local: block)`)
 		}
 		if b.ResourceGroupName == "" || b.StorageAccountName == "" || b.ContainerName == "" {
 			return fmt.Errorf("backend.azure requires resource_group_name, storage_account_name, and container_name")
@@ -160,7 +168,7 @@ func validateBackend(config *models.InitConfig) error {
 	case "gcp":
 		b := backend.Gcp
 		if b == nil {
-			return fmt.Errorf(`declares provider "gcp" but backend: has no gcp: block (and is not "local")`)
+			return fmt.Errorf(`declares provider "gcp" but backend: has no gcp: block (and no local: block)`)
 		}
 		if b.Bucket == "" {
 			return fmt.Errorf("backend.gcp requires bucket")
@@ -172,10 +180,10 @@ func validateBackend(config *models.InitConfig) error {
 
 // BackendWarnings returns human-readable, non-fatal warnings about
 // config's backend:. The caller is responsible for printing these;
-// this package only decides what they say. Unlike before backend: was
-// required, there is no "no backend configured" case: local state is
-// now always an authored choice (`backend: local`), not an omission,
-// so there's nothing to warn about beyond backend-specific weaknesses.
+// this package only decides what they say. There is no "no backend
+// configured" case: local state is always an authored choice
+// (`backend: {local: {path: ...}}`), not an omission, so there's
+// nothing to warn about beyond backend-specific weaknesses.
 func BackendWarnings(config *models.InitConfig) []string {
 	if config.Provider == "aws" && config.Backend.AWS != nil && config.Backend.AWS.DynamoDBTable == "" {
 		return []string{

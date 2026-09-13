@@ -1,29 +1,29 @@
 package models
 
 import (
-	"strings"
 	"testing"
 
 	yaml "go.yaml.in/yaml/v4"
 )
 
 // backendWrapper mirrors how BackendConfig is always actually
-// unmarshalled in production -- nested under a `backend:` field, not
-// as a bare top-level YAML document (the two get different node kinds
-// from the underlying yaml.Node for a scalar value).
+// unmarshalled in production -- nested under a `backend:` field.
 type backendWrapper struct {
 	Backend BackendConfig `yaml:"backend"`
 }
 
-func TestBackendConfig_UnmarshalsLocal(t *testing.T) {
+func TestBackendConfig_UnmarshalsLocalBlock(t *testing.T) {
 	t.Parallel()
 	var w backendWrapper
-	if err := yaml.Unmarshal([]byte("backend: local"), &w); err != nil {
+	if err := yaml.Unmarshal([]byte("backend:\n  local:\n    path: ../state/prod.tfstate\n"), &w); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	b := w.Backend
-	if !b.IsLocal || b.AWS != nil || b.Azure != nil || b.Gcp != nil {
-		t.Errorf("expected IsLocal=true and every provider block nil, got %+v", b)
+	if b.Local == nil || b.Local.Path != "../state/prod.tfstate" {
+		t.Errorf("expected Local.Path decoded, got %+v", b.Local)
+	}
+	if b.AWS != nil || b.Azure != nil || b.Gcp != nil {
+		t.Errorf("expected every remote provider block nil, got %+v", b)
 	}
 }
 
@@ -35,34 +35,28 @@ func TestBackendConfig_UnmarshalsAwsBlock(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	b := w.Backend
-	if b.IsLocal {
-		t.Error("expected IsLocal=false for an aws: block")
+	if b.Local != nil {
+		t.Error("expected Local=nil for an aws: block")
 	}
 	if b.AWS == nil || b.AWS.Bucket != "my-bucket" || b.AWS.Region != "eu-west-2" {
 		t.Errorf("expected AWS.Bucket/Region decoded, got %+v", b.AWS)
 	}
 }
 
-func TestBackendConfig_RejectsUnsupportedScalar(t *testing.T) {
+func TestBackendConfig_RoundTripsLocalBlock(t *testing.T) {
 	t.Parallel()
-	var w backendWrapper
-	err := yaml.Unmarshal([]byte("backend: aws"), &w)
-	if err == nil {
-		t.Fatal("expected an error for backend: aws (a bare scalar other than \"local\")")
-	}
-	if !strings.Contains(err.Error(), "not a supported value") {
-		t.Errorf("error = %q, want it to mention 'not a supported value'", err.Error())
-	}
-}
-
-func TestBackendConfig_MarshalsLocalAsScalar(t *testing.T) {
-	t.Parallel()
-	out, err := yaml.Marshal(backendWrapper{Backend: BackendConfig{IsLocal: true}})
+	original := backendWrapper{Backend: BackendConfig{Local: &LocalBackendConfig{Path: "../state/prod.tfstate"}}}
+	out, err := yaml.Marshal(original)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("marshal failed: %v", err)
 	}
-	if strings.TrimSpace(string(out)) != "backend: local" {
-		t.Errorf("Marshal(IsLocal: true) = %q, want %q", string(out), "backend: local")
+
+	var roundTripped backendWrapper
+	if err := yaml.Unmarshal(out, &roundTripped); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if roundTripped.Backend.Local == nil || *roundTripped.Backend.Local != *original.Backend.Local {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", roundTripped.Backend, original.Backend)
 	}
 }
 
@@ -78,7 +72,7 @@ func TestBackendConfig_RoundTripsAwsBlock(t *testing.T) {
 	if err := yaml.Unmarshal(out, &roundTripped); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if roundTripped.Backend.IsLocal || roundTripped.Backend.AWS == nil || *roundTripped.Backend.AWS != *original.Backend.AWS {
+	if roundTripped.Backend.Local != nil || roundTripped.Backend.AWS == nil || *roundTripped.Backend.AWS != *original.Backend.AWS {
 		t.Errorf("round-trip mismatch: got %+v, want %+v", roundTripped.Backend, original.Backend)
 	}
 }

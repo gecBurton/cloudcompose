@@ -204,6 +204,36 @@ func TestGenerateAzureEnvironment_NilBackendOmitsBackendBlock(t *testing.T) {
 	}
 }
 
+// TestGenerateAzureEnvironment_LocalBackendEmitsPathNoOutput mirrors
+// aws.TestGenerateAwsEnvironment_LocalBackendEmitsPathNoOutput.
+func TestGenerateAzureEnvironment_LocalBackendEmitsPathNoOutput(t *testing.T) {
+	t.Parallel()
+	backend := &models.BackendConfig{
+		Local: &models.LocalBackendConfig{Path: "/abs/path/to/prod.tfstate"},
+	}
+	out, err := GenerateAzureEnvironment("prod", "eastus", "10.0.0.0/16", nil, true, false, 7, 7, backend)
+	if err != nil {
+		t.Fatalf("GenerateAzureEnvironment failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	terraform := parsed["terraform"].(map[string]any)
+	backendBlock, ok := terraform["backend"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected terraform.backend, got %v", terraform["backend"])
+	}
+	localBlock, ok := backendBlock["local"].(map[string]any)
+	if !ok || localBlock["path"] != "/abs/path/to/prod.tfstate" {
+		t.Errorf("expected terraform.backend.local.path = /abs/path/to/prod.tfstate, got %v", backendBlock)
+	}
+	output := parsed["output"].(map[string]any)
+	if _, ok := output["backend"]; ok {
+		t.Errorf("did not expect output.backend for a local backend")
+	}
+}
+
 // TestGenerateAzureEnvironment_BackendEmitsAzurermBlockWithDerivedKey
 // confirms a configured backend.azure produces a
 // `terraform { backend "azurerm" {} }` block whose key is mechanically

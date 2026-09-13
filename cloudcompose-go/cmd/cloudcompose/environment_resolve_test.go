@@ -9,7 +9,8 @@ import (
 )
 
 // TestCompile_EnvironmentFlagRejectsMissingBackend confirms
-// --environment requires a `backend:` block.
+// --environment requires backend: to be present at all (enforced by
+// initconfig.Load itself, since backend: is now a required field).
 func TestCompile_EnvironmentFlagRejectsMissingBackend(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -30,6 +31,35 @@ func TestCompile_EnvironmentFlagRejectsMissingBackend(t *testing.T) {
 	}
 	if !contains(string(out), "backend") {
 		t.Errorf("expected the error to mention the missing backend:, got:\n%s", out)
+	}
+}
+
+// TestCompile_EnvironmentFlagRejectsLocalBackend confirms
+// --environment specifically rejects `backend: local` (as opposed to
+// backend: being absent, TestCompile_EnvironmentFlagRejectsMissingBackend
+// above): local-only state has no durable locator to resolve from
+// environment.yaml alone, so resolveEnvironmentByDefinition rejects it
+// even though initconfig.Load itself accepts it as a valid choice.
+func TestCompile_EnvironmentFlagRejectsLocalBackend(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+	scratchDir := t.TempDir()
+
+	envFile := filepath.Join(scratchDir, "environment.yaml")
+	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\nbackend: local\n"
+	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
+		t.Fatalf("write environment.yaml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "compile",
+		"-f", "../../../examples/hello/compose.yml",
+		"--environment", envFile)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit for backend: local, got success:\n%s", out)
+	}
+	if !contains(string(out), "local") {
+		t.Errorf("expected the error to mention backend: local, got:\n%s", out)
 	}
 }
 

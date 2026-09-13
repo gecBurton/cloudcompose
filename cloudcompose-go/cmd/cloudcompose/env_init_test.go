@@ -109,10 +109,10 @@ func TestEnvInit_RealAwsExampleProducesValidManifest(t *testing.T) {
 	}
 }
 
-// TestEnvInit_WarnsWhenNoBackendConfigured confirms `cloud-compose env
-// init` prints initconfig.BackendWarnings' own "no backend configured"
-// warning when environment.yaml has no backend: block.
-func TestEnvInit_WarnsWhenNoBackendConfigured(t *testing.T) {
+// TestEnvInit_RejectsBackendOmitted confirms `cloud-compose env init`
+// rejects environment.yaml with no backend: block outright -- it must
+// be authored (local or a real backend), not implicit.
+func TestEnvInit_RejectsBackendOmitted(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	scratchDir := t.TempDir()
@@ -125,11 +125,11 @@ func TestEnvInit_WarnsWhenNoBackendConfigured(t *testing.T) {
 
 	cmd := exec.Command(bin, "env", "init", "-e", envFile)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("cloud-compose env init failed: %v\n%s", err, out)
+	if err == nil {
+		t.Fatalf("expected cloud-compose env init to fail with no backend:, got success:\n%s", out)
 	}
-	if !contains(string(out), "no backend configured") {
-		t.Errorf("expected a 'no backend configured' warning, got:\n%s", out)
+	if !contains(string(out), "backend") {
+		t.Errorf("expected the error to mention backend:, got:\n%s", out)
 	}
 }
 

@@ -21,6 +21,11 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 	return shared.Normalize(composeApp, projectName)
 }
 
+// AppSettingsFor decodes composeApp's own top-level x-cloud block.
+func AppSettingsFor(composeApp *models.ComposeApplication) (*models.AppXCloud, error) {
+	return shared.AppSettingsFor(composeApp)
+}
+
 // SemanticToJSON renders the semantic model as JSON.
 func SemanticToJSON(app *models.Application) (string, error) {
 	return shared.SemanticToJSON(app)

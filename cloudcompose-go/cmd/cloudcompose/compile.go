@@ -34,10 +34,6 @@ func runMain(cmd *cobra.Command, args []string) {
 	environmentFile, _ := cmd.Flags().GetString("environment")
 	demoCloud, _ := cmd.Flags().GetString("demo")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
-	subnetIndex, subnetIndexSet := int(0), cmd.Flags().Changed("subnet-index")
-	if subnetIndexSet {
-		subnetIndex, _ = cmd.Flags().GetInt("subnet-index")
-	}
 
 	composeFile, err := resolveComposeFile(composeFileFlag)
 	if err != nil {
@@ -87,7 +83,7 @@ func runMain(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	outputDir, err := compileApp(composeFile, envDir, environmentFile, demoCloud, subnetIndex, subnetIndexSet)
+	outputDir, err := compileApp(composeFile, envDir, environmentFile, demoCloud)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -101,7 +97,7 @@ func runMain(cmd *cobra.Command, args []string) {
 // composeFile and writes the generated Terraform JSON to <dir of
 // composeFile>/app-<environment name>-<project name>, returning that
 // directory. Project name is composeFile's own top-level `name:`.
-func compileApp(composeFile, envDir, environmentFile, demoCloud string, subnetIndex int, subnetIndexSet bool) (string, error) {
+func compileApp(composeFile, envDir, environmentFile, demoCloud string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
@@ -115,6 +111,10 @@ func compileApp(composeFile, envDir, environmentFile, demoCloud string, subnetIn
 		return "", err
 	}
 	projectName := composeApp.Name
+	appSettings, err := compiler.AppSettingsFor(composeApp)
+	if err != nil {
+		return "", err
+	}
 
 	var env any
 	switch {
@@ -150,13 +150,25 @@ func compileApp(composeFile, envDir, environmentFile, demoCloud string, subnetIn
 	}
 	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName)
 
-	// Required on Azure, ignored elsewhere -- no default, since an
-	// unspecified value isn't the same as explicitly choosing subnet 0.
+	// Required on Azure, ignored elsewhere: this app's own compose file
+	// must declare x-cloud.azure.subnet_index (see AppXCloudAzure's own
+	// doc comment) -- no default, since an unspecified value isn't the
+	// same as explicitly choosing subnet 0.
 	if azureEnv, ok := env.(*models.AzureEnvironment); ok {
-		if !subnetIndexSet {
-			return "", fmt.Errorf("--subnet-index is required when compiling for Azure")
+		if appSettings.Azure == nil || appSettings.Azure.SubnetIndex == nil {
+			return "", fmt.Errorf(
+				"%s must declare x-cloud.azure.subnet_index when compiling for Azure "+
+					"(see docs/azure-app-isolation-design.md)",
+				composeFile,
+			)
 		}
-		azureEnv.SubnetIndex = subnetIndex
+		azureEnv.SubnetIndex = *appSettings.Azure.SubnetIndex
+		fmt.Printf(
+			"Azure subnet_index=%d. If `terraform apply` fails with an address-space/overlap "+
+				"error, another app sharing this environment has likely already claimed this "+
+				"index -- check other apps' compose files and pick a different subnet_index.\n",
+			azureEnv.SubnetIndex,
+		)
 	}
 
 	fmt.Printf("Compiling: %s -> %s (%s)\n", composeFile, projectName, target)
@@ -417,7 +429,6 @@ func init() {
 	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env and --environment.")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
 	mainCmd.Flags().BoolP("version", "v", false, "Show the version and exit")
-	mainCmd.Flags().Int("subnet-index", 0, "Azure only, required: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
 }
 
 // cloudcomposeVersion returns a short identifying string for the CLI.

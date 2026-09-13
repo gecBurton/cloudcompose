@@ -95,15 +95,16 @@ type AzureEnvironment struct {
 	VnetName                string `json:"vnet_name"`
 
 	// AppsCIDR is the upper half of the environment's VNet, reserved
-	// for apps. cloudcompose main carves its own /24 out of this range
-	// (keyed by --subnet-index) for its own Container Apps Environment's
-	// four subnets.
+	// for apps. cloudcompose compile carves its own /24 out of this
+	// range (keyed by SubnetIndex) for its own Container Apps
+	// Environment's four subnets.
 	AppsCIDR string `json:"apps_cidr"`
 
 	// SubnetIndex identifies this app's own /24 slice of AppsCIDR --
-	// supplied fresh on every `cloudcompose main` invocation via the
-	// --subnet-index flag, not decoded from Terraform outputs. Two apps
-	// sharing an index collide on the same subnet range.
+	// supplied fresh on every `cloudcompose compile` invocation from
+	// the compose file's own x-cloud.azure.subnet_index (see
+	// models.AppXCloudAzure), not decoded from Terraform outputs. Two
+	// apps sharing an index collide on the same subnet range.
 	SubnetIndex int `json:"-"`
 
 	// InfrastructureSubnetID/PostgresqlSubnetID/MysqlSubnetID/

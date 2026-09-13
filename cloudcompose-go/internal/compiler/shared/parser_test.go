@@ -85,3 +85,24 @@ func TestParseCompose_AcceptsSafeNames(t *testing.T) {
 		})
 	}
 }
+
+// TestParseCompose_ReadsTopLevelXCloud confirms a top-level `x-cloud:`
+// block round-trips through the real compose-go loader into
+// ComposeApplication.XCloud, decodable via AppSettingsFor.
+func TestParseCompose_ReadsTopLevelXCloud(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := writeComposeFile(t, dir, "name: test\nx-cloud:\n  azure:\n    subnet_index: 2\nservices:\n  web:\n    image: nginx\n")
+
+	app, err := ParseCompose(path)
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	settings, err := AppSettingsFor(app)
+	if err != nil {
+		t.Fatalf("AppSettingsFor failed: %v", err)
+	}
+	if settings.Azure == nil || settings.Azure.SubnetIndex == nil || *settings.Azure.SubnetIndex != 2 {
+		t.Errorf("expected Azure.SubnetIndex = 2, got %+v", settings.Azure)
+	}
+}

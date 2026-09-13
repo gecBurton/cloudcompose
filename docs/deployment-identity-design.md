@@ -66,7 +66,7 @@ explicit CLI overrides.
 
 Anything that breaks this must be either derived deterministically or
 stored durably — not left as an ambient side effect of a prior CLI
-invocation (e.g. today's `--subnet-index` on Azure).
+invocation (see item 3 below, formerly `--subnet-index` on Azure).
 
 ## Sequenced plan
 
@@ -159,27 +159,31 @@ down` — those still take `--env <dir>` only. `compile`/`compose up` are
 the primary "deploy an app" path this item exists to fix; extending
 the rest is a follow-up once there's concrete need.
 
-### 3. Audit remaining non-deterministic regeneration inputs
+### 3. Fix Azure subnet-index non-determinism (done)
 
-Azure's `--subnet-index` (`docs/azure-app-isolation-design.md`) is a
-known violation of the litmus test: it's external allocation state
-supplied per-invocation, not derivable from `environment.yaml` +
-`compose.yaml` alone, and not currently persisted anywhere. Options,
-roughly in order of preference:
+Azure's `--subnet-index` flag was a known violation of the litmus
+test: external allocation state supplied per-invocation, not derivable
+from `environment.yaml` + `compose.yaml` alone, and not persisted
+anywhere.
 
-- Persist the allocation durably (e.g. alongside the app's state key or
-  as an environment-level output), so regeneration reads it back rather
-  than requiring the flag again.
-- Derive it from something already durable — e.g. `ListDependentApps`
-  already enumerates every app under an environment; subnet allocation
-  could in principle be computed from that enumeration rather than
-  hashing the project name (naive hashing reintroduces collision
-  handling, and probing-on-collision reintroduces order-dependence
-  unless the result of the probe is itself persisted).
+Considered and rejected: a CloudCompose-managed allocator that persists
+claimed indices in the backend (new read/write plumbing per cloud,
+races between concurrent `compile` runs, partial-write cleanup if
+`apply` never runs) and hashing project names into the index space
+(genuine collision risk at realistic scale -- 5 apps sharing an
+environment is already ~9% likely to collide, 10 apps ~33%, assuming
+128 slots).
 
-Don't hash-and-probe without persisting the result — that just moves the
-non-determinism rather than removing it. This is explicitly an allocator
-problem, not a naming problem, and shouldn't block (1) or (2).
+Fix: the index moved onto the app itself, as a required top-level
+`x-cloud.azure.subnet_index` in `compose.yaml` (see `models.AppXCloud`,
+`docs/azure-app-isolation-design.md`) -- not into `environment.yaml`,
+since it's app-specific placement, not environment policy. `--subnet-
+index` is removed entirely. Collision detection is left to Azure's own
+API rejection of overlapping subnet address ranges at `terraform
+apply`, rather than CloudCompose building a registry to catch it
+earlier -- `compile` prints a note pointing at the likely cause
+whenever compiling for Azure, so that failure is recognisable rather
+than a cryptic Azure API error.
 
 ### 4. Make `backend:` mandatory, with an explicit `local` value
 

@@ -295,6 +295,55 @@ next to it, and return the `environment.yaml` path instead.
 This was a breaking CLI change, consistent with every other flag
 removed in this document (`-p`/`--project`, `--subnet-index`).
 
+### 6. Stop naming the cloud twice in `backend:` (done)
+
+Item 4 gave `backend:` a discriminated `local:`/`aws:`/`azure:`/`gcp:`
+shape. That still repeated the cloud a second time for anything other
+than `local:`: `provider: aws` already says which cloud, so an
+`aws:`/`azure:`/`gcp:` key directly under `backend:` names it again,
+purely because each provider's remote-backend fields differ (S3's
+`bucket`/`region`, azurerm's `storage_account_name`/`container_name`,
+GCS's `bucket`). This is the same "don't name the cloud twice" idea
+already applied to project identity (item 1) and to the CLI flag (item
+5), not yet applied to `backend:`'s own remote shape.
+
+Fix: `backend:`'s remote shape is now a single `remote:` key, whatever
+fields it accepts chosen by `provider:` rather than by which YAML key
+was used -- mirroring `output "backend"`'s own existing shape on the
+*deployed-facts* side (a `provider` tag alongside a same-named block;
+see `internal/compiler/shared/backend_output_decode.go`'s
+`DecodeBackendOutput`, which already worked this way and wasn't itself
+part of this fix).
+
+`models.BackendConfig`'s `AWS`/`Azure`/`Gcp` fields are unchanged in
+shape but now tagged `yaml:"-"`: nothing about the Go-level model
+changed, only how it's populated. `initconfig.Load` gained
+`decodeBackendRemote`, which reads `backend.remote:`, rejects unknown
+fields against a `remoteFieldsByProvider` table keyed by `provider:`,
+and decodes into whichever of `Backend.AWS`/`.Azure`/`.Gcp` matches --
+run before `Validate`, which still checks each provider's required
+fields the same way it did before, just without the now-impossible
+"block doesn't match provider" case (structurally unreachable once
+`remote:` is the only remote key; the corresponding test in
+`initconfig_test.go` was replaced with one that still exercises
+`Validate` directly rather than through `Load`, since only `Validate`
+is called on hand-built structs by the removed test's other callers).
+`BackendConfig` also gained a `MarshalYAML` method, needed because
+`env init` writes `environment.yaml` back out into `env-<name>/`: with
+`AWS`/`Azure`/`Gcp` tagged `yaml:"-"`, the default marshaller had
+nothing to place them under, so `MarshalYAML` reconstructs `{local:
+...}`/`{remote: ...}` from whichever field is set, the mirror image of
+`decodeBackendRemote`.
+
+Every other consumer (`environment_generator.go` per cloud,
+`app_backend_block.go`, `env_down.go`'s deployed-facts read) accesses
+`Backend.AWS`/`.Azure`/`.Gcp` at the Go level, which didn't change --
+only the authored YAML's key and `initconfig.Load`'s decoding path
+did. No committed `environment.yaml` fixture needed updating: none of
+`examples/hello/environment*.yaml` or
+`scripts/ci-environment.{aws,azure}.yaml` used a remote backend
+(item 4 above only ever set them to `local:`).
+
 ## Explicitly rejected alternatives
 
 - **New `EnvironmentState`/`EnvironmentDefinition` domain types.** Not

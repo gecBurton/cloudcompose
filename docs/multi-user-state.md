@@ -46,14 +46,22 @@ correctness benefit.
 ### 1. Remote backend, authored in `environment.yaml`
 
 `InitConfig` (`internal/models/init_config.go`) gains an optional
-top-level `Backend` block, mirroring the `aws:`/`azure:`/`gcp:`
-discriminated-block pattern already used for provider config:
+top-level `Backend` block. Unlike the `aws:`/`azure:`/`gcp:`
+discriminated-block pattern used for provider config, the remote
+backend doesn't repeat the cloud name a second time: `provider:` alone
+already says which cloud, so the backend's own required fields (S3's
+`bucket`/`region`, azurerm's `storage_account_name`/`container_name`,
+GCS's `bucket`) are authored under a single `remote:` key, decoded into
+whichever shape matches `provider:` — mirroring how `output "backend"`
+already decodes the *deployed-facts* side the same way (a `provider`
+tag alongside a same-named block; see
+`internal/compiler/shared/backend_output_decode.go`):
 
 ```yaml
 provider: aws
 name: prod
 backend:
-  aws:
+  remote:
     bucket: my-org-tfstate
     region: eu-west-2
     dynamodb_table: my-org-tflocks   # optional; recommended
@@ -64,7 +72,7 @@ backend:
 provider: azure
 name: prod
 backend:
-  azure:
+  remote:
     resource_group_name: my-org-tfstate-rg
     storage_account_name: myorgtfstate
     container_name: tfstate
@@ -75,7 +83,7 @@ backend:
 provider: gcp
 name: prod
 backend:
-  gcp:
+  remote:
     bucket: my-org-tfstate
 ```
 
@@ -84,14 +92,14 @@ style:
 
 - `backend:` is required (as of docs/deployment-identity-design.md item
   4): a mapping with exactly one of `local:` (state stays on this
-  machine, at an authored, required `path:`), `aws:`, `azure:`, or
-  `gcp:`. There is no longer a way to omit it, and no "no backend
-  configured" warning -- `local:` is now the explicit, visible choice
-  that omission used to be a silent stand-in for.
-- If present, exactly the block matching `provider:` may be set
-  (`backend.aws` requires `provider: aws`, etc.) — same strict rule
-  `Validate` already applies to the top-level `aws:`/`azure:`/`gcp:`
-  blocks.
+  machine, at an authored, required `path:`) or `remote:` (shape
+  depends on `provider:`). There is no longer a way to omit it, and no
+  "no backend configured" warning -- `local:` is now the explicit,
+  visible choice that omission used to be a silent stand-in for.
+- `backend.remote:`'s required fields depend on `provider:` — there's
+  no separate `backend.aws:`/`backend.azure:`/`backend.gcp:` key to
+  mismatch in the first place, unlike the top-level `aws:`/`azure:`/
+  `gcp:` blocks `Validate` still discriminates by `provider:`.
 - `key` is **never authored** — it's always derived from `name` the
   same way every other resource/output-directory name already is
   (`env-<name>` for environments; see "Key derivation" below for apps).
@@ -101,9 +109,11 @@ style:
   two different environments at the same state key by accident.
 
 `initconfig.Load`'s `knownTopLevelKeys` gains `"backend"`;
-`initconfig.Validate` gains the discriminated-block check above, plus:
-GCP's `dynamodb_table`-equivalent doesn't exist (GCS locking is native,
-no separate resource), so only AWS's block has an optional
+`initconfig.Load` also gains `decodeBackendRemote`, which decodes
+`backend.remote:` into whichever of `Backend.AWS`/`.Azure`/`.Gcp`
+matches `Provider` before `Validate` runs its usual required-field
+checks. GCP's `dynamodb_table`-equivalent doesn't exist (GCS locking is
+native, no separate resource), so only AWS's block has an optional
 `dynamodb_table` field — its absence is allowed but `cloud-compose env init`
 warns the same way it does for no backend at all, since unlocked S3
 state has the exact same concurrent-apply race this whole doc exists to

@@ -106,8 +106,11 @@ gcp:
 `provider:` may be present. An `azure:` block in a file declaring
 `provider: aws` is a validation error — consistent with this codebase's
 convention that unknown/mismatched `x-cloud` keys are hard errors
-(`AGENTS.md`, `models/compose.go`'s `XCloud.UnmarshalJSON`). The same
-strict rule applies to the required `backend:` block below.
+(`AGENTS.md`, `models/compose.go`'s `XCloud.UnmarshalJSON`). The
+required `backend:` block below applies the same "don't name the cloud
+twice" idea, but expressed differently: `backend.remote:`'s own shape
+already depends on `provider:`, so there's no separate `backend.aws:`/
+`backend.azure:`/`backend.gcp:` key to mismatch in the first place.
 
 Real, `terraform validate`-checked examples for all three clouds exist
 at `examples/hello/environment.yaml` (AWS),
@@ -149,7 +152,7 @@ region: eu-west-2
 aws:
   vpc_cidr: 10.0.0.0/16
 backend:
-  aws:
+  remote:
     bucket: my-org-tfstate
     region: eu-west-2
     dynamodb_table: my-org-tflocks   # optional, but strongly recommended
@@ -163,9 +166,9 @@ region: eastus
 azure:
   vnet_cidr: 10.0.0.0/16
 backend:
-  azure:
+  remote:
     resource_group_name: my-org-tfstate-rg
-    th: myorgtfstate
+    storage_account_name: myorgtfstate
     container_name: tfstate
     use_azuread_auth: true   # default; disables shared-key storage access
 ```
@@ -179,7 +182,7 @@ gcp:
   vpc_cidr: 10.0.0.0/16
   project_id: my-gcp-project-id
 backend:
-  gcp:
+  remote:
     bucket: my-org-tfstate
 ```
 
@@ -193,8 +196,11 @@ effect of whichever directory `terraform apply` happened to be run in,
 not an authored fact. It's always resolved relative to
 `environment.yaml`'s own directory, never as an absolute path or
 relative to the shell's current directory (the same rule `init`'s
-own output-location derivation already follows). If AWS's
-`backend.aws` is configured without `dynamodb_table`, `init` still
+own output-location derivation already follows). `backend.remote:`'s
+own shape depends on `provider:` — it never names the cloud a second
+time, since `provider:` already does — see the required-fields table
+below for exactly which fields each provider expects. If AWS's
+`backend.remote` is configured without `dynamodb_table`, `init` still
 warns about that — unlocked S3 state has the same concurrent-apply
 race as `local`.
 
@@ -269,13 +275,13 @@ registration left behind by a deleted app directory that never ran
 
 | `backend:` block | |
 |---|---|
-| **required** — exactly one of `local:`/`aws:`/`azure:`/`gcp:` | see "Sharing one environment across multiple users" above |
+| **required** — exactly one of `local:`/`remote:` | see "Sharing one environment across multiple users" above |
 | `backend.local.path` | required if `backend.local` is present; resolved relative to environment.yaml's own directory |
-| `backend.aws.bucket`, `backend.aws.region` | required if `backend.aws` is present |
-| `backend.aws.dynamodb_table` | optional, but `init` warns if absent |
-| `backend.azure.resource_group_name`, `backend.azure.storage_account_name`, `backend.azure.container_name` | required if `backend.azure` is present |
-| `backend.azure.use_azuread_auth` | optional; defaults to `true` |
-| `backend.gcp.bucket` | required if `backend.gcp` is present |
+| `backend.remote.bucket`, `backend.remote.region` | required if `provider: aws` |
+| `backend.remote.dynamodb_table` | optional (aws only), but `init` warns if absent |
+| `backend.remote.resource_group_name`, `backend.remote.storage_account_name`, `backend.remote.container_name` | required if `provider: azure` |
+| `backend.remote.use_azuread_auth` | optional (azure only); defaults to `true` |
+| `backend.remote.bucket` | required if `provider: gcp` |
 
 `init` and `compile` take no output-location flag at all: `init` always
 writes to `<dir of -e>/env-<name>`, and `compile` always writes to

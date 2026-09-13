@@ -39,31 +39,74 @@ type InitConfig struct {
 
 	// Backend is the required Terraform state backend this environment
 	// (and every app compiled against it) uses -- a `local:` block
-	// (state stays on this machine, at an authored path) or a real
-	// remote backend (`aws:`/`azure:`/`gcp:`). There is no way to omit
-	// backend: entirely: unlike every other field here, an omitted
-	// backend: used to silently mean local state, which is exactly the
-	// kind of implicit default this project's identity model rules out
-	// elsewhere -- see docs/deployment-identity-design.md item 4.
-	// Validated by initconfig.Validate, which also enforces that at
-	// most one of Backend's own Local/AWS/Azure/Gcp fields is set, and
-	// that a remote one matches Provider.
+	// (state stays on this machine, at an authored path) or `remote:`
+	// (a real Terraform backend, shaped by Provider -- see
+	// BackendConfig's own doc comment for why there's no separate
+	// aws:/azure:/gcp: key under backend: the way there is at the top
+	// level). There is no way to omit backend: entirely: unlike every
+	// other field here, an omitted backend: used to silently mean
+	// local state, which is exactly the kind of implicit default this
+	// project's identity model rules out elsewhere -- see
+	// docs/deployment-identity-design.md item 4. Populated by
+	// initconfig.Load, which also enforces that exactly one of
+	// Backend's own Local/AWS/Azure/Gcp fields is set.
 	Backend BackendConfig `yaml:"backend"`
 }
 
 // BackendConfig is the `backend:` block of an authored environment.yaml:
-// a mapping naming exactly one of local/aws/azure/gcp. The state key
-// within a remote backend is never authored here -- it's always
-// derived from InitConfig.Name.
+// either `local:` (state stays on this machine) or `remote:` (a real
+// Terraform backend). Unlike Local, Remote's own required fields
+// aren't self-describing from the YAML key alone -- they depend on
+// which cloud InitConfig.Provider names (S3 needs bucket/region;
+// azurerm needs storage_account_name/container_name; GCS needs just
+// bucket), so initconfig.Load decodes Remote into whichever of
+// AWS/Azure/Gcp matches Provider, rather than the YAML key itself
+// naming the cloud a second time (Provider already does that).
 //
 // A zero-value BackendConfig (every field nil) is not a valid parsed
 // value; initconfig.Load always produces exactly one field set,
 // enforced by initconfig.Validate.
 type BackendConfig struct {
 	Local *LocalBackendConfig `yaml:"local,omitempty"`
-	AWS   *AwsBackendConfig   `yaml:"aws,omitempty"`
-	Azure *AzureBackendConfig `yaml:"azure,omitempty"`
-	Gcp   *GcpBackendConfig   `yaml:"gcp,omitempty"`
+
+	// Remote is decoded by initconfig.Load, not by BackendConfig's own
+	// (nonexistent) UnmarshalYAML: exactly one of AWS/Azure/Gcp is set,
+	// chosen by InitConfig.Provider, mirroring how DecodeBackendOutput
+	// already decodes the *deployed-facts* side of a backend (a
+	// `provider` tag alongside a same-named block) -- see
+	// internal/compiler/shared/backend_output_decode.go.
+	AWS   *AwsBackendConfig   `yaml:"-"`
+	Azure *AzureBackendConfig `yaml:"-"`
+	Gcp   *GcpBackendConfig   `yaml:"-"`
+}
+
+// MarshalYAML renders whichever of Local/AWS/Azure/Gcp is set back
+// into `{local: {...}}` or `{remote: {...}}` -- the inverse of
+// initconfig.Load's own decodeBackendRemote, needed since AWS/Azure/Gcp
+// are tagged `yaml:"-"` (their YAML key is `remote`, not their own
+// field name, so the default marshaller can't place them). Used when
+// env_init.go writes a resolved copy of environment.yaml back out.
+func (b BackendConfig) MarshalYAML() (interface{}, error) {
+	if b.Local != nil {
+		return struct {
+			Local *LocalBackendConfig `yaml:"local"`
+		}{b.Local}, nil
+	}
+	switch {
+	case b.AWS != nil:
+		return struct {
+			Remote *AwsBackendConfig `yaml:"remote"`
+		}{b.AWS}, nil
+	case b.Azure != nil:
+		return struct {
+			Remote *AzureBackendConfig `yaml:"remote"`
+		}{b.Azure}, nil
+	case b.Gcp != nil:
+		return struct {
+			Remote *GcpBackendConfig `yaml:"remote"`
+		}{b.Gcp}, nil
+	}
+	return struct{}{}, nil
 }
 
 // LocalBackendConfig configures Terraform's `local` backend.
@@ -80,15 +123,15 @@ type LocalBackendConfig struct {
 	Path string `yaml:"path"`
 }
 
-// AwsBackendConfig configures Terraform's `s3` backend. DynamoDBTable is
-// optional but strongly recommended.
+// AwsBackendConfig is `backend.remote:`'s shape when provider: aws.
+// DynamoDBTable is optional but strongly recommended.
 type AwsBackendConfig struct {
 	Bucket        string `yaml:"bucket"`
 	Region        string `yaml:"region"`
 	DynamoDBTable string `yaml:"dynamodb_table,omitempty"`
 }
 
-// AzureBackendConfig configures Terraform's `azurerm` backend.
+// AzureBackendConfig is `backend.remote:`'s shape when provider: azure.
 // UseAzureADAuth defaults to true; a *bool so an explicit `false` is
 // distinguishable from "not set".
 type AzureBackendConfig struct {
@@ -98,8 +141,8 @@ type AzureBackendConfig struct {
 	UseAzureADAuth     *bool  `yaml:"use_azuread_auth,omitempty"`
 }
 
-// GcpBackendConfig configures Terraform's `gcs` backend. No lock-table
-// equivalent field exists -- GCS backend locking is native.
+// GcpBackendConfig is `backend.remote:`'s shape when provider: gcp. No
+// lock-table equivalent field exists -- GCS backend locking is native.
 type GcpBackendConfig struct {
 	Bucket string `yaml:"bucket"`
 }

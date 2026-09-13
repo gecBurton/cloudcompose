@@ -211,10 +211,10 @@ func TestCopyDockerBuildContexts_NoDockerImagesIsANoOp(t *testing.T) {
 	}
 }
 
-// TestMain_RequiresEnvOrDemo confirms --env and --demo really are the
-// only two ways to supply an environment: neither given is an error, not
-// a silent default (see runMain's own "one way to configure, not two"
-// comment, mirroring init.go's).
+// TestMain_RequiresEnvOrDemo confirms --env, --environment, and --demo
+// really are the only three ways to supply an environment: none given
+// is an error, not a silent default (see runMain's own "one way to
+// configure, not two" comment, mirroring init.go's).
 func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -222,10 +222,10 @@ func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected a non-zero exit when neither --env nor --demo is given, got success:\n%s", out)
+		t.Fatalf("expected a non-zero exit when neither --env nor --environment nor --demo is given, got success:\n%s", out)
 	}
-	if !contains(string(out), "--env or --demo is required") {
-		t.Errorf("expected the error to name both flags, got:\n%s", out)
+	if !contains(string(out), "--env, --environment, or --demo is required") {
+		t.Errorf("expected the error to name all three flags, got:\n%s", out)
 	}
 }
 
@@ -242,6 +242,28 @@ func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when both --env and --demo are given, got success:\n%s", out)
+	}
+	if !contains(string(out), "mutually exclusive") {
+		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)
+	}
+}
+
+// TestMain_RejectsBothEnvAndEnvironment confirms --env and --environment
+// are also mutually exclusive -- they're two different ways of
+// resolving an environment (an already-applied directory vs. an
+// authored environment.yaml, see resolveEnvironmentByDefinition's own
+// doc comment), not two names for the same thing.
+func TestMain_RejectsBothEnvAndEnvironment(t *testing.T) {
+	t.Parallel()
+	bin := buildCloudComposeBinary(t)
+
+	cmd := exec.Command(bin, "compile",
+		"-f", "../../../examples/hello/compose.yml",
+		"-e", "../../../examples/hello",
+		"--environment", "../../../examples/hello/environment.yaml")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a non-zero exit when both --env and --environment are given, got success:\n%s", out)
 	}
 	if !contains(string(out), "mutually exclusive") {
 		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)
@@ -288,12 +310,25 @@ func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
 // TestMain_AzureAcceptsExplicitSubnetIndex confirms compiling for Azure
 // succeeds once --subnet-index is given explicitly, including the
 // value 0 -- which must be accepted like any other explicit value, not
-// treated as though it were the (removed) default.
+// treated as though it were the (removed) default. Copies compose.yml
+// into a scratch directory rather than compiling directly against
+// examples/hello, so this doesn't leave an app-demo-hello/ directory
+// behind in the repo's own example.
 func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
+	composeDir := t.TempDir()
 
-	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-d", "azure", "--subnet-index", "0")
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "azure", "--subnet-index", "0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloud-compose compile -d azure --subnet-index 0 failed: %v\n%s", err, out)

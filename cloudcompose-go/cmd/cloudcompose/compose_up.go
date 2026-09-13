@@ -13,9 +13,12 @@ import (
 // single bundled `up` command used to do. `env up` is the environment
 // half: init + apply on a shared environment.
 //
-// --env here means an already-applied environment *directory* (created
-// by a previous `cloud-compose env init`/`env up`), the same meaning it
-// has on compile/ps/logs/down, not an authored environment.yaml file.
+// --env means an already-applied environment *directory* (created by a
+// previous `cloud-compose env init`/`env up`), the same meaning it has
+// on compile/ps/logs/down. --environment means an authored
+// environment.yaml instead, resolved directly (requires a `backend:`
+// block; see docs/deployment-identity-design.md) -- the two are
+// mutually exclusive.
 //
 // Terraform apply runs interactively (plan + y/n prompt) unless
 // --auto-approve is set.
@@ -26,8 +29,12 @@ var composeUpCmd = &cobra.Command{
 		"against an already-applied environment.\n\n" +
 		"--env must point at an environment directory created by a previous " +
 		"`cloud-compose env init`/`env up` (terraform apply must have already " +
-		"run there) -- the same meaning --env has on compile/ps/logs/down, not " +
-		"an authored environment.yaml file.\n\n" +
+		"run there) -- the same meaning --env has on compile/ps/logs/down. " +
+		"--environment instead points at the authored environment.yaml " +
+		"itself, resolved directly without needing to already know its " +
+		"generated output directory (requires a `backend:` block; see " +
+		"docs/deployment-identity-design.md). Exactly one of --env/" +
+		"--environment is required.\n\n" +
 		"Shows its plan and prompts for confirmation interactively by " +
 		"default. --auto-approve skips that prompt, for non-interactive " +
 		"callers (CI, scripts) that have already decided not to have a human " +
@@ -39,6 +46,7 @@ var composeUpCmd = &cobra.Command{
 func runComposeUp(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
+	environmentFile, _ := cmd.Flags().GetString("environment")
 	subnetIndexSet := cmd.Flags().Changed("subnet-index")
 	subnetIndex := 0
 	if subnetIndexSet {
@@ -46,8 +54,12 @@ func runComposeUp(cmd *cobra.Command, args []string) {
 	}
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
 
-	if envDir == "" {
-		fmt.Fprintln(os.Stderr, "Error: --env is required")
+	if envDir == "" && environmentFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: one of --env or --environment is required")
+		os.Exit(1)
+	}
+	if envDir != "" && environmentFile != "" {
+		fmt.Fprintln(os.Stderr, "Error: --env and --environment are mutually exclusive")
 		os.Exit(1)
 	}
 
@@ -57,7 +69,7 @@ func runComposeUp(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	appDir, err := compileApp(composeFile, envDir, "", subnetIndex, subnetIndexSet)
+	appDir, err := compileApp(composeFile, envDir, environmentFile, "", subnetIndex, subnetIndexSet)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -74,7 +86,8 @@ func runComposeUp(cmd *cobra.Command, args []string) {
 func init() {
 	composeCmd.AddCommand(composeUpCmd)
 
-	composeUpCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init`/`env up` (terraform apply must have run there already)")
+	composeUpCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init`/`env up` (terraform apply must have run there already). Mutually exclusive with --environment.")
+	composeUpCmd.Flags().String("environment", "", "Path to the authored environment.yaml that produced the environment to deploy into (requires a `backend:` block; see docs/deployment-identity-design.md). Mutually exclusive with --env.")
 	composeUpCmd.Flags().Int("subnet-index", 0, "Azure only, required: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
 	composeUpCmd.Flags().Bool("auto-approve", false, "Skip the terraform apply confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

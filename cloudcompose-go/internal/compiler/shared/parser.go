@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/gecburton/cloudcompose/internal/models"
+	yaml "go.yaml.in/yaml/v4"
 )
 
 // declaredEnvironment loads the compose file a second time with both
@@ -78,7 +80,32 @@ func splitEnvironment(
 	return environment, platformEnv
 }
 
-// ParseCompose parses a Docker Compose file using compose-go (Docker's native parser)
+// composeFileName reads only the top-level `name:` field out of a
+// compose file, without interpolation, defaults, or validation --
+// needed because compose-go's loader requires a project name to be
+// supplied (imperatively or via the file) before it will parse
+// anything else, but the file's own declared name is exactly the
+// value this project treats as required identity. See ParseCompose.
+func composeFileName(filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read compose file: %w", err)
+	}
+	var named struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal(data, &named); err != nil {
+		return "", fmt.Errorf("parse compose file: %w", err)
+	}
+	return named.Name, nil
+}
+
+// ParseCompose parses a Docker Compose file using compose-go (Docker's
+// native parser). The compose file must declare a top-level `name:` --
+// CloudCompose requires this as the application's durable identity
+// rather than falling back to a directory name, COMPOSE_PROJECT_NAME,
+// or a CLI flag, none of which survive deleting and regenerating
+// artifacts elsewhere. See docs/deployment-identity-design.md.
 func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	// WorkingDir must be absolute: ResolveRelativePaths resolves build
 	// contexts against it, and left unset it defaults to the process's
@@ -88,15 +115,37 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		return nil, fmt.Errorf("resolve compose file directory: %w", err)
 	}
 
-	// v2 requires a project name at load time; a placeholder is set here
-	// since the real one is assigned later by Normalize.
+	name, err := composeFileName(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if name == "" {
+		return nil, fmt.Errorf(
+			"%s must declare a top-level `name:` -- this is the application's "+
+				"durable identity (see docs/deployment-identity-design.md)",
+			filePath,
+		)
+	}
+	// Validated here, not just left to the loader's own project-name
+	// syntax check: this name is later used verbatim to build backend
+	// state keys (BackendKeyForApp), where an unsanitized value could
+	// collide with another app's key.
+	if err := ValidateBackendName("compose file's top-level `name:`", name); err != nil {
+		return nil, err
+	}
+
+	// name is set imperatively (rather than left for the loader to find
+	// on its own) so that InvalidProjectNameErr's validation of it runs
+	// with a clear source, and so nothing here depends on compose-go's
+	// own directory-basename/COMPOSE_PROJECT_NAME fallbacks, which this
+	// project deliberately does not use as identity sources.
 	project, err := loader.LoadWithContext(context.Background(), types.ConfigDetails{
 		WorkingDir: composeDir,
 		ConfigFiles: []types.ConfigFile{
 			{Filename: filePath},
 		},
 	}, func(o *loader.Options) {
-		o.SetProjectName("cloudcompose-parse-placeholder", true)
+		o.SetProjectName(name, true)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parse compose file: %w", err)
@@ -112,6 +161,7 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	}
 
 	app := &models.ComposeApplication{
+		Name:     project.Name,
 		Services: make(map[string]models.ComposeService),
 		Networks: make(map[string]*models.NetworkDefinition),
 		Volumes:  make(map[string]interface{}),

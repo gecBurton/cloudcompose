@@ -8,6 +8,7 @@
 # cloudcompose carries across only what is written literally here. Everything else
 # contributes its name: the variable is created in Secrets Manager and injected
 # from there, for an operator to fill in.
+name: platform-config
 services:
   web:
     image: nginxdemos/hello:plain-text

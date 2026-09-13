@@ -4,6 +4,7 @@
 # cloudcompose injects each endpoint/credential into the doctor. The doctor is built
 # from source (ECR) and its GET /health does a real round-trip against each:
 # S3 put+get, Postgres write+read, Redis set+get.
+name: doctor
 services:
   doctor:
     build:

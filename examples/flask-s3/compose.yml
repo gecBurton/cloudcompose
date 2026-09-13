@@ -1,3 +1,4 @@
+name: flask-s3
 services:
   web:
     image: flask-app

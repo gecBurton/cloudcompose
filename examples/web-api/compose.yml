@@ -4,6 +4,7 @@
 # Compose puts both on a shared network where `api` resolves by name. ECS gives
 # a task no name whatsoever, so cloudcompose registers each reachable service in a
 # private DNS zone and rewrites references to it.
+name: web-api
 services:
   web:
     image: nginxdemos/hello:plain-text

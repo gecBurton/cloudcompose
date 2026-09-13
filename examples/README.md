@@ -96,12 +96,12 @@ cd -
 # --env means instead -- see this file's "fast path" section above).
 # compile's own output lands at
 # <dir of -f>/app-<environment name>-<project name> (here, app-demo-hello/,
-# "hello" being -f's own containing directory name, compile's default
-# --project) -- named after both the environment and the project so the
-# same compose.yml can be compiled again against a different
-# environment.yaml/env-<name> (e.g. dev vs prod), or under a different
-# --project against the same environment, without overwriting this
-# output.
+# "hello" coming from compose.yml's own top-level `name:` field, not a
+# flag or a directory name -- see docs/deployment-identity-design.md)
+# -- named after both the environment and the project so the same
+# compose.yml can be compiled again against a different
+# environment.yaml/env-<name> (e.g. dev vs prod) without overwriting
+# this output.
 go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml -e ../examples/hello/env-demo
 ```
 

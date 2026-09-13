@@ -271,12 +271,15 @@ moving part.
   of `--force`. There must be an explicit way to clear this that
   doesn't require trusting `--force` blindly: at minimum, a documented
   "resolve a stale registration" procedure — re-point `compose down`'s
-  `--env`/`--project` at the environment and project name recovered
-  from the stale key (both are literally the key's own path segments,
-  so no separate lookup is needed) to run a normal `terraform destroy`
-  against it, or, if the underlying infrastructure is already gone,
-  delete the state object directly. This should be spelled out as
-  precisely as `ci/README.md`'s existing `--destroy-only` recovery
+  `--env` at the environment, with a compose file whose top-level
+  `name:` matches the project name recovered from the stale key (it's
+  literally the key's own path segment, so no separate lookup is
+  needed — see docs/deployment-identity-design.md for why project
+  identity comes from the compose file's `name:` rather than a
+  `--project` flag) to run a normal `terraform destroy` against it, or,
+  if the underlying infrastructure is already gone, delete the state
+  object directly. This should be spelled out as precisely as
+  `ci/README.md`'s existing `--destroy-only` recovery
   procedure for leaked CI runs, which is the closest existing analog.
 - **IAM footprint**: listing objects under a prefix (`s3:ListBucket`,
   storage-account list, GCS list) is a broader permission than a

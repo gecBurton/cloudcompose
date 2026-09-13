@@ -10,10 +10,11 @@ import (
 
 // TestComposeDown_Help confirms `cloud-compose compose down --help` documents the flags
 // this command actually reads (compose_file.go's global -f, plus
-// down's own -e/--env, -p/--project, and --auto-approve) -- see compose_down.go's
+// down's own -e/--env and --auto-approve) -- see compose_down.go's
 // own doc comment for why --auto-approve exists (non-interactive
-// callers) and is off by default, and appDir's own doc comment for why
-// -p/--project must match whatever `compile` used.
+// callers) and is off by default. The project name is no longer a
+// flag here -- it comes from the compose file's own top-level `name:`,
+// see appDir's own doc comment and docs/deployment-identity-design.md.
 func TestComposeDown_Help(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -24,7 +25,7 @@ func TestComposeDown_Help(t *testing.T) {
 		t.Fatalf("cloud-compose compose down --help failed: %v\n%s", err, out)
 	}
 
-	for _, want := range []string{"-f, --file", "-e, --env", "-p, --project", "--auto-approve"} {
+	for _, want := range []string{"-f, --file", "-e, --env", "--auto-approve"} {
 		if !contains(string(out), want) {
 			t.Errorf("expected %s in cloud-compose compose down --help output, got:\n%s", want, out)
 		}
@@ -140,7 +141,7 @@ func TestComposeDown_FailsWhenAppNeverCompiled(t *testing.T) {
 
 	envDir := writeAwsEnvironmentFixture(t, "demo")
 	composeFile := filepath.Join(scratchDir, "compose.yml")
-	if err := os.WriteFile(composeFile, []byte("services:\n  web:\n    image: nginx\n"), 0644); err != nil {
+	if err := os.WriteFile(composeFile, []byte("name: hello\nservices:\n  web:\n    image: nginx\n"), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
@@ -174,7 +175,7 @@ func TestComposeDown_RunsTerraformDestroyInAppDir(t *testing.T) {
 		t.Fatalf("write main.tf.json: %v", err)
 	}
 	composeFile := filepath.Join(filepath.Dir(envDir), "compose.yml")
-	if err := os.WriteFile(composeFile, []byte("services:\n  web:\n    image: nginx\n    ports:\n      - 80:80\n"), 0644); err != nil {
+	if err := os.WriteFile(composeFile, []byte("name: hello\nservices:\n  web:\n    image: nginx\n    ports:\n      - 80:80\n"), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
@@ -198,7 +199,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir, "-p", "hello")
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir)
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -237,7 +238,7 @@ func TestComposeDown_AutoApprovePassesFlagToTerraform(t *testing.T) {
 		t.Fatalf("write main.tf.json: %v", err)
 	}
 	composeFile := filepath.Join(filepath.Dir(envDir), "compose.yml")
-	if err := os.WriteFile(composeFile, []byte("services:\n  web:\n    image: nginx\n    ports:\n      - 80:80\n"), 0644); err != nil {
+	if err := os.WriteFile(composeFile, []byte("name: hello\nservices:\n  web:\n    image: nginx\n    ports:\n      - 80:80\n"), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
@@ -255,7 +256,7 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir, "-p", "hello", "--auto-approve")
+	cmd := exec.Command(bin, "compose", "down", "-f", composeFile, "-e", envDir, "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// No stdin attached at all -- see env_up_test.go's/compose_up_test.go's identical note on why
 	// this matters for --auto-approve specifically.

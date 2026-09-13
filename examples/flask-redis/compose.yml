@@ -1,4 +1,5 @@
 # Adapted from https://github.com/docker/awesome-compose/tree/master/flask-redis
+name: flask-redis
 services:
   redis:
     image: redislabs/redismod

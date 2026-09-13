@@ -1,3 +1,4 @@
+name: compute-tuning
 services:
   api:
     image: my-api:latest

@@ -35,7 +35,6 @@ var composeDownCmd = &cobra.Command{
 func runComposeDown(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
-	projectFlag, _ := cmd.Flags().GetString("project")
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
 
 	if envDir == "" {
@@ -49,23 +48,13 @@ func runComposeDown(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Must resolve to the same project name `compile` used to produce
-	// this app's output directory. If compile was given an explicit
-	// --project, that same value must be passed here too.
-	projectName, err := resolveProjectName(composeFile, projectFlag)
-	if err != nil {
-		printUnexpectedError(err)
-		os.Exit(1)
-	}
-
-	dir, err := appDir(composeFile, envDir, projectName)
+	dir, err := appDir(composeFile, envDir)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
 	}
 	if _, statErr := os.Stat(dir); statErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s does not exist -- has `cloud-compose compile` run for this app and environment yet? "+
-			"If compile was given an explicit --project, pass the same one here.\n", dir)
+		fmt.Fprintf(os.Stderr, "Error: %s does not exist -- has `cloud-compose compile` run for this app and environment yet?\n", dir)
 		os.Exit(1)
 	}
 
@@ -79,6 +68,5 @@ func init() {
 	composeCmd.AddCommand(composeDownCmd)
 
 	composeDownCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
-	composeDownCmd.Flags().StringP("project", "p", "", "Name of the project this app was compiled with (defaults to the compose file's own directory name, same as `compile`). Must match whatever `compile` used to produce the app's output directory.")
 	composeDownCmd.Flags().Bool("auto-approve", false, "Skip the terraform destroy confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

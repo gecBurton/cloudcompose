@@ -167,12 +167,14 @@ race as no backend at all.
 
 The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
 authored here — it's always derived mechanically from `name:` (for the
-environment) or `--project` (for each app compiled against it), the
+environment) or the compose file's own top-level `name:` (for each app
+compiled against it — see docs/deployment-identity-design.md), the
 same way `env-<name>`/`app-<env>-<project>` output directory names are
-never authored either. This is why environment `name:` and every app's
-`--project` are restricted to letters, digits, underscores, and
-hyphens: an unrestricted name could otherwise be crafted to collide
-with a different environment's or app's own backend key.
+never authored either. This is why environment `name:` and every
+compose file's own `name:` are restricted to letters, digits,
+underscores, and hyphens: an unrestricted name could otherwise be
+crafted to collide with a different environment's or app's own backend
+key.
 
 `backend:` assumes the bucket/storage account/lock table it points at
 already exists — `cloud-compose` never provisions one itself (the same
@@ -239,17 +241,25 @@ current directory, so output never depends on where a command happens
 to be run from. `compile`'s output directory name includes both the
 environment's name and the project's name specifically so the same
 compose.yml can be compiled against more than one environment (e.g. dev
-and prod), or under more than one `--project`, without one overwriting
-another's output — every actual Terraform resource `compile` produces
-is named `env.Name-app.Name-...` (see e.g. `aws/infer.go`'s `getName`
-closure), so a different `--project` really does produce a different,
-non-interchangeable deployment, not a re-compile of the same one; the
-output directory naming must not imply otherwise. `app-<env>-<project>`
-pairs with `init`'s own `env-<name>`, naming both halves of one
-deployment consistently. `cloud-compose down` (see its own doc comment)
-must be given the same `--project` value `compile` used to find the
-matching output directory to destroy — there is nowhere else `down` can
-recover it from.
+and prod) without one overwriting another's output — every actual
+Terraform resource `compile` produces is named `env.Name-app.Name-...`
+(see e.g. `aws/infer.go`'s `getName` closure). The project name is the
+compose file's own top-level `name:` field, not a flag — there is no
+`-p`/`--project` override and no directory-basename fallback; a compose
+file with no `name:` is rejected outright (see
+docs/deployment-identity-design.md for why: identity that isn't
+recorded in a file can't survive deleting generated artifacts and
+regenerating them elsewhere). Deploying the *same* codebase more than
+once within a single environment therefore needs a second compose file
+with its own `name:`, not a flag on a shared one — deliberately: two
+deployments sharing an identity, differentiated only by a CLI argument
+someone has to remember to keep passing, is exactly the failure mode
+this restriction exists to prevent. `app-<env>-<project>` pairs with
+`init`'s own `env-<name>`, naming both halves of one deployment
+consistently. `cloud-compose down` (see its own doc comment) resolves
+the same project name from the same compose file `compile` used — there
+is nowhere else `down` needs to recover it from, since it's read from
+the file itself rather than supplied separately each time.
 
 ## Known gap: GCP CDN inference
 

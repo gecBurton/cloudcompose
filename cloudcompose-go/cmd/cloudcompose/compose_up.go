@@ -39,8 +39,11 @@ var composeUpCmd = &cobra.Command{
 func runComposeUp(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envDir, _ := cmd.Flags().GetString("env")
-	projectName, _ := cmd.Flags().GetString("project")
-	subnetIndex, _ := cmd.Flags().GetInt("subnet-index")
+	subnetIndexSet := cmd.Flags().Changed("subnet-index")
+	subnetIndex := 0
+	if subnetIndexSet {
+		subnetIndex, _ = cmd.Flags().GetInt("subnet-index")
+	}
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
 
 	if envDir == "" {
@@ -54,7 +57,7 @@ func runComposeUp(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	appDir, err := compileApp(composeFile, envDir, "", projectName, subnetIndex)
+	appDir, err := compileApp(composeFile, envDir, "", subnetIndex, subnetIndexSet)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -72,7 +75,6 @@ func init() {
 	composeCmd.AddCommand(composeUpCmd)
 
 	composeUpCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init`/`env up` (terraform apply must have run there already)")
-	composeUpCmd.Flags().StringP("project", "p", "", "Name of the project (defaults to the directory name)")
-	composeUpCmd.Flags().Int("subnet-index", 0, "Azure only: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
+	composeUpCmd.Flags().Int("subnet-index", 0, "Azure only, required: this app's index into the environment's reserved apps_cidr range, unique per app sharing one environment (see docs/azure-app-isolation-design.md). Ignored on AWS/GCP.")
 	composeUpCmd.Flags().Bool("auto-approve", false, "Skip the terraform apply confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

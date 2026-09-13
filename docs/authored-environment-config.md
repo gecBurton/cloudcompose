@@ -12,24 +12,28 @@
 `cloud-compose init` reads `environment.yaml` as its **only** input — no
 decision flags. To change a decision, edit the file and re-run `init`.
 
-`cloud-compose compile -e <environment-directory>` reads the environment's
-facts by running `terraform output -json` in that directory (which must
-already have `terraform apply` run in it) and decoding its `environment`
-output. Multiple apps can `compile` against the same environment
-directory — each reads the same, already-resolved facts and bakes them
-in independently; there's no limit on how many apps share one
-environment this way, which is the main practical reason to use a shared
-environment at all (fewer NAT Gateways/ALBs paid for, rather than one
-per app).
+`cloud-compose compile -e <environment.yaml>` (equivalently, `--env`)
+resolves the environment directly from its authored config: it derives
+`<dir of environment.yaml>/env-<name>` (the same directory `env
+init`/`env up` themselves write to), reads that directory's Terraform
+facts by running `terraform output -json` there, and decodes its
+`environment` output. The environment must already be applied
+(`cloud-compose env init` + `terraform apply`, or `cloud-compose env
+up`) — `compile` never creates or modifies it; environment changes are
+a deliberate act, never a side effect of deploying an app. Multiple
+apps can `compile` against the same environment — each reads the
+same, already-resolved facts and bakes them in independently; there's
+no limit on how many apps share one environment this way, which is the
+main practical reason to use a shared environment at all (fewer NAT
+Gateways/ALBs paid for, rather than one per app).
 
-`cloud-compose compile --environment <environment.yaml>` is the portable
-alternative to `-e`: given the same authored `environment.yaml` (which
-must declare a real remote `backend:`, not `local` — see "Sharing one
-environment across multiple users" below), it resolves the environment
-directly,
-without needing to already know where a previous `env init`/`env up`
-wrote its output directory. See `docs/deployment-identity-design.md`
-for the design rationale — `-e` still works as before.
+`-e`/`--env` means the same thing on every command that takes it
+(`env init`, `env up`, `compile`, `compose up`, `compose down`,
+`compose ps`, `compose logs`, `env down`): the authored
+`environment.yaml`. There is no separate way to point at an
+already-applied output directory directly — the directory is always
+derived from the file, never authored or passed independently. See
+`docs/deployment-identity-design.md` for the design rationale.
 
 ## Evaluating without a live environment: `--demo`
 
@@ -40,8 +44,8 @@ reading a real one — for a prospective user to see what their compose
 file becomes on a given cloud without first running `cloud-compose init`
 or holding any cloud credentials at all.
 
-`-e`, `--environment`, and `-d` are mutually exclusive and exactly one is
-required: there is no default when none is given, the same "one way to
+`-e` and `-d` are mutually exclusive and exactly one is
+required: there is no default when neither is given, the same "one way to
 configure, not two" reasoning `init`'s own flag set follows. The output
 is genuinely valid Terraform JSON (every demo environment is checked
 against the real provider schema via `terraform validate`), but it is not
@@ -194,18 +198,14 @@ own output-location derivation already follows). If AWS's
 warns about that — unlocked S3 state has the same concurrent-apply
 race as `local`.
 
-`cloud-compose compile --environment <file>` (see
-`docs/deployment-identity-design.md`) works for `local:` too, not just
-a real remote backend: `local.path` is authored and resolved relative
-to `environment.yaml`'s own directory, so regenerating the
+`cloud-compose compile -e <environment.yaml>` works for `local:` and a
+real remote backend equally: `local.path` is authored and resolved
+relative to `environment.yaml`'s own directory, so regenerating the
 environment's output directory always reconnects to the same state
 file — just as deterministic to resolve as a remote backend's derived
-state key. The remaining caveat is the same one `--env <dir>` already
-has: the state file (or, for `--env`, the whole generated directory)
-has to still exist on whatever machine/checkout is running the
-command — `--environment` with `local:` doesn't need any more than
-that, and needs less than `--env <dir>` did, since only
-`environment.yaml` itself has to survive, not a generated directory.
+state key. The remaining caveat is the same one any local file has:
+the state file itself has to still exist on whatever machine/checkout
+is running the command.
 
 The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
 authored here — it's always derived mechanically from `name:` (for the
@@ -342,11 +342,12 @@ schema change once it's built, not because anything consumes it yet.
   "no lock table" warning `cloud-compose init` prints).
 - `cmd/cloudcompose/env_init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
-- `cmd/cloudcompose/environment_resolve.go` — `resolveEnvironmentByDefinition`,
-  reached via `compile`/`compose up`'s `--environment <environment.yaml>`
-  flag: resolves an environment directly from its authored config,
-  without the caller needing to already know its generated output
-  directory (requires `backend:`; see
+- `cmd/cloudcompose/environment_resolve.go` — `resolveEnvironmentByDefinition`/
+  `environmentDirFromDefinition`, reached via `-e`/`--env` on every
+  command that takes an environment: derives `env-<name>` from the
+  authored `environment.yaml` and reads it directly, without the
+  caller needing to know or pass its generated output directory
+  themselves. Never creates or modifies that directory (see
   `docs/deployment-identity-design.md`).
 - `cmd/cloudcompose/env_down.go` — `env down`'s dependent-app
   safety check and `--force` escape hatch.

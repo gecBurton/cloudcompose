@@ -141,25 +141,33 @@ identity; tracked here so they're known-deferred, not missed):
 Added `resolveEnvironmentByDefinition(environmentYamlPath)`
 (`cmd/cloudcompose/environment_resolve.go`), reachable via a new
 `--environment <file>` flag on `compile`/`compose up` (mutually
-exclusive with `--env <dir>`/`--demo`). It regenerates the
-environment's `main.tf.json` on demand by calling `initEnvironment`
-(the same function `env init`/`env up` already use), runs `terraform
-init` in that directory, then delegates to the existing
-`LoadEnvironment(dir)`. Works for both `local:` and remote backends
-(see item 4 below) — as of that item, `local:`'s own path is authored
-and just as deterministic to resolve as a remote backend's derived
-state key.
+exclusive with `--env <dir>`/`--demo`). It derives the environment's
+own output directory (`<dir of environmentYamlPath>/env-<name>`, the
+same path `env init`/`env up` themselves compute) and delegates to the
+existing `LoadEnvironment(dir)` -- it never creates, regenerates, or
+runs `terraform init` in that directory itself. Environment changes
+are a deliberate act (`env init`/`env up`), never a side effect of
+compiling/deploying an app: if the directory doesn't exist yet, this
+fails clearly, pointing at `env init`/`env up`, rather than applying
+the environment on the caller's behalf. Works for both `local:` and
+remote backends (see item 4 below) equally, since resolution here
+never depends on the backend at all -- only on the directory already
+existing with real Terraform outputs in it.
 
 No new types were needed — the shape already existed as
 `environment.yaml`'s `name` + `backend` fields plus
 `backend_naming.go`'s deterministic key derivation; this was purely a
 resolution function stitching existing pieces together. `--env <dir>`
-remains available as the lower-level/debug affordance it already was.
+remained available at the time as the lower-level/debug affordance it
+was originally introduced as, but was later removed entirely once item
+5 unified `--env`/`--environment` into a single flag -- see item 5 for
+why keeping it around as a "debug" mode stopped being useful.
 
-Not yet extended to `compose down`/`compose ps`/`compose logs`/`env
-down` — those still take `--env <dir>` only. `compile`/`compose up` are
-the primary "deploy an app" path this item exists to fix; extending
-the rest is a follow-up once there's concrete need.
+At the time this item landed, `compose down`/`compose ps`/`compose
+logs`/`env down` were not yet extended to accept `--environment` --
+`compile`/`compose up` were the primary "deploy an app" path this item
+existed to fix. Item 5 later closed that gap and removed `--env <dir>`
+everywhere.
 
 ### 3. Fix Azure subnet-index non-determinism (done)
 
@@ -235,6 +243,57 @@ Every committed `environment.yaml` (`examples/hello/environment*.yaml`,
 at all. `docs/authored-environment-config.md`'s "Sharing one
 environment across multiple users" section was rewritten around
 `backend:` being required.
+
+### 5. Unify `--env`/`--environment` into a single flag (done)
+
+`--env <dir>` and `--environment <file>` used to coexist on
+`compile`/`compose up`, meaning different things: a directory found by
+the operator, versus an authored file resolved automatically. The rest
+of `compose down`/`compose ps`/`compose logs`/`env down` only had
+`--env <dir>`. This was the same "one field, one meaning" fix already
+applied to project identity (item 1) and backend config (item 4), not
+yet applied to environment identity on the command line.
+
+`env init`/`env up` already used `--env`/`-e` to mean the authored
+file -- the inconsistency was specifically that `compile`/`compose
+up`/`compose down`/`compose ps`/`compose logs`/`env down` used `--env`
+to mean a directory instead. Fix, in one change (all three steps
+landed together, not staged separately, since each step alone would
+have left the flag meaning something different on different commands
+for longer than necessary):
+
+1. `--environment <file>` extended to `compose down`/`compose
+   ps`/`compose logs`/`env down`, so every command that takes an
+   environment accepts it the same way `compile`/`compose up` already
+   did.
+2. `--env <dir>` removed entirely from all six commands. There was no
+   remaining case for it: the directory it named is 100% mechanically
+   derived from `environment.yaml`'s own `name:` (`<dir of
+   environment.yaml>/env-<name>`), so requiring the operator to
+   separately remember and retype it was exactly the kind of
+   identity-the-tool-already-knows duplication this whole document
+   argues against elsewhere. (Considered and rejected: keeping `--env
+   <dir>` as a "guaranteed no side effects" mode -- moot once item 2's
+   own no-write behavior already meant resolving from
+   `environment.yaml` never modifies the environment's directory
+   either.)
+3. `--environment` renamed to `--env`/`-e` on all six commands, so it
+   means the same thing everywhere, including on `env init`/`env up`
+   where it already did.
+
+`resolveEnvironmentByDefinition` gained a sibling,
+`environmentDirFromDefinition`, returning both the loaded config and
+the resolved `env-<name>` directory -- needed by `env down` (which
+still has to `terraform destroy` a directory, not just read outputs
+from one) and by `appDir` (which needs the environment's own name to
+compute `app-<env>-<project>`, without a second, separate resolution
+path). Every fixture-writing test helper that used to hand a bare
+Terraform directory straight to `-e` was restructured to write a
+minimal `environment.yaml` alongside an already-applied `env-<name>`
+next to it, and return the `environment.yaml` path instead.
+
+This was a breaking CLI change, consistent with every other flag
+removed in this document (`-p`/`--project`, `--subnet-index`).
 
 ## Explicitly rejected alternatives
 

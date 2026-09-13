@@ -52,7 +52,7 @@ func runEnvInit(cmd *cobra.Command, args []string) {
 	fmt.Println("  3. terraform apply")
 	fmt.Println()
 	fmt.Println("Deploy an app:")
-	fmt.Printf("  cloud-compose compile --env %s\n", output)
+	fmt.Printf("  cloud-compose compile --env %s\n", configFile)
 }
 
 // initEnvironment loads configFile, generates the environment's
@@ -233,5 +233,5 @@ func lowerASCII(s string) string {
 func init() {
 	envCmd.AddCommand(envInitCmd)
 
-	envInitCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). Unlike --env on compose compile/ps/logs/down (an already-applied environment directory), this is the input file init itself applies.")
+	envInitCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). init itself applies (writes main.tf.json for) this file -- everywhere else, --env means the same file, but already applied.")
 }

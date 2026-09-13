@@ -23,7 +23,9 @@ var envDownCmd = &cobra.Command{
 	Use:   "down",
 	Short: "Destroy a shared environment's infrastructure (refuses if apps still depend on it)",
 	Long: "Runs `terraform destroy` in the environment's own Terraform directory " +
-		"(env-<name>, written by a previous `cloud-compose env init`/`env up`).\n\n" +
+		"(env-<name>, written by a previous `cloud-compose env init`/`env up`), " +
+		"derived from --env's authored environment.yaml -- the same meaning " +
+		"--env has everywhere else. The environment must already be applied.\n\n" +
 		"Unlike `cloud-compose compose down` (which only ever destroys a single " +
 		"app), this destroys the shared environment itself -- so it first checks " +
 		"whether any app still depends on it (every app compiled against a " +
@@ -45,19 +47,20 @@ var envDownCmd = &cobra.Command{
 }
 
 func runEnvDown(cmd *cobra.Command, args []string) {
-	envDir, _ := cmd.Flags().GetString("env")
+	envFile, _ := cmd.Flags().GetString("env")
 	force, _ := cmd.Flags().GetBool("force")
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
 
-	if envDir == "" {
+	if envFile == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
 		os.Exit(1)
 	}
-	if _, statErr := os.Stat(envDir); statErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s does not exist -- has `cloud-compose env init` run for this environment yet?\n", envDir)
+
+	_, envDir, err := environmentDirFromDefinition(envFile)
+	if err != nil {
+		printUnexpectedError(err)
 		os.Exit(1)
 	}
-
 	env, err := compiler.LoadEnvironment(envDir)
 	if err != nil {
 		printUnexpectedError(err)
@@ -140,7 +143,7 @@ func checkNoDependentApps(env any) error {
 func init() {
 	envCmd.AddCommand(envDownCmd)
 
-	envDownCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	envDownCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment to tear down (must already be applied).")
 	envDownCmd.Flags().Bool("force", false, "Skip the dependent-app check entirely. Off by default -- normally the check itself, or a human confirming by other means, should establish no apps depend on this environment first.")
 	envDownCmd.Flags().Bool("auto-approve", false, "Skip the terraform destroy confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")
 }

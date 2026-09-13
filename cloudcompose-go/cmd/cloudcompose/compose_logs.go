@@ -36,12 +36,12 @@ type logEventJSON struct {
 
 func runComposeLogs(cmd *cobra.Command, args []string) {
 	composeFileFlag, _ := cmd.Flags().GetString("file")
-	envDir, _ := cmd.Flags().GetString("env")
+	envFile, _ := cmd.Flags().GetString("env")
 	since, _ := cmd.Flags().GetDuration("since")
 	tail, _ := cmd.Flags().GetInt("tail")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 
-	if envDir == "" {
+	if envFile == "" {
 		fmt.Fprintln(os.Stderr, "Error: --env is required")
 		os.Exit(1)
 	}
@@ -62,7 +62,7 @@ func runComposeLogs(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	env, err := compiler.LoadEnvironment(envDir)
+	env, err := resolveEnvironmentByDefinition(envFile)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -205,7 +205,7 @@ func azureLogEventsJSON(events []azure.LogEvent) []logEventJSON {
 func init() {
 	composeCmd.AddCommand(composeLogsCmd)
 
-	composeLogsCmd.Flags().StringP("env", "e", "", "Path to the environment directory created by `cloud-compose env init` (terraform apply must have run there already)")
+	composeLogsCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment this app was compiled against (must already be applied).")
 	composeLogsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")
 	composeLogsCmd.Flags().Int("tail", 200, "Number of log lines to fetch per service")
 	composeLogsCmd.Flags().Bool("json", false, "Output as a JSON array instead of human-readable lines")

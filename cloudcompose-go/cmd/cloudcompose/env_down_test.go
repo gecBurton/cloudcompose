@@ -65,19 +65,22 @@ func TestEnvDown_RequiresEnv(t *testing.T) {
 
 // TestEnvDown_FailsWhenEnvDirDoesNotExist mirrors
 // TestComposeDown_FailsWhenAppNeverCompiled's own "clear error, never invokes
-// terraform" rationale, for a --env directory that doesn't exist at all
-// (as opposed to down's app directory).
+// terraform" rationale, for a --env environment.yaml that was never
+// applied (env-<name> doesn't exist).
 func TestEnvDown_FailsWhenEnvDirDoesNotExist(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
+	scratchDir := t.TempDir()
 
-	cmd := exec.Command(bin, "env", "down", "-e", filepath.Join(t.TempDir(), "does-not-exist"))
+	envFile := writeMinimalEnvironmentYAML(t, scratchDir, "demo")
+
+	cmd := exec.Command(bin, "env", "down", "-e", envFile)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected cloud-compose env down to fail for a nonexistent --env, got:\n%s", out)
+		t.Fatalf("expected cloud-compose env down to fail for an environment that was never applied, got:\n%s", out)
 	}
-	if !contains(string(out), "does not exist") {
-		t.Errorf("expected a 'does not exist' message, got:\n%s", out)
+	if !contains(string(out), "has not been applied yet") {
+		t.Errorf("expected a 'has not been applied yet' message, got:\n%s", out)
 	}
 }
 
@@ -86,10 +89,18 @@ func TestEnvDown_FailsWhenEnvDirDoesNotExist(t *testing.T) {
 // see aws.GenerateAwsEnvironment's own doc comment for the shape every
 // environment_generator.go writes there, and
 // docs/multi-user-state.md for why LoadEnvironment decodes it into
-// env.Backend.
-func writeAwsEnvironmentFixtureWithBackend(t *testing.T, name string) string {
+// env.Backend. Returns the environment.yaml path (--env's form) and
+// the env-<name> directory real terraform applied it in (needed by
+// tests that assert on where the fake terraform, put on PATH by the
+// test itself, is later invoked).
+func writeAwsEnvironmentFixtureWithBackend(t *testing.T, name string) (envFile, envDir string) {
 	t.Helper()
-	dir := t.TempDir()
+	scratchDir := t.TempDir()
+	envFile = writeMinimalEnvironmentYAML(t, scratchDir, name)
+	envDir = filepath.Join(scratchDir, "env-"+name)
+	if err := os.MkdirAll(envDir, 0755); err != nil {
+		t.Fatalf("mkdir env-%s: %v", name, err)
+	}
 
 	mainTF := fmt.Sprintf(`output "environment" {
   value = {
@@ -112,23 +123,23 @@ output "backend" {
   }
 }
 `, name)
-	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(mainTF), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(envDir, "main.tf"), []byte(mainTF), 0644); err != nil {
 		t.Fatalf("write main.tf: %v", err)
 	}
 
 	initCmd := exec.Command("terraform", "init", "-input=false")
-	initCmd.Dir = dir
+	initCmd.Dir = envDir
 	if out, err := initCmd.CombinedOutput(); err != nil {
 		t.Fatalf("terraform init: %v\n%s", err, out)
 	}
 
 	applyCmd := exec.Command("terraform", "apply", "-auto-approve")
-	applyCmd.Dir = dir
+	applyCmd.Dir = envDir
 	if out, err := applyCmd.CombinedOutput(); err != nil {
 		t.Fatalf("terraform apply: %v\n%s", err, out)
 	}
 
-	return dir
+	return envFile, envDir
 }
 
 // fakeTerraformThatReturnsEnvironment writes a fake `terraform`
@@ -165,11 +176,11 @@ func TestEnvDown_NoBackendConfiguredWarnsAndProceeds(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeAwsEnvironmentFixture(t, "demo")
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}}`)
 
-	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--auto-approve")
+	cmd := exec.Command(bin, "env", "down", "-e", envFile, "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -183,6 +194,7 @@ func TestEnvDown_NoBackendConfiguredWarnsAndProceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected fake terraform to have been invoked, read log: %v", err)
 	}
+	envDir := filepath.Join(filepath.Dir(envFile), "env-demo")
 	if !contains(string(log), envDir) || !contains(string(log), "destroy") {
 		t.Errorf("expected a `terraform destroy` invocation in %s, got:\n%s", envDir, log)
 	}
@@ -198,7 +210,7 @@ func TestEnvDown_BackendConfiguredButUnreachableWarnsAndProceeds(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeAwsEnvironmentFixtureWithBackend(t, "demo")
+	envFile, _ := writeAwsEnvironmentFixtureWithBackend(t, "demo")
 
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}, "backend": {"value": {"provider": "aws", "aws": {"bucket": "my-org-tfstate", "region": "us-east-1"}}}}`)
 
@@ -207,7 +219,7 @@ func TestEnvDown_BackendConfiguredButUnreachableWarnsAndProceeds(t *testing.T) {
 	// "check itself can't run at all" path rather than a real,
 	// permission-denied list call (which would need a real AWS
 	// account).
-	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--auto-approve")
+	cmd := exec.Command(bin, "env", "down", "-e", envFile, "--auto-approve")
 	cmd.Env = append(cleanAWSEnv(os.Environ()), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+t.TempDir())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -235,11 +247,11 @@ func TestEnvDown_ForceSkipsCheckEntirely(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeAwsEnvironmentFixtureWithBackend(t, "demo")
+	envFile, _ := writeAwsEnvironmentFixtureWithBackend(t, "demo")
 
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}, "backend": {"value": {"provider": "aws", "aws": {"bucket": "my-org-tfstate", "region": "us-east-1"}}}}`)
 
-	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--force", "--auto-approve")
+	cmd := exec.Command(bin, "env", "down", "-e", envFile, "--force", "--auto-approve")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -265,10 +277,10 @@ func TestEnvDown_NoAutoApproveDoesNotPassFlag(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeAwsEnvironmentFixture(t, "demo")
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 	fakeTerraformDir, logFile := fakeTerraformThatReturnsEnvironment(t, `{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}}`)
 
-	cmd := exec.Command(bin, "env", "down", "-e", envDir, "--force")
+	cmd := exec.Command(bin, "env", "down", "-e", envFile, "--force")
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// No stdin attached -- terraform destroy would block on a prompt
 	// forever without --auto-approve; the fake terraform script never

@@ -211,10 +211,10 @@ func TestCopyDockerBuildContexts_NoDockerImagesIsANoOp(t *testing.T) {
 	}
 }
 
-// TestMain_RequiresEnvOrDemo confirms --env, --environment, and --demo
-// really are the only three ways to supply an environment: none given
-// is an error, not a silent default (see runMain's own "one way to
-// configure, not two" comment, mirroring init.go's).
+// TestMain_RequiresEnvOrDemo confirms --env and --demo really are the
+// only two ways to supply an environment: neither given is an error,
+// not a silent default (see runMain's own "one way to configure, not
+// two" comment, mirroring init.go's).
 func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -222,10 +222,10 @@ func TestMain_RequiresEnvOrDemo(t *testing.T) {
 	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected a non-zero exit when neither --env nor --environment nor --demo is given, got success:\n%s", out)
+		t.Fatalf("expected a non-zero exit when neither --env nor --demo is given, got success:\n%s", out)
 	}
-	if !contains(string(out), "--env, --environment, or --demo is required") {
-		t.Errorf("expected the error to name all three flags, got:\n%s", out)
+	if !contains(string(out), "--env or --demo is required") {
+		t.Errorf("expected the error to name both flags, got:\n%s", out)
 	}
 }
 
@@ -242,25 +242,6 @@ func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit when both --env and --demo are given, got success:\n%s", out)
-	}
-	if !contains(string(out), "mutually exclusive") {
-		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)
-	}
-}
-
-// TestMain_RejectsBothEnvAndEnvironment confirms --env and --environment
-// are also mutually exclusive.
-func TestMain_RejectsBothEnvAndEnvironment(t *testing.T) {
-	t.Parallel()
-	bin := buildCloudComposeBinary(t)
-
-	cmd := exec.Command(bin, "compile",
-		"-f", "../../../examples/hello/compose.yml",
-		"-e", "../../../examples/hello",
-		"--environment", "../../../examples/hello/environment.yaml")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected a non-zero exit when both --env and --environment are given, got success:\n%s", out)
 	}
 	if !contains(string(out), "mutually exclusive") {
 		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)

@@ -246,13 +246,13 @@ func TestPs_RejectsGcpBeforeParsingCompose(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
-	envDir := writeGcpEnvironmentFixture(t, "demo")
+	envFile := writeGcpEnvironmentFixture(t, "demo")
 	invalidComposeFile := filepath.Join(t.TempDir(), "compose.yml")
 	if err := os.WriteFile(invalidComposeFile, []byte("not: [valid, yaml: at all"), 0644); err != nil {
 		t.Fatalf("write invalid compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compose", "ps", "-f", invalidComposeFile, "-e", envDir)
+	cmd := exec.Command(bin, "compose", "ps", "-f", invalidComposeFile, "-e", envFile)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected cloud-compose compose ps to fail for a gcp environment, got:\n%s", out)

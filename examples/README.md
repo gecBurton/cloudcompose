@@ -33,16 +33,19 @@ runs the environment's `init` -> `apply` flow described below in one
 command, and `cloud-compose compose up` does the same for the app's own
 `compile` -> `apply` flow, each stopping to show you its own `terraform
 apply`'s plan and prompt for confirmation exactly as it would if you ran
-the steps by hand (no `-auto-approve` anywhere). `--env` means the
-authored environment.yaml file on `env up`/`env init`, and the
-already-applied environment *directory* on `compose up`/`compile`/`ps`/
-`logs`/`compose down`/`env down` (see the step-by-step flow's own note on
-this below).
+the steps by hand (no `-auto-approve` anywhere). `--env`/`-e` always
+means the authored environment.yaml file, on every command -- `env up`,
+`env init`, `compose up`, `compile`, `ps`, `logs`, `compose down`,
+`env down` alike. It's resolved from the file, not passed as a
+directory: `compose up`/`compile`/etc. derive `env-<name>` from the
+file themselves and read it directly, but never create or apply it --
+if the environment hasn't been applied yet, they fail clearly instead
+(see docs/deployment-identity-design.md).
 
 ```bash
 cd cloudcompose-go
 go run ./cmd/cloudcompose env up --env ../examples/hello/environment.yaml
-go run ./cmd/cloudcompose compose up -f ../examples/hello/compose.yml --env ../examples/hello/env-demo
+go run ./cmd/cloudcompose compose up -f ../examples/hello/compose.yml --env ../examples/hello/environment.yaml
 ```
 
 If you're deploying more than one app into the same environment, or want
@@ -90,19 +93,19 @@ cd -
 # slice of the environment's reserved address space) if more than one
 # app shares this environment.
 #
-# -e must be the applied environment directory -- the one `env init`
-# wrote main.tf.json into and you just ran `terraform apply` in above,
-# not environment.yaml itself (that's what `env init`'s/`env up`'s own
-# --env means instead -- see this file's "fast path" section above).
+# --env is always the authored environment.yaml, the same file `env
+# init` was given above -- compile derives env-<name> from it and
+# reads the facts terraform apply just wrote there; it never creates
+# or modifies that directory itself, so the environment must already
+# be applied (as it was above) before this can succeed.
 # compile's own output lands at
 # <dir of -f>/app-<environment name>-<project name> (here, app-demo-hello/,
 # "hello" coming from compose.yml's own top-level `name:` field, not a
 # flag or a directory name -- see docs/deployment-identity-design.md)
 # -- named after both the environment and the project so the same
 # compose.yml can be compiled again against a different
-# environment.yaml/env-<name> (e.g. dev vs prod) without overwriting
-# this output.
-go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml -e ../examples/hello/env-demo
+# environment.yaml (e.g. dev vs prod) without overwriting this output.
+go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml -e ../examples/hello/environment.yaml
 ```
 
 `examples/hello/environment.yaml` (and its `environment.azure.yaml`/
@@ -117,8 +120,9 @@ the file that produced a given environment is always visible next to
 it — not something to hand-edit) — and neither is the same thing as an
 environment's *facts* (its actual VPC ID, ALB ARN, etc. once Terraform
 creates them), which are never written to a file at all: `cloud-compose
-compile -e <dir>` reads those live via `terraform output -json` against
-the applied environment directory. See
+compile -e <environment.yaml>` reads those live via `terraform output
+-json` against the applied environment directory it derives from that
+file. See
 `docs/authored-environment-config.md` for the full design and the
 reasoning behind that split.
 

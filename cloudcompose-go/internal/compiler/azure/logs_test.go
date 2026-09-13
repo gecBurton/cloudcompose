@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,6 +16,20 @@ import (
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
+
+// writeComposeFixture writes content to a scratch compose.yml and
+// returns its path, for tests that need a compose shape (e.g. mariadb,
+// with no committed example using it -- see examples/README.md) not
+// present in the curated cross-cloud example set under examples/.
+func writeComposeFixture(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+	return path
+}
 
 // fakeLogsClient is a minimal in-memory stand-in for
 // *azquery.LogsClient, keyed by resource ID, mirroring
@@ -144,11 +160,11 @@ func TestFetchLogs_NotYetDeployedIsNotAnError(t *testing.T) {
 // services' Container Apps, not every container service in the app.
 func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/production-stack/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	app, err := shared.Normalize(composeApp, "production-stack")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -156,13 +172,13 @@ func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 
 	var containerService string
 	for i := range app.Services {
-		if app.Services[i].Capability == models.CapabilityContainer {
+		if app.Services[i].Capability == models.CapabilityContainer && app.Services[i].Schedule == nil {
 			containerService = app.Services[i].Name
 			break
 		}
 	}
 	if containerService == "" {
-		t.Fatal("expected at least one container-capability service in nginx-flask-mysql")
+		t.Fatal("expected at least one non-scheduled container-capability service in production-stack")
 	}
 
 	client := &fakeLogsClient{tables: map[string][]*azquery.Table{}}
@@ -249,14 +265,23 @@ func TestFetchLogs_RealDoctorExample_PostgresLogs(t *testing.T) {
 // services are silently skipped, not queried and not an error --
 // MySQL Flexible Server logging is deferred to a follow-up (see
 // FetchLogs's own doc comment for why: it needs its own server
-// parameters turned on before there's anything to export).
+// parameters turned on before there's anything to export). No
+// committed example uses mariadb/mysql (see examples/README.md), so
+// this uses an inline fixture rather than a real one under examples/.
 func TestFetchLogs_MySQLDatabaseIsSkipped(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	composePath := writeComposeFixture(t, `name: mariadb-logs
+services:
+  db:
+    image: mariadb:10.6.4-focal
+    environment:
+      - MYSQL_DATABASE=example
+`)
+	composeApp, err := shared.ParseCompose(composePath)
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	app, err := shared.Normalize(composeApp, "mariadb-logs")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -270,7 +295,7 @@ func TestFetchLogs_MySQLDatabaseIsSkipped(t *testing.T) {
 		}
 	}
 	if dbService == "" {
-		t.Fatal("expected at least one database-capability service in nginx-flask-mysql")
+		t.Fatal("expected at least one database-capability service in the fixture")
 	}
 
 	client := &fakeLogsClient{tables: map[string][]*azquery.Table{}}

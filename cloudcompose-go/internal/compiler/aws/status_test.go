@@ -166,11 +166,11 @@ func TestFetchStatus_NotYetDeployed(t *testing.T) {
 // CapabilityContainer filter), so ps has nothing to query for them.
 func TestFetchStatus_SkipsScheduledAndNonContainerServices(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/production-stack/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	app, err := shared.Normalize(composeApp, "production-stack")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}

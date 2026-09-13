@@ -19,49 +19,6 @@ func gcpTestEnv() models.GcpEnvironment {
 	return env
 }
 
-// TestInferGcp_RealExamplesProduceValidJSON runs the real
-// parse->normalize->infer->generate pipeline against several actual
-// compose files and checks the output parses as JSON with a resource
-// block -- a lighter bar than AWS/Azure's byte-identical golden
-// comparisons, deliberately: GCP has no golden examples and essentially
-// no dedicated test suite to check against in the first place, so this
-// is a smoke test, not a coverage claim.
-func TestInferGcp_RealExamplesProduceValidJSON(t *testing.T) {
-	examples := []string{"hello", "doctor", "flask-redis", "minio-s3", "production-stack", "nginx-flask-mysql"}
-	for _, name := range examples {
-		name := name
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			composeApp, err := shared.ParseCompose("../../../../examples/" + name + "/compose.yml")
-			if err != nil {
-				t.Fatalf("ParseCompose failed: %v", err)
-			}
-			app, err := shared.Normalize(composeApp, name)
-			if err != nil {
-				t.Fatalf("Normalize failed: %v", err)
-			}
-			env := gcpTestEnv()
-
-			resources := InferGcp(app, &env)
-			out, err := GenerateGcp(resources, &env, "app")
-			if err != nil {
-				t.Fatalf("GenerateGcp failed: %v", err)
-			}
-
-			var parsed map[string]any
-			if err := json.Unmarshal([]byte(out), &parsed); err != nil {
-				t.Fatalf("output is not valid JSON: %v\n%s", err, out)
-			}
-			if _, ok := parsed["resource"]; !ok {
-				t.Errorf("expected a 'resource' key, got %v", parsed)
-			}
-			if _, ok := parsed["provider"].(map[string]any)["google"]; !ok {
-				t.Errorf("expected provider.google, got %v", parsed["provider"])
-			}
-		})
-	}
-}
-
 // TestInferGcp_DatabaseCreatesSharedCloudSqlInstance mirrors the one real
 // structural decision worth pinning directly: unlike AWS/Azure (one
 // managed server per service or per engine), GCP's inference creates

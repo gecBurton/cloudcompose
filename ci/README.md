@@ -53,7 +53,7 @@ the only thing standing between two runs and a corrupted state file.
 ## Run
 
 Repo → **Actions → AWS Acceptance → Run workflow** → choose an example
-(`hello`, `minio-s3`, `build-webapp`, or `doctor`). The job assumes the role,
+(`hello`, `doctor`, `web-api`, or `production-stack`). The job assumes the role,
 deploys the example, asserts it, and tears everything down — pass or fail.
 
 ## If a run cannot assume the role

@@ -1,0 +1,110 @@
+{
+  "provider": {
+    "docker": {},
+    "google": {
+      "project": "my-project-123",
+      "region": "us-central1"
+    },
+    "random": {}
+  },
+  "resource": {
+    "google_cloud_run_service": {
+      "api": {
+        "autogenerate_revision_name": true,
+        "ingress": "internal",
+        "location": "us-central1",
+        "name": "prod-web-api-api",
+        "project_id": "my-project-123",
+        "template": {
+          "metadata": {
+            "annotations": {
+              "autoscaling.knative.dev/maxScale": "1",
+              "autoscaling.knative.dev/minScale": "1",
+              "run.googleapis.com/cpu-throttling": "true",
+              "run.googleapis.com/execution-environment": "gen2"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "image": "nginxdemos/hello:plain-text",
+                "resources": {
+                  "limits": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "service_account_name": "my-project-123-compute@developer.gserviceaccount.com"
+          }
+        },
+        "traffic": [
+          {
+            "latest_revision": true,
+            "percent": 100
+          }
+        ]
+      },
+      "web": {
+        "autogenerate_revision_name": true,
+        "ingress": "all",
+        "location": "us-central1",
+        "name": "prod-web-api-web",
+        "project_id": "my-project-123",
+        "template": {
+          "metadata": {
+            "annotations": {
+              "autoscaling.knative.dev/maxScale": "1",
+              "autoscaling.knative.dev/minScale": "1",
+              "run.googleapis.com/cpu-throttling": "true",
+              "run.googleapis.com/execution-environment": "gen2"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "env": [
+                  {
+                    "name": "API_URL",
+                    "value": "http://api"
+                  }
+                ],
+                "image": "nginxdemos/hello:plain-text",
+                "resources": {
+                  "limits": {
+                    "cpu": "250m",
+                    "memory": "512Mi"
+                  }
+                }
+              }
+            ],
+            "service_account_name": "my-project-123-compute@developer.gserviceaccount.com"
+          }
+        },
+        "traffic": [
+          {
+            "latest_revision": true,
+            "percent": 100
+          }
+        ]
+      }
+    }
+  },
+  "terraform": {
+    "required_providers": {
+      "docker": {
+        "source": "kreuzwerker/docker",
+        "version": "~> 3.0"
+      },
+      "google": {
+        "source": "hashicorp/google",
+        "version": "~> 5.0"
+      },
+      "random": {
+        "source": "hashicorp/random",
+        "version": "~> 3.6"
+      }
+    }
+  }
+}

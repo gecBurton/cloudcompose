@@ -1,7 +1,7 @@
 # Shared environment.yaml for the AWS acceptance workflow
 # (.github/workflows/acceptance.yml). One environment is created per CI
 # run and shared by whichever example that run deploys (hello,
-# minio-s3, build-webapp, doctor, web-api, production-stack) -- these
+# doctor, web-api, production-stack) -- these
 # are all separate apps sharing one platform environment, which is the
 # whole point of the init/main split (see
 # docs/authored-environment-config.md). Not tied to any single example

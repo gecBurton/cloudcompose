@@ -2,6 +2,8 @@ package aws
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -10,6 +12,20 @@ import (
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
+
+// writeComposeFixture writes content to a scratch compose.yml and
+// returns its path, for tests that need a compose shape (e.g. mariadb,
+// with no committed example using it -- see examples/README.md) not
+// present in the curated cross-cloud example set under examples/.
+func writeComposeFixture(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "compose.yml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+	return path
+}
 
 // fakeCloudWatchLogsClient is a minimal in-memory stand-in for
 // *cloudwatchlogs.Client, keyed by log group name, mirroring
@@ -112,11 +128,11 @@ func TestFetchLogs_NotYetDeployedIsNotAnError(t *testing.T) {
 // services' log groups, not every container service in the app.
 func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/production-stack/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	app, err := shared.Normalize(composeApp, "production-stack")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -131,7 +147,7 @@ func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 		}
 	}
 	if containerService == "" {
-		t.Fatal("expected at least one container-capability service in nginx-flask-mysql")
+		t.Fatal("expected at least one container-capability service in production-stack")
 	}
 
 	client := &fakeCloudWatchLogsClient{events: map[string][]cwltypes.FilteredLogEvent{}}
@@ -145,18 +161,27 @@ func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 	}
 }
 
-// TestFetchLogs_RealNginxFlaskMysqlExample_DatabaseLogs confirms
-// FetchLogs also covers CapabilityDatabase services (mariadb's "db"
-// service in this real example), querying every RDS log group its
-// engine exports and merging them under one Service name, mirroring
-// the container-log test above's own real-boundary discipline.
-func TestFetchLogs_RealNginxFlaskMysqlExample_DatabaseLogs(t *testing.T) {
+// TestFetchLogs_MariadbDatabaseLogs confirms FetchLogs also covers
+// CapabilityDatabase services (mariadb's own RDSLogExports list),
+// querying every RDS log group its engine exports and merging them
+// under one Service name, mirroring the container-log test above's own
+// real-boundary discipline. No committed example uses mariadb/mysql
+// (see examples/README.md), so this uses an inline fixture rather than
+// a real one under examples/.
+func TestFetchLogs_MariadbDatabaseLogs(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	composePath := writeComposeFixture(t, `name: mariadb-logs
+services:
+  db:
+    image: mariadb:10.6.4-focal
+    environment:
+      - MYSQL_DATABASE=example
+`)
+	composeApp, err := shared.ParseCompose(composePath)
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	app, err := shared.Normalize(composeApp, "mariadb-logs")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -164,15 +189,15 @@ func TestFetchLogs_RealNginxFlaskMysqlExample_DatabaseLogs(t *testing.T) {
 
 	// mariadb's own RDSLogExports list is
 	// ["audit", "error", "general", "slowquery"] -- "/aws/rds/instance/
-	// prod-nginx-flask-mysql-db/<type>" is exactly what
-	// managed.go's inferDatabase + this package's own naming would
-	// produce for the "db" service in this env/app combination.
+	// prod-mariadb-logs-db/<type>" is exactly what managed.go's
+	// inferDatabase + this package's own naming would produce for the
+	// "db" service in this env/app combination.
 	client := &fakeCloudWatchLogsClient{
 		events: map[string][]cwltypes.FilteredLogEvent{
-			"/aws/rds/instance/prod-nginx-flask-mysql-db/error": {
+			"/aws/rds/instance/prod-mariadb-logs-db/error": {
 				{Timestamp: aws.Int64(2000), Message: aws.String("connection refused")},
 			},
-			"/aws/rds/instance/prod-nginx-flask-mysql-db/slowquery": {
+			"/aws/rds/instance/prod-mariadb-logs-db/slowquery": {
 				{Timestamp: aws.Int64(1000), Message: aws.String("slow query detected")},
 			},
 		},

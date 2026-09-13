@@ -174,7 +174,7 @@ func TestInferCdnAzure_CreatesFirewallAndSecurityPolicy(t *testing.T) {
 func TestInferCdnAzure_FirewallPolicyNameIsAlphanumericOnly(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{
-		Name: "nginx-flask-mysql",
+		Name: "app-with-a-long-hyphenated-name",
 		Services: []models.Service{
 			{Name: "web", Capability: models.CapabilityContainer, CDNEnabled: true, Ingress: &models.Ingress{Path: "/"}},
 		},

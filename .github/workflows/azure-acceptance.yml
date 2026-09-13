@@ -6,12 +6,7 @@ name: Azure Acceptance
 on:
   workflow_dispatch:
     inputs:
-      # Only examples that can actually deploy belong here. The flask family
-      # was adapted from awesome-compose without its `build:` sections, so it
-      # names images like "flask-app" that exist on a developer's machine and
-      # in no registry — Azure resolves those against Docker Hub and refuses
-      # them. Those examples still earn their keep as compile-only golden
-      # tests; they are not smoke-testable anywhere.
+      # Only examples that can actually deploy belong here.
       example:
         description: Example to smoke test
         type: choice
@@ -19,9 +14,8 @@ on:
         options:
           - hello
           - web-api
-          - minio-s3
+          - doctor
           - production-stack
-          - build-webapp
       region:
         description: Azure region to deploy into
         type: choice
@@ -128,21 +122,19 @@ jobs:
             web-api)
               export COMPOSE=examples/web-api/compose.yml PROJECT=webapi \
                      EXPECT="Server name" ;;
-            minio-s3)
-              export COMPOSE=examples/minio-s3/compose.yml PROJECT=minios3 \
-                     EXPECT="Server name" ;;
+            doctor)
+              # First real-Azure exercise of image build+push (docker_image /
+              # docker_registry_image -> ACR) plus a compose secret. If this
+              # fails at the pull step, the registry identity likely also
+              # needs an explicit AcrPull role assignment -- see
+              # docs/azure-todo.md.
+              export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
+                     HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
             production-stack)
               # Postgres and the CDN endpoint are both slow to provision, so
               # this is the longest run by some margin.
               export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
                      EXPECT="Welcome to nginx" POLL_TIMEOUT=480 ;;
-            build-webapp)
-              # First real-Azure exercise of image build+push (docker_image /
-              # docker_registry_image -> ACR). If this fails at the pull
-              # step, the registry identity likely also needs an explicit
-              # AcrPull role assignment — see docs/azure-todo.md.
-              export COMPOSE=examples/build-webapp/compose.yml PROJECT=buildwebapp \
-                     EXPECT="hello from a cloudcompose-built image" ;;
             *)
               echo "::error::no smoke-test configuration for '${{ inputs.example }}'"
               exit 1 ;;

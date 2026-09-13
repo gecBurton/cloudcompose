@@ -1,13 +1,20 @@
 # Examples
 
 Each subdirectory here is a `docker-compose.yml` (plus `x-cloud`
-annotations where needed) that cloudcompose compiles into Terraform. Most
-have golden fixtures under `expected/{aws,azure}/main.tf.json` — the
-committed, `terraform validate`-checked output cloudcompose should produce
-for that example, used as regression tests by
-`internal/compiler/{aws,azure}/golden_test.go`. GCP has no committed
-golden fixtures yet (see `AGENTS.md`'s "GCP has no committed golden
-files" note for why).
+annotations where needed) that cloudcompose compiles into Terraform.
+Every example has golden fixtures under
+`expected/{aws,azure,gcp}/main.tf.json` (except `scaling` on Azure —
+see below) — the committed, `terraform validate`-checked output
+cloudcompose should produce for that example, used as regression tests
+by `internal/compiler/{aws,azure,gcp}/golden_test.go`. This set is
+deliberately small and curated: each example earns its place by
+exercising a feature no other example already covers, and every
+example runs against all three clouds unless a cloud genuinely can't
+support it — see "What each example is for" below. GCP's own fixtures
+are checked the same way, but are lighter-verified than AWS/Azure's
+(see `AGENTS.md`'s "AWS-First but Cloud-Agnostic" note): they pin
+today's output as a regression baseline, not a correctness claim, since
+GCP has never been tested against a real deployment.
 
 ## See what an example infers before deploying anything
 
@@ -130,30 +137,39 @@ any other example directory and the sibling `environment.<cloud>.yaml`
 | Example | Demonstrates |
 |---|---|
 | `hello` | The minimum path: one public container, no managed services |
-| `flask`, `flask-redis`, `flask-s3` | A database/cache/object-storage relationship each |
-| `nginx-flask-mysql` | MySQL/MariaDB instead of PostgreSQL |
-| `minio-s3` | An object-storage-only relationship, no database |
-| `doctor` | Building an image from a `Dockerfile` rather than using a pre-built one |
-| `build-webapp` | Image build + push, combined with a database |
-| `production-stack` | The most feature-dense example: CDN, WAF, autoscaling, scheduled task, multiple relationships |
+| `doctor` | Build-from-source, compose secrets, and simultaneous database/cache/object-storage substitution, proven by real read/write connectivity checks |
+| `production-stack` | The most feature-dense example: CDN, WAF, autoscaling, a scheduled task, and a database/cache relationship |
 | `scaling` | `x-cloud.size`/`min_scale`/`max_scale` sizing hints |
 | `compute-tuning` | Explicit `cpu:`/`memory:` overrides instead of a named `size:` |
 | `platform-config` | Platform-supplied configuration (`x-cloud`-inferred, valued outside the compose file) |
 | `web-api` | A second, independent public service in the same app |
 
+This set replaces a larger one that used to test the same managed-service
+substitutions (database, cache, object storage) in isolation across
+several near-duplicate examples (`flask`, `flask-redis`, `flask-s3`,
+`minio-s3`, `nginx-flask-mysql`, `build-webapp`) — `doctor` already
+exercises all three substitutions together, and `production-stack`
+already exercises a database/cache relationship alongside CDN/WAF/
+autoscaling/scheduling, so the isolated versions were redundant rather
+than additive. `scaling` is the one deliberate exception to "every
+example runs on every cloud": its `size: large` maps to 4 vCPU, which
+exceeds Azure Container Apps' Consumption tier limit — a real,
+intentional rejection (see `TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap`),
+not a gap to fill.
+
 ## Real deployment testing
 
-`scripts/smoke-test.sh` deploys six
-different examples (`hello`, `minio-s3`, `build-webapp`, `doctor`,
+`scripts/smoke-test.sh` deploys four
+different examples (`hello`, `doctor`,
 `web-api`, `production-stack`) against real AWS/Azure as part of this
 repo's CI acceptance workflows (`PROVIDER=aws` or `PROVIDER=azure`; see
 `ci/README.md` for the one-time CI
 identity/state-backend setup they depend on). Each run deploys exactly
-one of the six into its own fresh environment (`NAME=ci<run-number>`,
+one of the four into its own fresh environment (`NAME=ci<run-number>`,
 generated from `scripts/ci-environment.aws.yaml`/
 `ci-environment.azure.yaml` — not `examples/hello/environment.yaml`,
 since a CI run's environment isn't really "for" any one example) —
-not six examples sharing one environment simultaneously; the
+not four examples sharing one environment simultaneously; the
 multi-app-per-environment pattern the two-step flow above supports is
 never actually exercised by CI today, since only one app ever deploys
 per run (on Azure, this also means every example's `x-cloud.azure.
@@ -169,6 +185,7 @@ the comments in the smoke-test script for exactly how.
 cd cloudcompose-go
 go test ./internal/compiler/aws/... -run TestInferAWS_GoldenExamplesByteIdentical -v
 go test ./internal/compiler/azure/... -run TestInferAzure_GoldenExamplesByteIdentical -v
+go test ./internal/compiler/gcp/... -run TestInferGcp_GoldenExamplesByteIdentical -v
 ```
 
 If you're adding a new example, see `AGENTS.md`'s "Adding a New AWS

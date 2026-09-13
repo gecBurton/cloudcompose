@@ -23,22 +23,31 @@ func fullMockProdEnv() models.AwsEnvironment {
 	return env
 }
 
-// TestInferManagedServices_RealNginxFlaskMysqlExample exercises the real
-// nginx-flask-mysql example (a mariadb-backed database service) through the
-// real parser/normalizer boundary, per this phase's review discipline.
-func TestInferManagedServices_RealNginxFlaskMysqlExample(t *testing.T) {
+// TestInferManagedServices_MariadbDatabase exercises a mariadb-backed
+// database service through the real parser/normalizer boundary, per
+// this phase's review discipline. No committed example uses mariadb/
+// mysql (see examples/README.md), so this uses an inline fixture
+// rather than a real one under examples/.
+func TestInferManagedServices_MariadbDatabase(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/nginx-flask-mysql/compose.yml")
+	composePath := writeComposeFixture(t, `name: mariadb-managed
+services:
+  db:
+    image: mariadb:10.6.4-focal
+    environment:
+      - MYSQL_DATABASE=example
+`)
+	composeApp, err := shared.ParseCompose(composePath)
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "nginx-flask-mysql")
+	app, err := shared.Normalize(composeApp, "mariadb-managed")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
 
 	env := fullMockProdEnv()
-	getName := minimalGetName("prod", "nginx-flask-mysql")
+	getName := minimalGetName("prod", "mariadb-managed")
 
 	resources := models.NewAWSResources()
 	// Networking must run first: inferDatabase reads network security group
@@ -58,8 +67,8 @@ func TestInferManagedServices_RealNginxFlaskMysqlExample(t *testing.T) {
 	if dbInstance.DbName != "example" {
 		t.Errorf("DbName = %q, want example", dbInstance.DbName)
 	}
-	if dbInstance.Identifier != "prod-nginx-flask-mysql-db" {
-		t.Errorf("Identifier = %q, want prod-nginx-flask-mysql-db", dbInstance.Identifier)
+	if dbInstance.Identifier != "prod-mariadb-managed-db" {
+		t.Errorf("Identifier = %q, want prod-mariadb-managed-db", dbInstance.Identifier)
 	}
 	if dbInstance.InstanceClass != "db.t3.micro" {
 		t.Errorf("InstanceClass = %q, want db.t3.micro", dbInstance.InstanceClass)
@@ -69,8 +78,8 @@ func TestInferManagedServices_RealNginxFlaskMysqlExample(t *testing.T) {
 	}
 	if dbInstance.FinalSnapshotIdentifier == nil {
 		t.Errorf("expected a final_snapshot_identifier when not discarding")
-	} else if *dbInstance.FinalSnapshotIdentifier != "prod-nginx-flask-mysql-db-final-${random_id.db_snapshot.hex}" {
-		t.Errorf("FinalSnapshotIdentifier = %q, want prod-nginx-flask-mysql-db-final-${random_id.db_snapshot.hex}", *dbInstance.FinalSnapshotIdentifier)
+	} else if *dbInstance.FinalSnapshotIdentifier != "prod-mariadb-managed-db-final-${random_id.db_snapshot.hex}" {
+		t.Errorf("FinalSnapshotIdentifier = %q, want prod-mariadb-managed-db-final-${random_id.db_snapshot.hex}", *dbInstance.FinalSnapshotIdentifier)
 	}
 	if dbInstance.Username == nil || *dbInstance.Username != "cloudcompose" {
 		t.Errorf("Username = %v, want cloudcompose", dbInstance.Username)
@@ -85,29 +94,31 @@ func TestInferManagedServices_RealNginxFlaskMysqlExample(t *testing.T) {
 	}
 }
 
-// TestInferManagedServices_RealFlaskRedisExample exercises the real
-// flask-redis example (a cache service) through the real boundary.
-func TestInferManagedServices_RealFlaskRedisExample(t *testing.T) {
+// TestInferManagedServices_RealDoctorExample_Cache exercises the real
+// doctor example's cache service through the real boundary.
+// TestInferManagedServices_RealDoctorExample_Cache exercises the real
+// doctor example's cache service through the real boundary.
+func TestInferManagedServices_RealDoctorExample_Cache(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/flask-redis/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/doctor/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "flask-redis")
+	app, err := shared.Normalize(composeApp, "doctor")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
 
 	env := fullMockProdEnv()
-	getName := minimalGetName("prod", "flask-redis")
+	getName := minimalGetName("prod", "doctor")
 
 	resources := models.NewAWSResources()
 	InferNetworking(resources, app, &env, getName, nil)
 	connections := InferManagedServices(resources, app, &env, getName, nil, false)
 
-	cluster, ok := resources.ElastiCacheCluster["redis_cache"]
+	cluster, ok := resources.ElastiCacheCluster["cache_cache"]
 	if !ok {
-		t.Fatalf("expected aws_elasticache_cluster keyed 'redis_cache', got keys %v", keysOf(resources.ElastiCacheCluster))
+		t.Fatalf("expected aws_elasticache_cluster keyed 'cache_cache', got keys %v", keysOf(resources.ElastiCacheCluster))
 	}
 	if cluster.Engine != "redis" {
 		t.Errorf("Engine = %q, want redis", cluster.Engine)
@@ -116,30 +127,31 @@ func TestInferManagedServices_RealFlaskRedisExample(t *testing.T) {
 		t.Errorf("NumCacheNodes = %d, want 1", cluster.NumCacheNodes)
 	}
 
-	conn, ok := connections["redis"]
+	conn, ok := connections["cache"]
 	if !ok {
-		t.Fatalf("expected a connection for service 'redis', got %v", connections)
+		t.Fatalf("expected a connection for service 'cache', got %v", connections)
 	}
 	if conn.Port == nil || *conn.Port != 6379 {
 		t.Errorf("connection port = %v, want 6379", conn.Port)
 	}
 }
 
-// TestInferManagedServices_RealMinioS3Example exercises the real minio-s3
-// example (an object-storage service) through the real boundary.
-func TestInferManagedServices_RealMinioS3Example(t *testing.T) {
+// TestInferManagedServices_RealDoctorExample_ObjectStorage exercises
+// the real doctor example's object-storage service through the real
+// boundary.
+func TestInferManagedServices_RealDoctorExample_ObjectStorage(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/minio-s3/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/doctor/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "minio-s3")
+	app, err := shared.Normalize(composeApp, "doctor")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
 
 	env := fullMockProdEnv()
-	getName := minimalGetName("prod", "minio-s3")
+	getName := minimalGetName("prod", "doctor")
 
 	resources := models.NewAWSResources()
 	InferNetworking(resources, app, &env, getName, nil)

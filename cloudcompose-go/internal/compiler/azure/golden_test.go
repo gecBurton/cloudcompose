@@ -46,22 +46,17 @@ func mockAzureProdEnv() models.AzureEnvironment {
 // asserting Azure parity against it.
 var azureGoldenExamples = []string{
 	"hello",
-	"flask",
-	"flask-s3",
-	"build-webapp",
 	"doctor",
-	"flask-redis",
 	"production-stack",
 	"web-api",
-	"minio-s3",
-	"nginx-flask-mysql",
+	"platform-config",
 	// "scaling" is deliberately not in this list: its web service's
 	// `size: large` maps to 4 vCPU, which exceeds Azure Container Apps'
 	// Consumption tier limit -- a real, intentional cloudcompose-side
 	// rejection, not something to golden-test against. See
 	// TestGetCPUCoresAzure_RejectsSizeAboveConsumptionCap for the
 	// dedicated test covering this.
-	"platform-config",
+
 	// "compute-tuning"'s worker service uses an explicit `cpu:` override
 	// alongside `memory:` (2.0 vCPU/4Gi) so both AWS and Azure land on a
 	// matched CPU/memory pair -- see

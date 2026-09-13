@@ -19,11 +19,20 @@ second `apply` doesn't merge with the first's state — it either fails
 on a naming collision or, worse, silently creates a duplicate. Nothing
 detects or prevents this today.
 
-The only remote-backend support that exists at all is
-`scripts/smoke-test.sh`'s `write_backend()`, a CI-only convenience that
-writes an uncommitted `backend_ci.tf` next to `main.tf.json` — not a
-`cloud-compose` feature, and with no state locking (S3: `encrypt = true`
-only, no `dynamodb_table`; see `ci/main.tf`).
+The only remote-backend support that existed at the time this doc was
+written was `scripts/smoke-test.sh`'s `write_backend()`, a CI-only
+convenience that wrote an uncommitted `backend_ci.tf` next to
+`main.tf.json` — not a `cloud-compose` feature, and with no state
+locking (S3: `encrypt = true` only, no `dynamodb_table`; see
+`ci/main.tf`). `write_backend()` has since been removed: once
+`backend:` below became a real, mandatory `cloud-compose` feature, its
+own generated backend block collided with `write_backend()`'s
+separately-written one ("Duplicate backend configuration"), so
+`scripts/ci-environment.{aws,azure}.yaml` now author `backend.remote:`
+directly (templated from the same `STATE_BUCKET`/`STATE_RG`/etc.
+variables `write_backend()` used to read) and let `cloud-compose`
+itself emit the correct block for both the environment and every app
+compiled against it, with no separate file needed.
 
 A related, second-order problem: `cloud-compose down` only ever destroys
 a single app's directory, deliberately never the shared environment
@@ -188,8 +197,10 @@ scattering their state across inconsistent buckets/regions.
 
 #### Key derivation
 
-Matching `ResourceNamer`'s `env.Name-app.Name-...` convention and
-`smoke-test.sh`'s existing `acceptance/<NAME>/...` shape:
+Matching `ResourceNamer`'s `env.Name-app.Name-...` convention (and,
+since `write_backend()`'s removal above, `scripts/ci-environment.
+{aws,azure}.yaml`'s own state keys too -- CI no longer uses a
+different `acceptance/<NAME>/...` shape of its own):
 
 ```go
 func backendKeyForEnvironment(envName string) string {

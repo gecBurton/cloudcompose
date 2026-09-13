@@ -72,7 +72,7 @@ plain form is rejected even though everything else is correct.
 The smoke test tears everything down via a shell trap, and the workflow bounds
 itself with `timeout-minutes` and a `concurrency` group. If a run still dies
 without cleaning up (runner failure, force-cancel), its state survives in the
-state bucket under `acceptance/<NAME>/` and can be destroyed from anywhere.
+state bucket under `cloudcompose/<NAME>/` and can be destroyed from anywhere.
 `NAME` is `ci<run_number>`, shown in the failed job's log.
 
 ```bash

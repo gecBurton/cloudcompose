@@ -687,7 +687,8 @@ if [[ -n "${CDN_FQDN:-}" ]]; then
   # on top of the Container App's own cold start already waited out above,
   # so this gets its own timeout rather than reusing whatever budget the
   # first poll had left. Confirmed against a real run (2026-08-12,
-  # production-stack/francecentral, after fixing the unrelated Key Vault
+  # production-stack/francecentral -- renamed to edge-and-scaling since,
+  # after fixing the unrelated Key Vault
   # RBAC data-plane permission gap that had blocked every previous attempt
   # at reaching this step at all): the route itself created successfully
   # and the Container App's own FQDN served correctly, but Front Door's

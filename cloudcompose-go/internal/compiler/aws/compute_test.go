@@ -370,7 +370,7 @@ func TestEcsService_LoadBalancerDefaultsToEmptyList(t *testing.T) {
 // TestHandleAutoscaling_DefaultsToCpuAndMemoryWhenUnspecified checks that a
 // scaling service with no explicit auto_scaling block still gets both a CPU
 // and a Memory policy from defaultAutoScalingConfig (not an empty
-// configuration) -- the production-stack golden file relies on exactly
+// configuration) -- the edge-and-scaling golden file relies on exactly
 // this default.
 func TestHandleAutoscaling_DefaultsToCpuAndMemoryWhenUnspecified(t *testing.T) {
 	t.Parallel()

@@ -29,7 +29,7 @@
     "azurerm_cdn_frontdoor_endpoint": {
       "web": {
         "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
-        "name": "prod-production-stack-web-fd"
+        "name": "prod-edge-and-scaling-web-fd"
       }
     },
     "azurerm_cdn_frontdoor_firewall_policy": {
@@ -57,7 +57,7 @@
           }
         ],
         "mode": "Prevention",
-        "name": "prodproductionstackwebwaf",
+        "name": "prodedgeandscalingwebwaf",
         "resource_group_name": "prod",
         "sku_name": "Standard_AzureFrontDoor"
       }
@@ -88,7 +88,7 @@
     },
     "azurerm_cdn_frontdoor_profile": {
       "main": {
-        "name": "prod-production-stack-fd",
+        "name": "prod-edge-and-scaling-fd",
         "resource_group_name": "prod",
         "sku_name": "Standard_AzureFrontDoor"
       }
@@ -115,7 +115,7 @@
     "azurerm_cdn_frontdoor_security_policy": {
       "web": {
         "cdn_frontdoor_profile_id": "${azurerm_cdn_frontdoor_profile.main.id}",
-        "name": "prod-production-stack-web-secpolicy",
+        "name": "prod-edge-and-scaling-web-secpolicy",
         "security_policies": [
           {
             "firewall": [
@@ -159,7 +159,7 @@
           ],
           "transport": "auto"
         },
-        "name": "prod-production-stack-web",
+        "name": "prod-edge-and-scaling-web",
         "resource_group_name": "prod",
         "revision_mode": "Single",
         "secret": [
@@ -248,7 +248,7 @@
         "internal_load_balancer_enabled": false,
         "location": "eastus",
         "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
-        "name": "prod-production-stack-env",
+        "name": "prod-edge-and-scaling-env",
         "resource_group_name": "prod"
       }
     },
@@ -259,7 +259,7 @@
           "type": "SystemAssigned"
         },
         "location": "eastus",
-        "name": "prod-production-stack-cleanup",
+        "name": "prod-edge-and-scaling-cleanup",
         "replica_retry_limit": 1,
         "replica_timeout_in_seconds": 1800,
         "resource_group_name": "prod",
@@ -290,7 +290,7 @@
     "azurerm_key_vault": {
       "main": {
         "location": "eastus",
-        "name": "prod-production-stack-kv",
+        "name": "prod-edge-and-scaling-kv",
         "purge_protection_enabled": false,
         "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
@@ -310,7 +310,7 @@
             "value"
           ]
         },
-        "name": "prod-production-stack-cache-password",
+        "name": "prod-edge-and-scaling-cache-password",
         "value": "${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}"
       },
       "db_secret": {
@@ -323,7 +323,7 @@
             "value"
           ]
         },
-        "name": "prod-production-stack-db-password",
+        "name": "prod-edge-and-scaling-db-password",
         "value": "${random_password.postgres_admin.result}"
       },
       "web_redis_url_url": {
@@ -336,7 +336,7 @@
             "value"
           ]
         },
-        "name": "prod-production-stack-web-redis-url",
+        "name": "prod-edge-and-scaling-web-redis-url",
         "value": "redis://${azurerm_managed_redis.cache_redis.hostname}:10000"
       }
     },
@@ -351,7 +351,7 @@
         ],
         "high_availability_enabled": false,
         "location": "eastus",
-        "name": "prod-production-stack-cache",
+        "name": "prod-edge-and-scaling-cache",
         "public_network_access": "Disabled",
         "resource_group_name": "prod",
         "sku_name": "Balanced_B0"
@@ -365,7 +365,7 @@
           }
         ],
         "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
-        "name": "prod-production-stack-pg-diag",
+        "name": "prod-edge-and-scaling-pg-diag",
         "target_resource_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
@@ -384,7 +384,7 @@
           ]
         },
         "location": "eastus",
-        "name": "prod-production-stack-pg",
+        "name": "prod-edge-and-scaling-pg",
         "private_dns_zone_id": "${azurerm_private_dns_zone.postgresql.id}",
         "public_network_access_enabled": false,
         "resource_group_name": "prod",
@@ -397,13 +397,13 @@
       "db_db": {
         "charset": "UTF8",
         "collation": "en_US.utf8",
-        "name": "production_stack_db",
+        "name": "edge_and_scaling_db",
         "server_id": "${azurerm_postgresql_flexible_server.main.id}"
       }
     },
     "azurerm_private_dns_zone": {
       "postgresql": {
-        "name": "production-stack-postgresql.postgres.database.azure.com",
+        "name": "edge-and-scaling-postgresql.postgres.database.azure.com",
         "resource_group_name": "prod"
       },
       "redis": {
@@ -413,14 +413,14 @@
     },
     "azurerm_private_dns_zone_virtual_network_link": {
       "postgresql": {
-        "name": "production-stack-postgresql-link",
+        "name": "edge-and-scaling-postgresql-link",
         "private_dns_zone_name": "${azurerm_private_dns_zone.postgresql.name}",
         "registration_enabled": false,
         "resource_group_name": "prod",
         "virtual_network_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.Network/virtualNetworks/prod-vnet"
       },
       "redis": {
-        "name": "production-stack-redis-link",
+        "name": "edge-and-scaling-redis-link",
         "private_dns_zone_name": "${azurerm_private_dns_zone.redis.name}",
         "registration_enabled": false,
         "resource_group_name": "prod",
@@ -430,7 +430,7 @@
     "azurerm_private_endpoint": {
       "cache_redis_pe": {
         "location": "eastus",
-        "name": "prod-production-stack-cache-redis-pe",
+        "name": "prod-edge-and-scaling-cache-redis-pe",
         "private_dns_zone_group": {
           "name": "default",
           "private_dns_zone_ids": [
@@ -440,7 +440,7 @@
         "private_service_connection": [
           {
             "is_manual_connection": false,
-            "name": "prod-production-stack-cache-redis-psc",
+            "name": "prod-edge-and-scaling-cache-redis-psc",
             "private_connection_resource_id": "${azurerm_managed_redis.cache_redis.id}",
             "subresource_names": [
               "redisEnterprise"
@@ -476,7 +476,7 @@
             ]
           }
         ],
-        "name": "prod-production-stack-infrastructure",
+        "name": "prod-edge-and-scaling-infrastructure",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       },
@@ -497,7 +497,7 @@
             ]
           }
         ],
-        "name": "prod-production-stack-mysql",
+        "name": "prod-edge-and-scaling-mysql",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       },
@@ -518,7 +518,7 @@
             ]
           }
         ],
-        "name": "prod-production-stack-postgresql",
+        "name": "prod-edge-and-scaling-postgresql",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       },
@@ -526,7 +526,7 @@
         "address_prefixes": [
           "10.0.128.192/26"
         ],
-        "name": "prod-production-stack-redis",
+        "name": "prod-edge-and-scaling-redis",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       }
@@ -534,7 +534,7 @@
     "azurerm_user_assigned_identity": {
       "main": {
         "location": "eastus",
-        "name": "prod-production-stack-identity",
+        "name": "prod-edge-and-scaling-identity",
         "resource_group_name": "prod"
       }
     },

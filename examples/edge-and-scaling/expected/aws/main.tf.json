@@ -20,7 +20,7 @@
   "resource": {
     "aws_appautoscaling_policy": {
       "web_scaling_0": {
-        "name": "prod-production-stack-web-scaling-cpu",
+        "name": "prod-edge-and-scaling-web-scaling-cpu",
         "policy_type": "TargetTrackingScaling",
         "resource_id": "${aws_appautoscaling_target.web_asg_target.resource_id}",
         "scalable_dimension": "ecs:service:DesiredCount",
@@ -35,7 +35,7 @@
         }
       },
       "web_scaling_1": {
-        "name": "prod-production-stack-web-scaling-memory",
+        "name": "prod-edge-and-scaling-web-scaling-memory",
         "policy_type": "TargetTrackingScaling",
         "resource_id": "${aws_appautoscaling_target.web_asg_target.resource_id}",
         "scalable_dimension": "ecs:service:DesiredCount",
@@ -114,7 +114,7 @@
     "aws_cloudwatch_event_rule": {
       "cleanup_rule": {
         "description": "Schedule for cleanup",
-        "name": "prod-production-stack-cleanup-rule",
+        "name": "prod-edge-and-scaling-cleanup-rule",
         "schedule_expression": "cron(0 2 * * ? *)",
         "state": "ENABLED"
       }
@@ -143,11 +143,11 @@
     },
     "aws_cloudwatch_log_group": {
       "cleanup_lg": {
-        "name": "/ecs/prod-production-stack-cleanup",
+        "name": "/ecs/prod-edge-and-scaling-cleanup",
         "retention_in_days": 7
       },
       "web_lg": {
-        "name": "/ecs/prod-production-stack-web",
+        "name": "/ecs/prod-edge-and-scaling-web",
         "retention_in_days": 7
       }
     },
@@ -155,15 +155,15 @@
       "db_db": {
         "allocated_storage": 20,
         "backup_retention_period": 7,
-        "db_name": "production_stack_db",
+        "db_name": "edge_and_scaling_db",
         "db_subnet_group_name": "${aws_db_subnet_group.db_sng.name}",
         "enabled_cloudwatch_logs_exports": [
           "postgresql",
           "upgrade"
         ],
         "engine": "postgres",
-        "final_snapshot_identifier": "prod-production-stack-db-final-${random_id.db_snapshot.hex}",
-        "identifier": "prod-production-stack-db",
+        "final_snapshot_identifier": "prod-edge-and-scaling-db-final-${random_id.db_snapshot.hex}",
+        "identifier": "prod-edge-and-scaling-db",
         "instance_class": "db.t3.micro",
         "multi_az": false,
         "password": "${random_password.db_password.result}",
@@ -177,7 +177,7 @@
     },
     "aws_db_subnet_group": {
       "db_sng": {
-        "name": "prod-production-stack-db-sng",
+        "name": "prod-edge-and-scaling-db-sng",
         "subnet_ids": [
           "subnet-3",
           "subnet-4"
@@ -201,7 +201,7 @@
             "target_group_arn": "${aws_lb_target_group.web_tg.arn}"
           }
         ],
-        "name": "prod-production-stack-web",
+        "name": "prod-edge-and-scaling-web",
         "network_configuration": {
           "assign_public_ip": false,
           "security_groups": [
@@ -224,7 +224,7 @@
         "container_definitions": "[{\"command\":[\"echo\",\"cleaning up...\"],\"environment\":[],\"essential\":true,\"image\":\"busybox\",\"logConfiguration\":{\"logDriver\":\"awslogs\",\"options\":{\"awslogs-group\":\"${aws_cloudwatch_log_group.cleanup_lg.name}\",\"awslogs-region\":\"us-east-1\",\"awslogs-stream-prefix\":\"ecs\"}},\"name\":\"cleanup\",\"portMappings\":[],\"secrets\":[]}]",
         "cpu": "256",
         "execution_role_arn": "${aws_iam_role.cleanup_exec_role.arn}",
-        "family": "prod-production-stack-cleanup",
+        "family": "prod-edge-and-scaling-cleanup",
         "memory": "512",
         "network_mode": "awsvpc",
         "requires_compatibilities": [
@@ -236,7 +236,7 @@
         "container_definitions": "[{\"environment\":[{\"name\":\"DB_HOST\",\"value\":\"${aws_db_instance.db_db.address}\"},{\"name\":\"REDIS_URL\",\"value\":\"redis://${aws_elasticache_cluster.cache_cache.cache_nodes[0].address}:6379\"}],\"essential\":true,\"image\":\"nginx:latest\",\"logConfiguration\":{\"logDriver\":\"awslogs\",\"options\":{\"awslogs-group\":\"${aws_cloudwatch_log_group.web_lg.name}\",\"awslogs-region\":\"us-east-1\",\"awslogs-stream-prefix\":\"ecs\"}},\"name\":\"web\",\"portMappings\":[{\"containerPort\":80,\"hostPort\":80,\"protocol\":\"tcp\"}],\"secrets\":[{\"name\":\"DB_PASSWORD\",\"valueFrom\":\"${aws_secretsmanager_secret.db_db_secret.arn}:password::\"},{\"name\":\"DB_USERNAME\",\"valueFrom\":\"${aws_secretsmanager_secret.db_db_secret.arn}:username::\"}]}]",
         "cpu": "1024",
         "execution_role_arn": "${aws_iam_role.web_exec_role.arn}",
-        "family": "prod-production-stack-web",
+        "family": "prod-edge-and-scaling-web",
         "memory": "2048",
         "network_mode": "awsvpc",
         "requires_compatibilities": [
@@ -247,7 +247,7 @@
     },
     "aws_elasticache_cluster": {
       "cache_cache": {
-        "cluster_id": "prod-production-stack-cache",
+        "cluster_id": "prod-edge-and-scaling-cache",
         "engine": "redis",
         "node_type": "cache.t3.micro",
         "num_cache_nodes": 1,
@@ -259,7 +259,7 @@
     },
     "aws_elasticache_subnet_group": {
       "cache_sng": {
-        "name": "prod-production-stack-cache-sng",
+        "name": "prod-edge-and-scaling-cache-sng",
         "subnet_ids": [
           "subnet-3",
           "subnet-4"
@@ -269,43 +269,43 @@
     "aws_iam_role": {
       "cleanup_eb_role": {
         "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"events.amazonaws.com\"}}]}",
-        "name": "prod-production-stack-cleanup-eb-role"
+        "name": "prod-edge-and-scaling-cleanup-eb-role"
       },
       "cleanup_exec_role": {
         "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
-        "name": "prod-production-stack-cleanup-exec-role"
+        "name": "prod-edge-and-scaling-cleanup-exec-role"
       },
       "cleanup_task_role": {
         "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
-        "name": "prod-production-stack-cleanup-task-role"
+        "name": "prod-edge-and-scaling-cleanup-task-role"
       },
       "web_exec_role": {
         "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
-        "name": "prod-production-stack-web-exec-role"
+        "name": "prod-edge-and-scaling-web-exec-role"
       },
       "web_task_role": {
         "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"}}]}",
-        "name": "prod-production-stack-web-task-role"
+        "name": "prod-edge-and-scaling-web-task-role"
       }
     },
     "aws_iam_role_policy": {
       "cleanup_eb_policy": {
-        "name": "prod-production-stack-cleanup-eb-policy",
+        "name": "prod-edge-and-scaling-cleanup-eb-policy",
         "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"ecs:RunTask\",\"Resource\":[\"${aws_ecs_task_definition.cleanup_td.arn}\"],\"Condition\":{\"ArnLike\":{\"ecs:cluster\":\"arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster\"}}},{\"Effect\":\"Allow\",\"Action\":\"iam:PassRole\",\"Resource\":[\"*\"],\"Condition\":{\"StringLike\":{\"iam:PassedToService\":\"ecs-tasks.amazonaws.com\"}}}]}",
         "role": "${aws_iam_role.cleanup_eb_role.name}"
       },
       "cleanup_exec_log_policy": {
-        "name": "prod-production-stack-cleanup-exec-log-policy",
+        "name": "prod-edge-and-scaling-cleanup-exec-log-policy",
         "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"logs:CreateLogStream\",\"logs:PutLogEvents\"],\"Resource\":[\"${aws_cloudwatch_log_group.cleanup_lg.arn}:*\"]}]}",
         "role": "${aws_iam_role.cleanup_exec_role.name}"
       },
       "web_exec_log_policy": {
-        "name": "prod-production-stack-web-exec-log-policy",
+        "name": "prod-edge-and-scaling-web-exec-log-policy",
         "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"logs:CreateLogStream\",\"logs:PutLogEvents\"],\"Resource\":[\"${aws_cloudwatch_log_group.web_lg.arn}:*\"]}]}",
         "role": "${aws_iam_role.web_exec_role.name}"
       },
       "web_to_db_rds_secret": {
-        "name": "prod-production-stack-web-db-rds-secret",
+        "name": "prod-edge-and-scaling-web-db-rds-secret",
         "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"secretsmanager:GetSecretValue\"],\"Resource\":[\"${aws_secretsmanager_secret.db_db_secret.arn}\"]}]}",
         "role": "${aws_iam_role.web_exec_role.name}"
       }
@@ -328,7 +328,7 @@
           }
         ],
         "listener_arn": "arn:aws:lb:us-east-1:123456789012:listener/app/shared-alb/123/456",
-        "priority": 32801
+        "priority": 42701
       }
     },
     "aws_lb_target_group": {
@@ -338,7 +338,7 @@
           "matcher": "200-399",
           "path": "/"
         },
-        "name": "prod-production-stack-web-tg",
+        "name": "prod-edge-and-scaling-web-tg",
         "port": 80,
         "protocol": "HTTP",
         "target_type": "ip",
@@ -348,7 +348,7 @@
     "aws_secretsmanager_secret": {
       "db_db_secret": {
         "description": "Credentials for db RDS",
-        "name": "prod-production-stack-db-credentials",
+        "name": "prod-edge-and-scaling-db-credentials",
         "recovery_window_in_days": 0
       }
     },
@@ -360,13 +360,13 @@
     },
     "aws_security_group": {
       "default_sg": {
-        "description": "Network default of production-stack in prod",
-        "name": "prod-production-stack-default",
+        "description": "Network default of edge-and-scaling in prod",
+        "name": "prod-edge-and-scaling-default",
         "vpc_id": "vpc-123"
       },
       "web_ingress_sg": {
         "description": "Load balancer ingress to web",
-        "name": "prod-production-stack-web-ingress",
+        "name": "prod-edge-and-scaling-web-ingress",
         "vpc_id": "vpc-123"
       }
     },
@@ -403,8 +403,8 @@
     },
     "aws_service_discovery_private_dns_namespace": {
       "app": {
-        "description": "Service discovery for production-stack in prod",
-        "name": "prod-production-stack.internal",
+        "description": "Service discovery for edge-and-scaling in prod",
+        "name": "prod-edge-and-scaling.internal",
         "vpc": "vpc-123"
       }
     },
@@ -431,7 +431,7 @@
         "default_action": {
           "allow": {}
         },
-        "name": "prod-production-stack-web-waf",
+        "name": "prod-edge-and-scaling-web-waf",
         "provider": "aws.us_east_1",
         "rule": [
           {

@@ -97,22 +97,22 @@ func TestInferPermissionsAndWiring_RealDoctorExample(t *testing.T) {
 	}
 }
 
-// TestInferPermissionsAndWiring_RealWebApiExample exercises the full
-// pipeline against the real web-api example: web's own API_URL: http://api
+// TestInferPermissionsAndWiring_RealServiceDiscoveryExample exercises the full
+// pipeline against the real service-discovery example: web's own API_URL: http://api
 // must be rewritten to reference api's service-discovery FQDN
 // (api.<namespace>), not the literal container name compose wrote, which
 // ECS itself never gives any task -- this is the one real assertion no
 // other test (only the golden byte-diff) currently covers for this
 // example (peer-container-to-peer-container discovery, as opposed to
-// container-to-managed-service substitution, which doctor/production-stack
+// container-to-managed-service substitution, which doctor/edge-and-scaling
 // already cover elsewhere).
-func TestInferPermissionsAndWiring_RealWebApiExample(t *testing.T) {
+func TestInferPermissionsAndWiring_RealServiceDiscoveryExample(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/web-api/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/service-discovery/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "web-api")
+	app, err := shared.Normalize(composeApp, "service-discovery")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestInferPermissionsAndWiring_RealWebApiExample(t *testing.T) {
 		values[name] = value
 	}
 
-	if got := values["API_URL"]; got != "http://api.prod-web-api.internal:80" {
+	if got := values["API_URL"]; got != "http://api.prod-service-discovery.internal:80" {
 		t.Errorf("API_URL = %q, want it rewritten to api's service-discovery FQDN", got)
 	}
 

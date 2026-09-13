@@ -209,7 +209,7 @@ func TestNamespaceFor(t *testing.T) {
 	}{
 		{"prod", "hello", "prod-hello.internal"},
 		{"", "hello", "hello.internal"},
-		{"prod", "web-api", "prod-web-api.internal"},
+		{"prod", "service-discovery", "prod-service-discovery.internal"},
 		{"prod", "my_app", "prod-my-app.internal"},
 		{"Prod", "App", "prod-app.internal"},
 	}

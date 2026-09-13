@@ -138,17 +138,17 @@ any other example directory and the sibling `environment.<cloud>.yaml`
 |---|---|
 | `hello` | The minimum path: one public container, no managed services |
 | `doctor` | Build-from-source, compose secrets, and simultaneous database/cache/object-storage substitution, proven by real read/write connectivity checks |
-| `production-stack` | The most feature-dense example: CDN, WAF, autoscaling, a scheduled task, and a database/cache relationship |
+| `edge-and-scaling` | The most feature-dense example: CDN, WAF, autoscaling, a scheduled task, and a database/cache relationship |
 | `scaling` | `x-cloud.size`/`min_scale`/`max_scale` sizing hints |
 | `compute-tuning` | Explicit `cpu:`/`memory:` overrides instead of a named `size:` |
 | `platform-config` | Platform-supplied configuration (`x-cloud`-inferred, valued outside the compose file) |
-| `web-api` | A second, independent public service in the same app |
+| `service-discovery` | A second, independent public service in the same app, reached by its compose service name over cloudcompose's own private DNS |
 
 This set replaces a larger one that used to test the same managed-service
 substitutions (database, cache, object storage) in isolation across
 several near-duplicate examples (`flask`, `flask-redis`, `flask-s3`,
 `minio-s3`, `nginx-flask-mysql`, `build-webapp`) — `doctor` already
-exercises all three substitutions together, and `production-stack`
+exercises all three substitutions together, and `edge-and-scaling`
 already exercises a database/cache relationship alongside CDN/WAF/
 autoscaling/scheduling, so the isolated versions were redundant rather
 than additive. `scaling` is the one deliberate exception to "every
@@ -161,7 +161,7 @@ not a gap to fill.
 
 `scripts/smoke-test.sh` deploys four
 different examples (`hello`, `doctor`,
-`web-api`, `production-stack`) against real AWS/Azure as part of this
+`service-discovery`, `edge-and-scaling`) against real AWS/Azure as part of this
 repo's CI acceptance workflows (`PROVIDER=aws` or `PROVIDER=azure`; see
 `ci/README.md` for the one-time CI
 identity/state-backend setup they depend on). Each run deploys exactly

@@ -27,7 +27,7 @@
         "identity": {
           "type": "SystemAssigned"
         },
-        "name": "prod-web-api-api",
+        "name": "prod-service-discovery-api",
         "resource_group_name": "prod",
         "revision_mode": "Single",
         "template": {
@@ -60,7 +60,7 @@
           ],
           "transport": "auto"
         },
-        "name": "prod-web-api-web",
+        "name": "prod-service-discovery-web",
         "resource_group_name": "prod",
         "revision_mode": "Single",
         "template": {
@@ -102,14 +102,14 @@
         "internal_load_balancer_enabled": false,
         "location": "eastus",
         "log_analytics_workspace_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/prod/providers/Microsoft.OperationalInsights/workspaces/prod-logs",
-        "name": "prod-web-api-env",
+        "name": "prod-service-discovery-env",
         "resource_group_name": "prod"
       }
     },
     "azurerm_key_vault": {
       "main": {
         "location": "eastus",
-        "name": "prod-web-api-kv",
+        "name": "prod-service-disc-e7d7c7",
         "purge_protection_enabled": false,
         "rbac_authorization_enabled": true,
         "resource_group_name": "prod",
@@ -136,7 +136,7 @@
             ]
           }
         ],
-        "name": "prod-web-api-infrastructure",
+        "name": "prod-service-discovery-infrastructure",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       },
@@ -157,7 +157,7 @@
             ]
           }
         ],
-        "name": "prod-web-api-mysql",
+        "name": "prod-service-discovery-mysql",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       },
@@ -178,7 +178,7 @@
             ]
           }
         ],
-        "name": "prod-web-api-postgresql",
+        "name": "prod-service-discovery-postgresql",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       },
@@ -186,7 +186,7 @@
         "address_prefixes": [
           "10.0.128.192/26"
         ],
-        "name": "prod-web-api-redis",
+        "name": "prod-service-discovery-redis",
         "resource_group_name": "prod",
         "virtual_network_name": "prod-vnet"
       }

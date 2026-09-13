@@ -14,7 +14,12 @@ type ComposeApplication struct {
 	// name, an environment variable, or a CLI flag: identity that isn't
 	// recorded in a file can't survive deleting generated artifacts and
 	// regenerating them elsewhere. See docs/deployment-identity-design.md.
-	Name     string                        `json:"name,omitempty"`
+	Name string `json:"name,omitempty"`
+
+	// XCloud is the compose file's own top-level `x-cloud:` block --
+	// app-wide settings, as opposed to ComposeService.XCloud, which is
+	// per-service. Currently only azure.subnet_index (see AppXCloud).
+	XCloud   interface{}                   `json:"x-cloud,omitempty"`
 	Services map[string]ComposeService     `json:"services,omitempty"`
 	Networks map[string]*NetworkDefinition `json:"networks,omitempty"`
 	Volumes  map[string]interface{}        `json:"volumes,omitempty"`
@@ -276,6 +281,64 @@ func (x *XCloud) GetGracePeriod() *int {
 		return x.StartupGracePeriod
 	}
 	return x.HealthCheckGracePeriod
+}
+
+// AppXCloud is the compose file's own top-level `x-cloud:` block --
+// app-wide settings (as opposed to XCloud, which is per-service). See
+// ComposeApplication.XCloud.
+type AppXCloud struct {
+	Azure *AppXCloudAzure `json:"azure,omitempty"`
+}
+
+// AppXCloudAzure is `x-cloud.azure:` at the top level of a compose
+// file.
+//
+// SubnetIndex selects which /24 slice of the environment's reserved
+// apps_cidr range this app's own Container Apps Environment/subnets
+// are carved from (see docs/azure-app-isolation-design.md). Authored
+// here, on the app itself, rather than supplied per `compile`
+// invocation via a flag: it's part of what makes this app's deployment
+// reproducible from its own compose file alone. Two apps sharing an
+// environment must not share an index -- Azure's own API rejects the
+// resulting overlapping subnet address ranges at `terraform apply`,
+// which is deliberately left as the mechanism that catches a
+// collision, rather than CloudCompose maintaining its own registry of
+// claimed indices (see docs/deployment-identity-design.md).
+type AppXCloudAzure struct {
+	SubnetIndex *int `json:"subnet_index,omitempty"`
+}
+
+// UnmarshalJSON rejects unknown keys outright, matching XCloud's own
+// policy on unknown/misspelled fields.
+func (x *AppXCloud) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if v, ok := raw["azure"]; ok {
+		var azureRaw map[string]json.RawMessage
+		if err := json.Unmarshal(v, &azureRaw); err != nil {
+			return err
+		}
+		for key := range azureRaw {
+			if key != "subnet_index" {
+				return fmt.Errorf("x-cloud.azure: unknown field %q", key)
+			}
+		}
+	}
+	for key := range raw {
+		if key != "azure" {
+			return fmt.Errorf("x-cloud: unknown field %q", key)
+		}
+	}
+
+	type appXCloud AppXCloud
+	var result appXCloud
+	if err := json.Unmarshal(data, &result); err != nil {
+		return err
+	}
+	*x = AppXCloud(result)
+	return nil
 }
 
 type IngressConfig struct {

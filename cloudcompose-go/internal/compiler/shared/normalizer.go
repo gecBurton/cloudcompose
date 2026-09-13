@@ -463,6 +463,25 @@ func SettingsFor(name string, service models.ComposeService) (*models.XCloud, er
 	return settings, nil
 }
 
+// AppSettingsFor decodes composeApp's own top-level x-cloud block (app-
+// wide settings, as opposed to SettingsFor's per-service ones), or a
+// zero-value *models.AppXCloud if none was given.
+func AppSettingsFor(composeApp *models.ComposeApplication) (*models.AppXCloud, error) {
+	if composeApp.XCloud == nil {
+		return &models.AppXCloud{}, nil
+	}
+
+	settings := &models.AppXCloud{}
+	jsonBytes, err := json.Marshal(composeApp.XCloud)
+	if err != nil {
+		return nil, fmt.Errorf("invalid top-level x-cloud block: %v", err)
+	}
+	if err := json.Unmarshal(jsonBytes, settings); err != nil {
+		return nil, fmt.Errorf("invalid top-level x-cloud block: %v", err)
+	}
+	return settings, nil
+}
+
 func SemanticToJSON(app *models.Application) (string, error) {
 	output, err := json.MarshalIndent(app, "", "  ")
 	if err != nil {

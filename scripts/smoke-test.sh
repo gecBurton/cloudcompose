@@ -402,13 +402,13 @@ COMPOSE_BUILD_COPY="$APP_BUILD_SRC/$(basename "$COMPOSE")"
 # resource-name limits), so the copy's `name:` is rewritten to $PROJECT
 # before compiling.
 sed -i.bak "s/^name: .*/name: $PROJECT/" "$COMPOSE_BUILD_COPY" && rm -f "$COMPOSE_BUILD_COPY.bak"
-COMPILE_ARGS=(-f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR")
 if [[ "$PROVIDER" == "azure" ]]; then
-  # --subnet-index is required on Azure; 0 is correct here since
+  # x-cloud.azure.subnet_index is required on Azure (see
+  # docs/azure-app-isolation-design.md); 0 is correct here since
   # exactly one example deploys per CI run's environment.
-  COMPILE_ARGS+=(--subnet-index 0)
+  printf 'x-cloud:\n  azure:\n    subnet_index: 0\n' >> "$COMPOSE_BUILD_COPY"
 fi
-"$CLOUDCOMPOSE" compile "${COMPILE_ARGS[@]}"
+"$CLOUDCOMPOSE" compile -f "$COMPOSE_BUILD_COPY" -e "$ENV_DIR"
 
 # --- 3. Deploy the app -------------------------------------------------------
 log "Deploying app '$PROJECT'…"

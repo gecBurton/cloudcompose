@@ -43,18 +43,33 @@ than on AWS:
 - AWS's model is unchanged — its isolation already lives at the
   security-group layer below the shared ECS cluster.
 
-### Subnet allocation: `--subnet-index`
+### Subnet allocation: `x-cloud.azure.subnet_index`
 
-`main` runs independently per app with no live coordination mechanism
-(it only reads the environment's Terraform outputs, not a registry of
-claimed subnet ranges). Rather than hashing app names into CIDR offsets
-(collision risk) or querying Azure directly for a free slot (new API
-surface), placement is explicit: a required `--subnet-index` flag
-(Azure-only; AWS's `main` ignores it), a small `0`-based integer unique
-per app within one environment. `--subnet-index` has no default (an
-unspecified value is not the same as explicitly choosing subnet 0,
-see docs/deployment-identity-design.md) -- it must always be given
-explicitly when compiling for Azure.
+`compile` runs independently per app with no live coordination
+mechanism (it only reads the environment's Terraform outputs, not a
+registry of claimed subnet ranges). Rather than a CloudCompose-managed
+allocator/registry (new backend read/write plumbing, races between
+concurrent compiles) or hashing app names into CIDR offsets (real
+collision risk at realistic app counts -- see
+docs/deployment-identity-design.md's collision-probability table),
+placement is explicit and authored on the app itself: a required
+top-level `x-cloud.azure.subnet_index` in `compose.yaml` (Azure-only;
+ignored on AWS/GCP), a small `0`-based integer unique per app within
+one environment.
+
+This lives on the app, not the environment: it's app-specific
+placement, the same category of decision as `x-cloud`'s per-service
+settings, just app-wide instead of per-service (see
+`models.AppXCloud`). `compile` fails outright if it's missing when
+compiling for Azure -- no default, since an unspecified value isn't the
+same as explicitly choosing subnet 0.
+
+Two apps sharing an environment must not share an index. CloudCompose
+does not detect this itself; Azure's own API rejects the resulting
+overlapping subnet address ranges at `terraform apply` (a real, if
+late, backstop already built into the platform). `compile` prints a
+note naming the flag whenever compiling for Azure, so that failure mode
+is easy to recognise rather than a cryptic Azure API error.
 
 ### CIDR math
 

@@ -161,6 +161,12 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		Secrets:  make(map[string]models.ComposeSecret),
 	}
 
+	if project.Extensions != nil {
+		if xCloud, ok := project.Extensions["x-cloud"]; ok {
+			app.XCloud = xCloud
+		}
+	}
+
 	// Convert services
 	for _, service := range project.Services {
 		s := models.ComposeService{

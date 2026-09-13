@@ -85,10 +85,10 @@ cd -
 # for, rather than one set per app). On AWS this only adds the app's own
 # resources inside the shared cluster/VPC; on Azure this also creates
 # the app's own Container Apps Environment and delegated subnets (real,
-# per-app infrastructure, not just app-level resources) -- pass
-# --subnet-index to give it a distinct, non-overlapping slice of the
-# environment's reserved address space if more than one app shares this
-# environment.
+# per-app infrastructure, not just app-level resources) -- compose.yml
+# needs its own x-cloud.azure.subnet_index (a distinct, non-overlapping
+# slice of the environment's reserved address space) if more than one
+# app shares this environment.
 #
 # -e must be the applied environment directory -- the one `env init`
 # wrote main.tf.json into and you just ran `terraform apply` in above,
@@ -158,9 +158,9 @@ since a CI run's environment isn't really "for" any one example) —
 not six examples sharing one environment simultaneously; the
 multi-app-per-environment pattern the two-step flow above supports is
 never actually exercised by CI today, since only one app ever deploys
-per run (on Azure, this also means `--subnet-index` is never passed —
-see `scripts/smoke-test.sh`'s own comment at that call site for why
-defaulting to `0` is correct here).
+per run (on Azure, this also means every example's `x-cloud.azure.
+subnet_index` is `0` — see `scripts/smoke-test.sh`'s own comment at
+that call site for why that's correct here).
 Each run substitutes a unique `name:` into a generated copy of that
 shared file before calling `cloud-compose env init -e <generated file>` — see
 the comments in the smoke-test script for exactly how.

@@ -36,7 +36,7 @@ func appSubnetsAzure(
 ) error {
 	appCIDR, err := shared.Cidrsubnet(env.AppsCIDR, appPerAppCIDRNewbits, env.SubnetIndex)
 	if err != nil {
-		return fmt.Errorf("app %q's --subnet-index=%d could not be carved from the environment's apps_cidr %q: %w", app.Name, env.SubnetIndex, env.AppsCIDR, err)
+		return fmt.Errorf("app %q's x-cloud.azure.subnet_index=%d could not be carved from the environment's apps_cidr %q: %w", app.Name, env.SubnetIndex, env.AppsCIDR, err)
 	}
 
 	infraCIDR, err := shared.Cidrsubnet(appCIDR, appSubnetNewbits, 0)

@@ -164,7 +164,7 @@ func NewContainerAppJob() ContainerAppJob {
 // Subnet mirrors azurerm_subnet. Created per-app, one set of four per
 // Container Apps Environment (infrastructure/postgresql/mysql/redis),
 // carved out of the environment's own AppsCIDR at the app's own
-// --subnet-index.
+// SubnetIndex.
 type Subnet struct {
 	Name               string             `json:"name"`
 	ResourceGroupName  string             `json:"resource_group_name"`

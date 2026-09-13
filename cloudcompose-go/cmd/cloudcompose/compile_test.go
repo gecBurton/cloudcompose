@@ -284,8 +284,8 @@ func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
 	}
 }
 
-// TestMain_AzureRequiresExplicitSubnetIndex confirms --subnet-index has
-// no default: compiling for Azure without it must fail.
+// TestMain_AzureRequiresExplicitSubnetIndex confirms x-cloud.azure.subnet_index
+// has no default: compiling for Azure without it must fail.
 func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -293,15 +293,15 @@ func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
 	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-d", "azure")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected a non-zero exit compiling for Azure with no --subnet-index, got success:\n%s", out)
+		t.Fatalf("expected a non-zero exit compiling for Azure with no x-cloud.azure.subnet_index, got success:\n%s", out)
 	}
-	if !contains(string(out), "--subnet-index") {
-		t.Errorf("expected the error to name --subnet-index, got:\n%s", out)
+	if !contains(string(out), "subnet_index") {
+		t.Errorf("expected the error to name subnet_index, got:\n%s", out)
 	}
 }
 
-// TestMain_AzureAcceptsExplicitSubnetIndex confirms --subnet-index 0 is
-// accepted like any other explicit value.
+// TestMain_AzureAcceptsExplicitSubnetIndex confirms x-cloud.azure.subnet_index: 0
+// is accepted like any other explicit value.
 func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -311,15 +311,19 @@ func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read example compose.yml: %v", err)
 	}
+	withSubnetIndex := strings.Replace(string(composeSrc), "name: hello\n", "name: hello\nx-cloud:\n  azure:\n    subnet_index: 0\n", 1)
+	if withSubnetIndex == string(composeSrc) {
+		t.Fatalf("expected to find and extend examples/hello/compose.yml's `name: hello` line")
+	}
 	composeFile := filepath.Join(composeDir, "compose.yml")
-	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+	if err := os.WriteFile(composeFile, []byte(withSubnetIndex), 0644); err != nil {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "azure", "--subnet-index", "0")
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "azure")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloud-compose compile -d azure --subnet-index 0 failed: %v\n%s", err, out)
+		t.Fatalf("cloud-compose compile -d azure with subnet_index: 0 failed: %v\n%s", err, out)
 	}
 }
 

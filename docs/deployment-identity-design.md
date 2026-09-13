@@ -181,6 +181,41 @@ Don't hash-and-probe without persisting the result — that just moves the
 non-determinism rather than removing it. This is explicitly an allocator
 problem, not a naming problem, and shouldn't block (1) or (2).
 
+### 4. Make `backend:` mandatory, with an explicit `local` value
+
+Today `Backend == nil` means local state — an omission, not an
+authored choice, and the one field in `environment.yaml` where "not
+set" silently means something rather than being an error
+(`initconfig.Validate`/`BackendWarnings` nag about it rather than
+requiring a decision). This is also why `--environment` needs its own
+separate "no backend configured" rejection (`environment_resolve.go`)
+instead of that simply being impossible by construction.
+
+Fix: make `backend:` required, and add an explicit `local` value
+alongside `aws`/`azure`/`gcp` — `backend: local` means exactly what
+`Backend == nil` means today (no `terraform.backend` block emitted),
+but as something authored, not omitted. `BackendWarnings`'s "no backend
+configured" case disappears entirely once there's nothing to omit;
+`resolveEnvironmentByDefinition`'s check becomes "is backend `local`"
+rather than "is backend nil".
+
+This is a schema change, not a wiring change — sequence it after (3),
+not bundled into it:
+
+- `models.BackendConfig` needs a way to represent `local` distinctly
+  from "not present" (a fourth variant, or change `Backend` from
+  `*BackendConfig` to a non-pointer with a required discriminator).
+- `initconfig.Validate`/`validateBackend` gain a `local` case and drop
+  the "backend absent is not an error" rule.
+- Each cloud's `environment_generator.go` treats `local` the same way
+  it treats `nil` today (skip emitting a `terraform.backend` block).
+- Every committed `environment.yaml` (all `examples/*/environment*.yaml`,
+  `scripts/ci-environment.{aws,azure}.yaml`) needs `backend: local`
+  added, since none currently set `backend:` at all.
+- `docs/authored-environment-config.md`'s "Sharing one environment
+  across multiple users" section needs rewriting around `backend:`
+  being required rather than optional.
+
 ## Explicitly rejected alternatives
 
 - **New `EnvironmentState`/`EnvironmentDefinition` domain types.** Not

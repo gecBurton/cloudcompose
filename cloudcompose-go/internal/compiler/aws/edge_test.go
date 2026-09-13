@@ -9,20 +9,20 @@ import (
 
 // TestInferEdgeResources_RealProductionStackExample exercises CDN+WAF
 // inference through the real parser/normalizer boundary using the
-// production-stack example, the only golden example with cdn: true.
+// edge-and-scaling example, the only golden example with cdn: true.
 func TestInferEdgeResources_RealProductionStackExample(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/production-stack/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/edge-and-scaling/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "production-stack")
+	app, err := shared.Normalize(composeApp, "edge-and-scaling")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
 
 	env := fullMockProdEnv()
-	getName := minimalGetName("prod", "production-stack")
+	getName := minimalGetName("prod", "edge-and-scaling")
 
 	resources := models.NewAWSResources()
 	InferEdgeResources(resources, app, &env, getName, nil)

@@ -13,7 +13,7 @@
         "autogenerate_revision_name": true,
         "ingress": "internal",
         "location": "us-central1",
-        "name": "prod-production-stack-cleanup",
+        "name": "prod-edge-and-scaling-cleanup",
         "project_id": "my-project-123",
         "template": {
           "metadata": {
@@ -22,7 +22,7 @@
               "autoscaling.knative.dev/minScale": "1",
               "run.googleapis.com/cpu-throttling": "true",
               "run.googleapis.com/execution-environment": "gen2",
-              "run.googleapis.com/vpc-access-connector": "prod-production-stack-vpc-connector",
+              "run.googleapis.com/vpc-access-connector": "prod-edge-and-scaling-vpc-connector",
               "run.googleapis.com/vpc-access-egress": "all-traffic"
             }
           },
@@ -56,7 +56,7 @@
         "autogenerate_revision_name": true,
         "ingress": "all",
         "location": "us-central1",
-        "name": "prod-production-stack-web",
+        "name": "prod-edge-and-scaling-web",
         "project_id": "my-project-123",
         "template": {
           "metadata": {
@@ -65,7 +65,7 @@
               "autoscaling.knative.dev/minScale": "2",
               "run.googleapis.com/cpu-throttling": "true",
               "run.googleapis.com/execution-environment": "gen2",
-              "run.googleapis.com/vpc-access-connector": "prod-production-stack-vpc-connector",
+              "run.googleapis.com/vpc-access-connector": "prod-edge-and-scaling-vpc-connector",
               "run.googleapis.com/vpc-access-egress": "all-traffic"
             }
           },
@@ -83,7 +83,7 @@
                   },
                   {
                     "name": "DB_URL",
-                    "value": "postgresql://cloudcompose:${random_password.db_root.result}@${google_sql_database_instance.main.public_ip_address}:5432/production_stack_db"
+                    "value": "postgresql://cloudcompose:${random_password.db_root.result}@${google_sql_database_instance.main.public_ip_address}:5432/edge_and_scaling_db"
                   },
                   {
                     "name": "CACHE_URL",
@@ -114,7 +114,7 @@
       "cache_redis": {
         "connect_mode": "DIRECT_PEERING",
         "memory_size_gb": 1,
-        "name": "prod-production-stack-cache",
+        "name": "prod-edge-and-scaling-cache",
         "project_id": "my-project-123",
         "redis_version": "REDIS_6_X",
         "region": "us-central1",
@@ -124,7 +124,7 @@
     "google_sql_database": {
       "db_db": {
         "instance": "${google_sql_database_instance.main.name}",
-        "name": "production_stack_db",
+        "name": "edge_and_scaling_db",
         "project_id": "my-project-123"
       }
     },
@@ -139,7 +139,7 @@
         "ip_configuration": {
           "ipv4_enabled": true
         },
-        "name": "prod-production-stack-db",
+        "name": "prod-edge-and-scaling-db",
         "project_id": "my-project-123",
         "region": "us-central1",
         "root_password": "${random_password.db_root.result}",
@@ -154,7 +154,7 @@
         "machine_type": "f1-micro",
         "max_instances": 10,
         "min_instances": 2,
-        "name": "prod-production-stack-vpc-connector",
+        "name": "prod-edge-and-scaling-vpc-connector",
         "network": "default",
         "project_id": "my-project-123",
         "region": "us-central1"

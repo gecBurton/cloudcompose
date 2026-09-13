@@ -23,8 +23,8 @@ var gcpGoldenExamples = []string{
 	"scaling",
 	"compute-tuning",
 	"platform-config",
-	"production-stack",
-	"web-api",
+	"edge-and-scaling",
+	"service-discovery",
 }
 
 // TestInferGcp_GoldenExamplesByteIdentical mirrors

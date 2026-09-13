@@ -1,4 +1,6 @@
-name: production-stack
+# The most feature-dense example: CDN, WAF, autoscaling, a cron-scheduled
+# task, and a database/cache relationship, all in one app.
+name: edge-and-scaling
 services:
   web:
     image: nginx:latest

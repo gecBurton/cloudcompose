@@ -134,6 +134,47 @@ func TestInferComputeResources_RealDoctorExample(t *testing.T) {
 	}
 }
 
+// TestInferComputeResources_RealComputeTuningExample exercises the
+// compute-tuning example (explicit cpu:/memory: overrides, with and
+// without a named size:) through the real boundary -- previously only
+// covered by the golden byte-diff, not any dedicated unit test.
+func TestInferComputeResources_RealComputeTuningExample(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/compute-tuning/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "compute-tuning")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	env := fullMockProdEnv()
+	getName := minimalGetName("prod", "compute-tuning")
+
+	resources := models.NewAWSResources()
+	InferNetworking(resources, app, &env, getName, nil)
+	priorities := CalculateListenerPriorities(app)
+	namespace := InferServiceDiscovery(resources, app, &env, getName, nil)
+	InferComputeResources(resources, app, &env, getName, nil, false, priorities, namespace)
+
+	apiTaskDef, ok := resources.EcsTaskDefinition["api_td"]
+	if !ok {
+		t.Fatalf("expected task def for api, got keys %v", keysOf(resources.EcsTaskDefinition))
+	}
+	if apiTaskDef.CPU != "1024" || apiTaskDef.Memory != "2048" {
+		t.Errorf("api cpu/memory = %s/%s, want 1024/2048 (explicit override, no size:)", apiTaskDef.CPU, apiTaskDef.Memory)
+	}
+
+	workerTaskDef, ok := resources.EcsTaskDefinition["worker_td"]
+	if !ok {
+		t.Fatalf("expected task def for worker, got keys %v", keysOf(resources.EcsTaskDefinition))
+	}
+	if workerTaskDef.CPU != "2048" || workerTaskDef.Memory != "4096" {
+		t.Errorf("worker cpu/memory = %s/%s, want 2048/4096 (size: medium overridden by explicit cpu:/memory:)", workerTaskDef.CPU, workerTaskDef.Memory)
+	}
+}
+
 // TestInferComputeResources_RealScalingExample exercises the scaling
 // example (min/max scale, size overrides) through the real boundary.
 func TestInferComputeResources_RealScalingExample(t *testing.T) {
@@ -329,7 +370,7 @@ func TestEcsService_LoadBalancerDefaultsToEmptyList(t *testing.T) {
 // TestHandleAutoscaling_DefaultsToCpuAndMemoryWhenUnspecified checks that a
 // scaling service with no explicit auto_scaling block still gets both a CPU
 // and a Memory policy from defaultAutoScalingConfig (not an empty
-// configuration) -- the production-stack golden file relies on exactly
+// configuration) -- the edge-and-scaling golden file relies on exactly
 // this default.
 func TestHandleAutoscaling_DefaultsToCpuAndMemoryWhenUnspecified(t *testing.T) {
 	t.Parallel()

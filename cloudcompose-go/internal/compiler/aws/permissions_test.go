@@ -97,6 +97,62 @@ func TestInferPermissionsAndWiring_RealDoctorExample(t *testing.T) {
 	}
 }
 
+// TestInferPermissionsAndWiring_RealServiceDiscoveryExample exercises the full
+// pipeline against the real service-discovery example: web's own API_URL: http://api
+// must be rewritten to reference api's service-discovery FQDN
+// (api.<namespace>), not the literal container name compose wrote, which
+// ECS itself never gives any task -- this is the one real assertion no
+// other test (only the golden byte-diff) currently covers for this
+// example (peer-container-to-peer-container discovery, as opposed to
+// container-to-managed-service substitution, which doctor/edge-and-scaling
+// already cover elsewhere).
+func TestInferPermissionsAndWiring_RealServiceDiscoveryExample(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/service-discovery/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "service-discovery")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	env := fullMockProdEnv()
+	resources, err := InferAWS(app, &env)
+	if err != nil {
+		t.Fatalf("InferAWS failed: %v", err)
+	}
+
+	taskDef, ok := resources.EcsTaskDefinition["web_td"]
+	if !ok {
+		t.Fatalf("expected a task definition for web")
+	}
+	var containers []map[string]any
+	if err := json.Unmarshal([]byte(taskDef.ContainerDefinitions), &containers); err != nil {
+		t.Fatalf("container_definitions not valid JSON: %v", err)
+	}
+	container := containers[0]
+
+	environment, _ := container["environment"].([]any)
+	values := map[string]string{}
+	for _, e := range environment {
+		entry, _ := e.(map[string]any)
+		name, _ := entry["name"].(string)
+		value, _ := entry["value"].(string)
+		values[name] = value
+	}
+
+	if got := values["API_URL"]; got != "http://api.prod-service-discovery.internal:80" {
+		t.Errorf("API_URL = %q, want it rewritten to api's service-discovery FQDN", got)
+	}
+
+	// api must itself be registered as a discoverable service for the
+	// rewrite above to resolve to anything real once deployed.
+	if _, ok := resources.ServiceDiscoveryService["api_discovery"]; !ok {
+		t.Errorf("expected api to be registered for service discovery, got keys %v", keysOf(resources.ServiceDiscoveryService))
+	}
+}
+
 // --- determinism -------------------------------------------------------
 
 // TestInferPermissionsAndWiring_Deterministic runs the full pipeline 6

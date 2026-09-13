@@ -106,13 +106,13 @@ cloud-compose compose up --env env-prod
 
 That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
-If `environment.yaml` declares a real remote `backend:` (not `local:`), `compose up` can be pointed straight at `environment.yaml` itself instead of `env-prod`'s own directory:
+`compose up` can also be pointed straight at `environment.yaml` itself instead of `env-prod`'s own directory:
 
 ```bash
 cloud-compose compose up --environment environment.yaml
 ```
 
-See `docs/deployment-identity-design.md` for why: it's a portable handle that resolves to the same environment regardless of whether that directory currently exists on disk. Local state has no such durable locator, so `--environment` requires a real backend even though `local:` is a perfectly valid choice for `env up` itself.
+See `docs/deployment-identity-design.md` for why: it's a portable handle that resolves to the same environment whether or not `env-prod` currently exists on disk — `environment.yaml`'s own `backend:` (whether `local:` or a real remote backend) tells `cloud-compose` exactly how to reconnect to it.
 
 ### Step-by-step path: review each stage
 

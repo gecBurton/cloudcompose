@@ -161,7 +161,7 @@ azure:
 backend:
   azure:
     resource_group_name: my-org-tfstate-rg
-    storage_account_name: myorgtfstate
+    th: myorgtfstate
     container_name: tfstate
     use_azuread_auth: true   # default; disables shared-key storage access
 ```
@@ -194,14 +194,18 @@ own output-location derivation already follows). If AWS's
 warns about that — unlocked S3 state has the same concurrent-apply
 race as `local`.
 
-`local` is also why `cloud-compose compile --environment <file>` (see
-`docs/deployment-identity-design.md`) refuses a `local:` backend
-specifically, distinct from refusing a missing `backend:` altogether:
-even an authored path is still just one file on one filesystem, with
-no durable locator to resolve from `environment.yaml` alone across
-machines/checkouts, so that command requires a real remote backend
-even though `local` is otherwise a perfectly valid choice for
-`env init`/`env up`.
+`cloud-compose compile --environment <file>` (see
+`docs/deployment-identity-design.md`) works for `local:` too, not just
+a real remote backend: `local.path` is authored and resolved relative
+to `environment.yaml`'s own directory, so regenerating the
+environment's output directory always reconnects to the same state
+file — just as deterministic to resolve as a remote backend's derived
+state key. The remaining caveat is the same one `--env <dir>` already
+has: the state file (or, for `--env`, the whole generated directory)
+has to still exist on whatever machine/checkout is running the
+command — `--environment` with `local:` doesn't need any more than
+that, and needs less than `--env <dir>` did, since only
+`environment.yaml` itself has to survive, not a generated directory.
 
 The state *key* (S3's `key`, azurerm's `key`, GCS's `prefix`) is never
 authored here — it's always derived mechanically from `name:` (for the

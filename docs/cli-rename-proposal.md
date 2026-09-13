@@ -87,11 +87,10 @@ everywhere else).
 `<bin> compile` and `<bin> env init` both stay top-level, not nested
 under `env`/`compose`: every other command runs real Terraform
 (`apply`/`destroy`); these two only ever write `main.tf.json` and stop
-— the same "no side effects, explain-friendly" pipeline stage
-`compile --explain`/`--demo` already depend on not requiring any
-applied environment or cloud credentials at all. Nesting them under
-`env`/`compose` would incorrectly imply they belong to the
-apply-oriented half of this tree.
+— the same "no side effects" pipeline stage `compile --explain`
+already depends on not requiring any applied environment or cloud
+credentials at all. Nesting them under `env`/`compose` would
+incorrectly imply they belong to the apply-oriented half of this tree.
 
 `-f/--file` stays a persistent root flag; grouping `up`/`down`/`ps`/
 `logs` under `env`/`compose` doesn't change that, since cobra resolves

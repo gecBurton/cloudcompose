@@ -130,8 +130,6 @@ identity; tracked here so they're known-deferred, not missed):
 - `resolveComposeFile`'s implicit directory scan when `-f` is omitted
   (`compose_file.go:10-15`) — same "guessing from cwd" smell, on the
   input side. Worth a follow-up to require `-f` explicitly.
-- `--env`/`--demo` mutual exclusivity checked at runtime instead of
-  declaratively via `MarkFlagsMutuallyExclusive` — minor flag hygiene.
 - `initEnvironment`'s pointer-field nil-check-and-default blocks in
   `env_init.go` — silent defaults baked into the CLI layer rather than
   centralized in `shared/constants.go`. No urgency.
@@ -141,7 +139,9 @@ identity; tracked here so they're known-deferred, not missed):
 Added `resolveEnvironmentByDefinition(environmentYamlPath)`
 (`cmd/cloudcompose/environment_resolve.go`), reachable via a new
 `--environment <file>` flag on `compile`/`compose up` (mutually
-exclusive with `--env <dir>`/`--demo`). It derives the environment's
+exclusive with `--env <dir>`, `compile`'s own other way of supplying an
+environment at the time -- see item 7 below for its later removal). It
+derives the environment's
 own output directory (`<dir of environmentYamlPath>/env-<name>`, the
 same path `env init`/`env up` themselves compute) and delegates to the
 existing `LoadEnvironment(dir)` -- it never creates, regenerates, or
@@ -343,6 +343,40 @@ did. No committed `environment.yaml` fixture needed updating: none of
 `examples/hello/environment*.yaml` or
 `scripts/ci-environment.{aws,azure}.yaml` used a remote backend
 (item 4 above only ever set them to `local:`).
+
+### 7. Remove `compile --demo` (done)
+
+`compile -d <cloud>` compiled against a built-in synthetic environment
+(placeholder VPC/ALB/ARN IDs on AWS, resource-group/VNet IDs on Azure,
+a placeholder project ID on GCP) instead of a real, applied one, for
+evaluating what a compose file becomes on a given cloud without
+credentials or having run `env init` first. In practice this added a
+second, parallel way to supply an environment to `compile` (`--env`
+vs. `--demo`, mutually exclusive, exactly one required) for a use case
+judged not worth the maintenance cost of keeping in sync with the real
+environment shape on all three clouds.
+
+Removed: the `--demo`/`-d` flag itself; `demoEnvironment` and its
+dispatch in `compileApp` (`compile.go`); `models.NewDemoAwsEnvironment`/
+`NewDemoAzureEnvironment`/`NewDemoGcpEnvironment` (`environment.go`) and
+their placeholder-ID literals; the "DEMO MODE" stderr banner. `--env` is
+now unconditionally required to `compile` (previously "exactly one of
+`--env`/`--demo`"), with a plain "Error: --env is required to compile"
+message. Every test that exercised `--demo` (`TestDemoEnvironment`,
+`TestMain_RequiresEnvOrDemo`, `TestMain_RejectsBothEnvAndDemo`,
+`TestMain_DemoRejectsUnknownCloud`, `TestMain_DemoWritesTerraformWithNoEnvironment`,
+and every other test that used `-d aws`/`-d azure` purely as a
+convenient stand-in for "some real environment") was either deleted or
+rewritten against a real `writeAwsEnvironmentFixture`/
+`writeAzureEnvironmentFixture` (`compose_down_test.go`) the same way
+every other `cmd/cloudcompose` test already did -- `--demo`'s tests were
+the only ones in the package still using the synthetic path instead of
+the applied-fixture convention already established everywhere else.
+
+No model/inference/generator code changed: `NewAwsEnvironment`/
+`NewAzureEnvironment`/`NewGcpEnvironment` (the real environments'
+own zero-value constructors, used by `LoadAws/Azure/GcpEnvironment` and
+now also by the new test fixtures) were already there and untouched.
 
 ## Explicitly rejected alternatives
 

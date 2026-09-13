@@ -47,7 +47,7 @@ func runComposeUp(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	appDir, err := compileApp(composeFile, envFile, "")
+	appDir, err := compileApp(composeFile, envFile)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)

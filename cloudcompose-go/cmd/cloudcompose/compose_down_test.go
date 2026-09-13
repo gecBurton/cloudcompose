@@ -165,6 +165,48 @@ func writeAwsEnvironmentFixture(t *testing.T, name string) string {
 	return envFile
 }
 
+// writeAzureEnvironmentFixture mirrors writeAwsEnvironmentFixture,
+// declaring a minimal-but-valid Azure environment instead.
+func writeAzureEnvironmentFixture(t *testing.T, name string) string {
+	t.Helper()
+	scratchDir := t.TempDir()
+	envFile := writeMinimalEnvironmentYAML(t, scratchDir, name)
+	dir := filepath.Join(scratchDir, "env-"+name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir env-%s: %v", name, err)
+	}
+
+	mainTF := fmt.Sprintf(`output "environment" {
+  value = {
+    target                     = "azure"
+    name                       = %q
+    log_analytics_workspace_id = "x"
+    resource_group_name        = "%s-rg"
+    vnet_id                    = "y"
+    vnet_name                  = "%s-vnet"
+    apps_cidr                  = "10.0.128.0/17"
+  }
+}
+`, name, name, name)
+	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte(mainTF), 0644); err != nil {
+		t.Fatalf("write main.tf: %v", err)
+	}
+
+	initCmd := exec.Command("terraform", "init", "-input=false")
+	initCmd.Dir = dir
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("terraform init: %v\n%s", err, out)
+	}
+
+	applyCmd := exec.Command("terraform", "apply", "-auto-approve")
+	applyCmd.Dir = dir
+	if out, err := applyCmd.CombinedOutput(); err != nil {
+		t.Fatalf("terraform apply: %v\n%s", err, out)
+	}
+
+	return envFile
+}
+
 // TestComposeDown_FailsWhenAppNeverCompiled confirms `down` fails clearly, and
 // never invokes terraform destroy at all, when the app-<environment
 // name> directory a previous `cloud-compose compile` would have written

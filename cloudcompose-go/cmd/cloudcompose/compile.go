@@ -31,7 +31,6 @@ func runMain(cmd *cobra.Command, args []string) {
 
 	composeFileFlag, _ := cmd.Flags().GetString("file")
 	envFile, _ := cmd.Flags().GetString("env")
-	demoCloud, _ := cmd.Flags().GetString("demo")
 	explainOnly, _ := cmd.Flags().GetBool("explain")
 
 	composeFile, err := resolveComposeFile(composeFileFlag)
@@ -66,17 +65,14 @@ func runMain(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Exactly one of --env, --demo selects the target.
-	if envFile == "" && demoCloud == "" {
-		fmt.Fprintln(os.Stderr, "Error: one of --env or --demo is required to compile")
-		os.Exit(1)
-	}
-	if envFile != "" && demoCloud != "" {
-		fmt.Fprintln(os.Stderr, "Error: --env and --demo are mutually exclusive")
+	// --env selects the target; required, since there's no other way
+	// to compile against a real environment.
+	if envFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: --env is required to compile")
 		os.Exit(1)
 	}
 
-	outputDir, err := compileApp(composeFile, envFile, demoCloud)
+	outputDir, err := compileApp(composeFile, envFile)
 	if err != nil {
 		printUnexpectedError(err)
 		os.Exit(1)
@@ -85,13 +81,12 @@ func runMain(cmd *cobra.Command, args []string) {
 	fmt.Printf("Success! Terraform manifest written to %s\n", filepath.Join(outputDir, "main.tf.json"))
 }
 
-// compileApp loads the environment -- from envFile (an authored
-// environment.yaml; exactly one of envFile/demoCloud must be set) or
-// demoCloud -- then parses/normalizes composeFile and writes the
+// compileApp loads the environment from envFile (an authored
+// environment.yaml), then parses/normalizes composeFile and writes the
 // generated Terraform JSON to <dir of composeFile>/app-<environment
 // name>-<project name>, returning that directory. Project name is
 // composeFile's own top-level `name:`.
-func compileApp(composeFile, envFile, demoCloud string) (string, error) {
+func compileApp(composeFile, envFile string) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
@@ -110,22 +105,10 @@ func compileApp(composeFile, envFile, demoCloud string) (string, error) {
 		return "", err
 	}
 
-	var env any
-	switch {
-	case demoCloud != "":
-		env, err = demoEnvironment(demoCloud)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintln(os.Stderr, "DEMO MODE: using placeholder resource IDs, not a real environment. "+
-			"The generated Terraform is for evaluation only and is not deployable as-is — "+
-			"run `cloud-compose env init` to set up a real one.")
-	default:
-		fmt.Printf("Resolving environment: %s\n", envFile)
-		env, err = resolveEnvironmentByDefinition(envFile)
-		if err != nil {
-			return "", err
-		}
+	fmt.Printf("Resolving environment: %s\n", envFile)
+	env, err := resolveEnvironmentByDefinition(envFile)
+	if err != nil {
+		return "", err
 	}
 	target, err := environmentTarget(env)
 	if err != nil {
@@ -229,7 +212,7 @@ func requireAwsOrAzure(cmdName string, env any) error {
 }
 
 // environmentName reports the environment's own name (the `name:`
-// authored in environment.yaml, or "demo" for --demo).
+// authored in environment.yaml).
 func environmentName(env any) (string, error) {
 	switch e := env.(type) {
 	case *models.AwsEnvironment:
@@ -284,23 +267,6 @@ func appDir(composeFile, envFile string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+composeApp.Name), nil
-}
-
-// demoEnvironment builds a synthetic environment for --demo.
-func demoEnvironment(cloud string) (any, error) {
-	switch cloud {
-	case "aws":
-		env := models.NewDemoAwsEnvironment()
-		return &env, nil
-	case "azure":
-		env := models.NewDemoAzureEnvironment()
-		return &env, nil
-	case "gcp":
-		env := models.NewDemoGcpEnvironment()
-		return &env, nil
-	default:
-		return nil, fmt.Errorf("--demo must be one of aws, azure, gcp (got %q)", cloud)
-	}
 }
 
 // compileTerraform dispatches to the correct Go compile-<cloud>
@@ -417,8 +383,7 @@ func copyDir(src, dst string) error {
 func init() {
 	rootCmd.AddCommand(mainCmd)
 
-	mainCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment to deploy into (must already be applied -- `cloud-compose env init`/`env up` first). Mutually exclusive with --demo.")
-	mainCmd.Flags().StringP("demo", "d", "", "Generate placeholder Terraform for evaluation, with no real environment: one of aws, azure, gcp. Mutually exclusive with --env.")
+	mainCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment to deploy into (must already be applied -- `cloud-compose env init`/`env up` first).")
 	mainCmd.Flags().Bool("explain", false, "Report every inference the compiler makes, and write nothing")
 	mainCmd.Flags().BoolP("version", "v", false, "Show the version and exit")
 }

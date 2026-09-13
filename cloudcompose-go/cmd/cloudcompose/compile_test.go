@@ -46,67 +46,6 @@ func TestEnvironmentTarget_RejectsUnsupportedType(t *testing.T) {
 	}
 }
 
-func TestDemoEnvironment(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		cloud string
-		want  string
-	}{
-		{"aws", "aws"},
-		{"azure", "azure"},
-		{"gcp", "gcp"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.cloud, func(t *testing.T) {
-			env, err := demoEnvironment(tc.cloud)
-			if err != nil {
-				t.Fatalf("demoEnvironment(%q) failed: %v", tc.cloud, err)
-			}
-			got, err := environmentTarget(env)
-			if err != nil {
-				t.Fatalf("environmentTarget failed: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestDemoEnvironment_RejectsUnknownCloud(t *testing.T) {
-	t.Parallel()
-	_, err := demoEnvironment("nonsense")
-	if err == nil {
-		t.Fatal("expected an error for an unrecognised cloud name")
-	}
-}
-
-// TestDemoEnvironment_CompilesRealExample is a light integration check
-// that every demo environment (not just AWS's, per
-// TestCompileTerraform_DispatchesToAWS above) reaches its full
-// infer/generate pipeline and produces valid Terraform JSON, the same
-// way --demo is actually used from the CLI.
-func TestDemoEnvironment_CompilesRealExample(t *testing.T) {
-	t.Parallel()
-	for _, cloud := range []string{"aws", "azure", "gcp"} {
-		cloud := cloud
-		t.Run(cloud, func(t *testing.T) {
-			t.Parallel()
-			env, err := demoEnvironment(cloud)
-			if err != nil {
-				t.Fatalf("demoEnvironment(%q) failed: %v", cloud, err)
-			}
-			out, err := compileTerraform("../../../examples/hello/compose.yml", env, "hello")
-			if err != nil {
-				t.Fatalf("compileTerraform failed: %v", err)
-			}
-			if out == "" {
-				t.Error("expected non-empty output")
-			}
-		})
-	}
-}
-
 // TestCompileTerraform_DispatchesToAWS is a light integration check that
 // compileTerraform's type-switch dispatch actually reaches the AWS
 // pipeline and produces valid Terraform JSON for the real hello example.
@@ -211,57 +150,20 @@ func TestCopyDockerBuildContexts_NoDockerImagesIsANoOp(t *testing.T) {
 	}
 }
 
-// TestMain_RequiresEnvOrDemo confirms --env and --demo really are the
-// only two ways to supply an environment: neither given is an error,
-// not a silent default (see runMain's own "one way to configure, not
-// two" comment, mirroring init.go's).
-func TestMain_RequiresEnvOrDemo(t *testing.T) {
+// TestMain_RequiresEnv confirms --env is required to compile: not
+// given is an error, not a silent default (see runMain's own "one way
+// to configure, not two" comment, mirroring init.go's).
+func TestMain_RequiresEnv(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 
 	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected a non-zero exit when neither --env nor --demo is given, got success:\n%s", out)
+		t.Fatalf("expected a non-zero exit when --env is not given, got success:\n%s", out)
 	}
-	if !contains(string(out), "--env or --demo is required") {
-		t.Errorf("expected the error to name both flags, got:\n%s", out)
-	}
-}
-
-// TestMain_RejectsBothEnvAndDemo confirms --env and --demo are mutually
-// exclusive, not silently resolved by preferring one.
-func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
-	t.Parallel()
-	bin := buildCloudComposeBinary(t)
-
-	cmd := exec.Command(bin, "compile",
-		"-f", "../../../examples/hello/compose.yml",
-		"-e", "../../../examples/hello",
-		"-d", "aws")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected a non-zero exit when both --env and --demo are given, got success:\n%s", out)
-	}
-	if !contains(string(out), "mutually exclusive") {
-		t.Errorf("expected the error to say the two flags are mutually exclusive, got:\n%s", out)
-	}
-}
-
-// TestMain_DemoRejectsUnknownCloud confirms --demo validates its argument
-// against the known cloud set rather than passing an unrecognised value
-// through to LoadEnvironment-shaped code.
-func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
-	t.Parallel()
-	bin := buildCloudComposeBinary(t)
-
-	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-d", "nonsense")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected a non-zero exit for an unrecognised --demo cloud, got success:\n%s", out)
-	}
-	if !contains(string(out), "aws, azure, gcp") {
-		t.Errorf("expected the error to list the valid clouds, got:\n%s", out)
+	if !contains(string(out), "--env is required") {
+		t.Errorf("expected the error to name --env, got:\n%s", out)
 	}
 }
 
@@ -270,8 +172,9 @@ func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
 func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
+	envFile := writeAzureEnvironmentFixture(t, "demo")
 
-	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-d", "azure")
+	cmd := exec.Command(bin, "compile", "-f", "../../../examples/hello/compose.yml", "-e", envFile)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected a non-zero exit compiling for Azure with no x-cloud.azure.subnet_index, got success:\n%s", out)
@@ -287,6 +190,7 @@ func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	composeDir := t.TempDir()
+	envFile := writeAzureEnvironmentFixture(t, "demo")
 
 	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
 	if err != nil {
@@ -301,44 +205,10 @@ func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "azure")
+	cmd := exec.Command(bin, "compile", "-f", composeFile, "-e", envFile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cloud-compose compile -d azure with subnet_index: 0 failed: %v\n%s", err, out)
-	}
-}
-
-// TestMain_DemoWritesTerraformWithNoEnvironment is the real end-to-end
-// path: --demo alone, no --env, no environment directory anywhere,
-// should still produce a compilable main.tf.json plus the demo-mode
-// warning banner on stderr. Output now has no --out override -- it's
-// always written to <dir of --file>/terraform -- so this copies
-// compose.yml into a scratch directory rather than writing into the
-// real examples/hello directory.
-func TestMain_DemoWritesTerraformWithNoEnvironment(t *testing.T) {
-	t.Parallel()
-	bin := buildCloudComposeBinary(t)
-	composeDir := t.TempDir()
-
-	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
-	if err != nil {
-		t.Fatalf("read example compose.yml: %v", err)
-	}
-	composeFile := filepath.Join(composeDir, "compose.yml")
-	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
-		t.Fatalf("write compose.yml: %v", err)
-	}
-
-	cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("cloud-compose compile --demo aws failed: %v\n%s", err, out)
-	}
-	if !contains(string(out), "DEMO MODE") {
-		t.Errorf("expected a demo-mode warning, got:\n%s", out)
-	}
-	if _, statErr := os.Stat(filepath.Join(composeDir, "app-demo-hello", "main.tf.json")); statErr != nil {
-		t.Errorf("expected main.tf.json to be written, got: %v", statErr)
+		t.Fatalf("cloud-compose compile -e %s with subnet_index: 0 failed: %v\n%s", envFile, err, out)
 	}
 }
 
@@ -354,6 +224,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	composeDir := t.TempDir()
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 
 	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
 	if err != nil {
@@ -364,7 +235,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	beforeSubcommand := exec.Command(bin, "-f", composeFile, "compile", "-d", "aws")
+	beforeSubcommand := exec.Command(bin, "-f", composeFile, "compile", "-e", envFile)
 	out, err := beforeSubcommand.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloud-compose -f %s compile failed: %v\n%s", composeFile, err, out)
@@ -380,7 +251,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 		t.Fatalf("cleanup %s: %v", appDirName, err)
 	}
 
-	afterSubcommand := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
+	afterSubcommand := exec.Command(bin, "compile", "-f", composeFile, "-e", envFile)
 	out, err = afterSubcommand.CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloud-compose compile -f %s failed: %v\n%s", composeFile, err, out)
@@ -399,6 +270,7 @@ func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	composeDir := t.TempDir()
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 
 	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
 	if err != nil {
@@ -408,7 +280,7 @@ func TestMain_FileFlagIsOptionalWhenComposeFileExistsInCwd(t *testing.T) {
 		t.Fatalf("write compose.yml: %v", err)
 	}
 
-	cmd := exec.Command(bin, "compile", "-d", "aws")
+	cmd := exec.Command(bin, "compile", "-e", envFile)
 	cmd.Dir = composeDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -427,8 +299,9 @@ func TestMain_FileFlagMissingWithNoComposeFileInCwd(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	emptyDir := t.TempDir()
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 
-	cmd := exec.Command(bin, "compile", "-d", "aws")
+	cmd := exec.Command(bin, "compile", "-e", envFile)
 	cmd.Dir = emptyDir
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -454,6 +327,7 @@ func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) 
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	composeDir := t.TempDir()
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 
 	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
 	if err != nil {
@@ -469,7 +343,7 @@ func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) 
 		if err := os.WriteFile(composeFile, []byte(renamed), 0644); err != nil {
 			t.Fatalf("write %s: %v", composeFile, err)
 		}
-		cmd := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws")
+		cmd := exec.Command(bin, "compile", "-f", composeFile, "-e", envFile)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("cloud-compose compile for %s failed: %v\n%s", project, err, out)
 		}
@@ -511,6 +385,7 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	composeDir := t.TempDir()
+	envFile := writeAwsEnvironmentFixture(t, "demo")
 
 	composeFile := filepath.Join(composeDir, "compose.yml")
 	composeContent := "name: portstest\nservices:\n  backend:\n    image: nginx\n    ports:\n      - \"3000:3000\"\n      - \"3001:3001\"\n"
@@ -526,7 +401,7 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 		t.Errorf("expected --explain to report ports 3001 are not exposed, got:\n%s", explainOut)
 	}
 
-	compileOut, err := exec.Command(bin, "compile", "-f", composeFile, "-d", "aws").CombinedOutput()
+	compileOut, err := exec.Command(bin, "compile", "-f", composeFile, "-e", envFile).CombinedOutput()
 	if err != nil {
 		t.Fatalf("cloud-compose compile failed: %v\n%s", err, compileOut)
 	}

@@ -277,7 +277,7 @@ cleanup() {
   # own comment below for why that matters, not just $COMPOSE.
   if [[ -x "$CLOUDCOMPOSE" && -f "$BUILD_DIR/main.tf.json" ]]; then
     log "Final logs snapshot before teardown…"
-    "$CLOUDCOMPOSE" compose logs -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --tail 500 || true
+    "$CLOUDCOMPOSE" logs -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --tail 500 || true
   fi
 
   local leaked=0
@@ -539,7 +539,7 @@ poll_until_served() {
   return $(( served == 1 ? 0 : 1 ))
 }
 
-# show_diagnostics prints `cloud-compose compose ps`/`logs` output for the app just
+# show_diagnostics prints `cloud-compose ps`/`logs` output for the app just
 # deployed -- live cloud status and recent stdout/stderr, queried directly
 # rather than inferred from an HTTP response or Terraform state (see
 # internal/compiler/{aws,azure}/status.go and logs.go's own doc comments).
@@ -563,10 +563,10 @@ poll_until_served() {
 # below were added.
 show_diagnostics() {
   local label="$1"
-  log "cloud-compose compose ps ($label)…"
-  "$CLOUDCOMPOSE" compose ps -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" || true
-  log "cloud-compose compose logs, last 5m ($label)…"
-  "$CLOUDCOMPOSE" compose logs -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --since 5m --tail 200 || true
+  log "cloud-compose ps ($label)…"
+  "$CLOUDCOMPOSE" ps -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" || true
+  log "cloud-compose logs, last 5m ($label)…"
+  "$CLOUDCOMPOSE" logs -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --since 5m --tail 200 || true
 }
 
 show_diagnostics "just deployed"
@@ -583,7 +583,7 @@ log "App is live — response contains '$EXPECT'. 🎉"
 echo "----- response -----"
 echo "$body" | head -20
 
-# --- 4a. Assert cloud-compose compose ps/logs themselves work against the real cloud --
+# --- 4a. Assert cloud-compose ps/logs themselves work against the real cloud --
 # Everything above (poll_until_served, show_diagnostics) treats ps/logs as
 # pure diagnostics -- their output is printed but never checked, so a bug
 # in either command could silently print garbage or nothing and this
@@ -601,7 +601,7 @@ echo "$body" | head -20
 #
 # Uses $COMPOSE_BUILD_COPY, not $COMPOSE -- see show_diagnostics' own
 # comment above for why.
-log "Asserting cloud-compose compose ps reports the deployed service as running…"
+log "Asserting cloud-compose ps reports the deployed service as running…"
 # A single shot here raced a real AWS eventual-consistency gap and failed
 # CI (2026-08-16): RunningCount (from ECS's own DescribeServices) and
 # target health (from a separate ELB DescribeTargetHealth call, see
@@ -621,7 +621,7 @@ PS_ASSERT_TIMEOUT="${PS_ASSERT_TIMEOUT:-120}"
 ps_deadline=$(( SECONDS + PS_ASSERT_TIMEOUT ))
 ps_ok=0
 while (( SECONDS < ps_deadline )); do
-  if "$CLOUDCOMPOSE" compose ps -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --json | python3 -c "
+  if "$CLOUDCOMPOSE" ps -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --json | python3 -c "
 import json, sys
 rows = json.load(sys.stdin)
 if not rows:
@@ -638,9 +638,9 @@ print(f'ps OK -- {len(rows)} service(s) found and running: ' + ', '.join(r[\"nam
   sleep 5
 done
 echo
-(( ps_ok == 1 )) || fail "cloud-compose compose ps did not report the deployed service as running after ${PS_ASSERT_TIMEOUT}s (RunningCount/target-health convergence delay, or a real regression -- check the diagnostics above)"
+(( ps_ok == 1 )) || fail "cloud-compose ps did not report the deployed service as running after ${PS_ASSERT_TIMEOUT}s (RunningCount/target-health convergence delay, or a real regression -- check the diagnostics above)"
 
-log "Asserting cloud-compose compose logs returns real output…"
+log "Asserting cloud-compose logs returns real output…"
 # Log ingestion is not instant (CloudWatch typically has single-digit
 # seconds of delay; Azure Log Analytics' own ingestion latency can run
 # into minutes -- Microsoft's own guidance is "usually under 5 minutes,
@@ -656,7 +656,7 @@ LOGS_ASSERT_TIMEOUT="${LOGS_ASSERT_TIMEOUT:-600}"
 logs_deadline=$(( SECONDS + LOGS_ASSERT_TIMEOUT ))
 logs_ok=0
 while (( SECONDS < logs_deadline )); do
-  if "$CLOUDCOMPOSE" compose logs -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --since 5m --tail 200 --json | python3 -c "
+  if "$CLOUDCOMPOSE" logs -f "$COMPOSE_BUILD_COPY" -e "$GENERATED_ENV_CONFIG" --since 5m --tail 200 --json | python3 -c "
 import json, sys
 events = json.load(sys.stdin)
 if not events:
@@ -670,7 +670,7 @@ print(f'logs OK -- {len(events)} line(s) returned')
   sleep 10
 done
 echo
-(( logs_ok == 1 )) || fail "cloud-compose compose logs returned no output for the deployed service after ${LOGS_ASSERT_TIMEOUT}s (log ingestion delay, or a real regression -- check the diagnostics above)"
+(( logs_ok == 1 )) || fail "cloud-compose logs returned no output for the deployed service after ${LOGS_ASSERT_TIMEOUT}s (log ingestion delay, or a real regression -- check the diagnostics above)"
 
 # --- 4b. Front Door: confirm traffic actually flows through the CDN itself ---
 # docs/azure-todo.md's Front Door item: a clean `terraform apply` only ever

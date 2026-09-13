@@ -378,6 +378,47 @@ No model/inference/generator code changed: `NewAwsEnvironment`/
 own zero-value constructors, used by `LoadAws/Azure/GcpEnvironment` and
 now also by the new test fixtures) were already there and untouched.
 
+### 8. Flatten `compose up`/`down`/`ps`/`logs` back onto the root command (done)
+
+Item 1 originally nested every single-app command under a `compose`
+parent (`compose up`/`down`/`ps`/`logs`), mirroring `docker compose`'s
+own noun-then-verb shape and `env`'s own grouping alongside it (see
+`docs/cli-rename-proposal.md`, which this item followed). In practice,
+typing `compose` before every single-app verb felt redundant: unlike
+`env up`, which disambiguates against nothing else at the top level (no
+bare `up` existed to confuse it with, since `up`/`down`/`ps`/`logs` were
+themselves nested under `compose`), grouping the single-app commands
+bought no actual disambiguation -- there was never a name collision
+`compose` was resolving, only an extra word to type on the commands run
+most often day to day.
+
+Fix: `compose.go` (the parent command) removed entirely; `compose_up.go`/
+`compose_down.go`/`compose_ps.go`/`compose_logs.go` unchanged in content
+except each file's own `init()` now calls `rootCmd.AddCommand(...)`
+instead of `composeCmd.AddCommand(...)` -- filenames and Go identifiers
+(`composeUpCmd`, `runComposeUp`, etc.) deliberately left as-is rather
+than renamed to `upCmd`/`runUp`, since they still accurately describe
+"the compose-file-driven app commands" as a category, and renaming
+them would have been unrelated churn on top of the actual behavior
+change. `env init`/`env up`/`env down` stay grouped under `env`,
+unchanged: they operate on the shared platform, a genuinely different
+target from a single app, and `env` collides with nothing at the top
+level either way.
+
+Every doc-string/error message naming the old `compose <verb>` form
+(`compile.go`'s `requireAwsOrAzure`, `compose_logs.go`/`compose_ps.go`'s
+unsupported-target errors, `env_down.go`'s dependent-app-check
+suggestion, `terraform.go`'s shared-helper comments) was updated to the
+flattened form. `README.md`, `examples/README.md`, `AGENTS.md`'s
+project-structure tree, `docs/authored-environment-config.md`, and
+`docs/multi-user-state.md` updated likewise; `docs/cli-rename-proposal.md`
+gained a status note marking `compose` as implemented-then-reverted
+rather than rewriting its own worked examples, which are kept as
+historical record of the shape that briefly existed. This item's own
+`compose up`/`compose down`/etc. mentions above (items 1, 2, 5) are
+similarly left as accurate history of what was true when each landed,
+not rewritten to match today's flattened form.
+
 ## Explicitly rejected alternatives
 
 - **New `EnvironmentState`/`EnvironmentDefinition` domain types.** Not

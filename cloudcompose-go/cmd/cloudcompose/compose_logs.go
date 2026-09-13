@@ -138,7 +138,7 @@ func runComposeLogs(cmd *cobra.Command, args []string) {
 		// Unreachable: requireAwsOrAzure above already rejected
 		// anything but AWS/Azure.
 		target, _ := environmentTarget(env)
-		fmt.Fprintf(os.Stderr, "Error: `cloud-compose compose logs` does not support %s environments yet\n", target)
+		fmt.Fprintf(os.Stderr, "Error: `cloud-compose logs` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
 }
@@ -203,7 +203,7 @@ func azureLogEventsJSON(events []azure.LogEvent) []logEventJSON {
 }
 
 func init() {
-	composeCmd.AddCommand(composeLogsCmd)
+	rootCmd.AddCommand(composeLogsCmd)
 
 	composeLogsCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment this app was compiled against (must already be applied).")
 	composeLogsCmd.Flags().Duration("since", 0, "Only show logs newer than a relative duration, e.g. 30m, 1h (default: no limit)")

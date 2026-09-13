@@ -28,8 +28,8 @@ main practical reason to use a shared environment at all (fewer NAT
 Gateways/ALBs paid for, rather than one per app).
 
 `-e`/`--env` means the same thing on every command that takes it
-(`env init`, `env up`, `compile`, `compose up`, `compose down`,
-`compose ps`, `compose logs`, `env down`): the authored
+(`env init`, `env up`, `compile`, `up`, `down`,
+`ps`, `logs`, `env down`): the authored
 `environment.yaml`. There is no separate way to point at an
 already-applied output directory directly — the directory is always
 derived from the file, never authored or passed independently. See
@@ -216,7 +216,7 @@ block expects, one time per organization/account, before any
 `environment.yaml` references it.
 
 Tearing down a shared environment (as opposed to a single app —
-`cloud-compose down`) is `cloud-compose env-destroy`: unlike `down`, it
+`cloud-compose down`) is `cloud-compose env down`: unlike `down`, it
 first checks (when `backend:` is a real remote backend, not `local`)
 whether any app still depends on the environment — every app compiled
 against a backend-configured environment shares that same backend,
@@ -295,11 +295,11 @@ schema change once it's built, not because anything consumes it yet.
 
 - `cloud-compose init`/`compile` themselves still never run `terraform
   apply`/`destroy` or manage Terraform state — they only ever write
-  `main.tf.json`. `cloud-compose up`/`down`/`env-destroy` are the
+  `main.tf.json`. `cloud-compose up`/`down`/`env down` are the
   exceptions: `up` orchestrates `init` + `terraform apply` + `compile` +
   `terraform apply` for the common one-app-one-environment case, `down`
   runs `terraform destroy` against a single already-compiled app's own
-  directory (never the shared environment), and `env-destroy` runs
+  directory (never the shared environment), and `env down` runs
   `terraform destroy` against the shared environment itself (see
   "Sharing one environment across multiple users" above). Every
   `apply`/`destroy` any of these runs stays interactive by default (no
@@ -354,7 +354,7 @@ schema change once it's built, not because anything consumes it yet.
   the `output "backend"` shape, and building an app's own backend block
   from its environment's.
 - `internal/compiler/{aws,azure,gcp}/backend_listing.go` —
-  `ListDependentApps`, the per-cloud listing `env-destroy`'s safety
+  `ListDependentApps`, the per-cloud listing `env down`'s safety
   check uses.
 - `internal/compiler/{aws,azure,gcp}/environment.go` —
   `Load*Environment(dir)` calls `TerraformOutputs`/

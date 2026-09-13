@@ -130,7 +130,7 @@ func runComposePs(cmd *cobra.Command, args []string) {
 		// Unreachable: requireAwsOrAzure above already rejected
 		// anything but AWS/Azure.
 		target, _ := environmentTarget(env)
-		fmt.Fprintf(os.Stderr, "Error: `cloud-compose compose ps` does not support %s environments yet\n", target)
+		fmt.Fprintf(os.Stderr, "Error: `cloud-compose ps` does not support %s environments yet\n", target)
 		os.Exit(1)
 	}
 }
@@ -225,7 +225,7 @@ func azurePsRowsJSON(statuses []azure.ServiceStatus) []psRowJSON {
 }
 
 func init() {
-	composeCmd.AddCommand(composePsCmd)
+	rootCmd.AddCommand(composePsCmd)
 
 	composePsCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment this app was compiled against (must already be applied).")
 	composePsCmd.Flags().Bool("json", false, "Output as a JSON array instead of a human-readable table")

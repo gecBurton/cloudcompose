@@ -10,8 +10,8 @@ import (
 // envUpCmd runs `env init` (writing the environment's Terraform
 // manifest) followed immediately by `terraform apply` on it -- the
 // environment half of what a single bundled `up` command used to do.
-// `compose up` is the app half: compile + apply against an
-// already-`env up`'d directory.
+// The top-level `up` command is the app half: compile + apply against
+// an already-`env up`'d directory.
 //
 // Terraform apply runs interactively (plan + y/n prompt) unless
 // --auto-approve is set, and always runs even if the environment

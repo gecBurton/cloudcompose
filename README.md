@@ -40,16 +40,9 @@ go build -o cloud-compose ./cmd/cloudcompose
 
 You'll also need the **Terraform CLI**, **Docker** (only if a service has a `build:` section), and credentials for whichever cloud you're deploying to.
 
-### Try it with no cloud account
+### See what it infers before deploying anything
 
-`--demo` compiles any example against placeholder resource IDs, real, valid Terraform JSON, just not deployable as-is:
-
-```bash
-# From the cloudcompose-go directory
-./cloud-compose compile -f ../examples/hello/compose.yml -d aws   # or -d azure / -d gcp
-```
-
-See exactly what it inferred and why, before compiling anything for real:
+`--explain` reports every inference the compiler makes and writes nothing — no cloud account or `environment.yaml` needed:
 
 ```bash
 cloud-compose compile -f docker-compose.yml --explain

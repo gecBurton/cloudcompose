@@ -239,7 +239,7 @@ name: prod
 aws:
   vpc_cidr: 10.0.0.0/16
 backend:
-  aws:
+  remote:
     bucket: my-org-tfstate
     region: eu-west-2
     dynamodb_table: my-org-tflocks
@@ -301,7 +301,7 @@ name: prod
 aws:
   vpc_cidr: 10.0.0.0/16
 backend:
-  aws:
+  remote:
     bucket: my-org-tfstate
 `)
 	_, err := Load(path)
@@ -342,7 +342,13 @@ func TestValidate_RejectsBackendLocalAlongsideRemote(t *testing.T) {
 	}
 }
 
-func TestValidate_RejectsBackendBlockNotMatchingProvider(t *testing.T) {
+// TestValidate_RejectsBackendMissingForProvider covers what used to be
+// a "backend has a block not matching provider" case: that's no longer
+// reachable through Load (decodeBackendRemote only ever populates the
+// one field matching Provider -- see validateBackend's own doc
+// comment), so the closest remaining case Validate itself still checks
+// directly is a provider whose own required field is simply absent.
+func TestValidate_RejectsBackendMissingForProvider(t *testing.T) {
 	t.Parallel()
 	config := &models.InitConfig{
 		Provider: "aws",
@@ -357,7 +363,7 @@ func TestValidate_RejectsBackendBlockNotMatchingProvider(t *testing.T) {
 		},
 	}
 	if err := Validate(config); err == nil {
-		t.Fatalf("expected an error for a backend.azure block present alongside provider: aws")
+		t.Fatalf("expected an error since provider: aws has no AWS backend field set")
 	}
 }
 

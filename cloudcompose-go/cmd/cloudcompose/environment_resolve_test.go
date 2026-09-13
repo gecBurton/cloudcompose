@@ -104,7 +104,7 @@ func TestCompile_EnvironmentFlagResolvesAndCompiles(t *testing.T) {
 
 	envFile := filepath.Join(scratchDir, "environment.yaml")
 	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\n" +
-		"backend:\n  aws:\n    bucket: my-org-tfstate\n    region: us-east-1\n    dynamodb_table: my-org-tflock\n"
+		"backend:\n  remote:\n    bucket: my-org-tfstate\n    region: us-east-1\n    dynamodb_table: my-org-tflock\n"
 	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
 		t.Fatalf("write environment.yaml: %v", err)
 	}

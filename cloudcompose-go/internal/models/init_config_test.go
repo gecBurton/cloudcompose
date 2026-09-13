@@ -27,22 +27,9 @@ func TestBackendConfig_UnmarshalsLocalBlock(t *testing.T) {
 	}
 }
 
-func TestBackendConfig_UnmarshalsAwsBlock(t *testing.T) {
-	t.Parallel()
-	var w backendWrapper
-	yamlSrc := "backend:\n  aws:\n    bucket: my-bucket\n    region: eu-west-2\n"
-	if err := yaml.Unmarshal([]byte(yamlSrc), &w); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	b := w.Backend
-	if b.Local != nil {
-		t.Error("expected Local=nil for an aws: block")
-	}
-	if b.AWS == nil || b.AWS.Bucket != "my-bucket" || b.AWS.Region != "eu-west-2" {
-		t.Errorf("expected AWS.Bucket/Region decoded, got %+v", b.AWS)
-	}
-}
-
+// TestBackendConfig_RoundTripsLocalBlock exercises Local's own
+// no-Provider-context round trip, unaffected by AWS/Azure/Gcp's
+// custom MarshalYAML handling below.
 func TestBackendConfig_RoundTripsLocalBlock(t *testing.T) {
 	t.Parallel()
 	original := backendWrapper{Backend: BackendConfig{Local: &LocalBackendConfig{Path: "../state/prod.tfstate"}}}
@@ -60,6 +47,30 @@ func TestBackendConfig_RoundTripsLocalBlock(t *testing.T) {
 	}
 }
 
+// TestBackendConfig_MarshalsRemoteAwsBlockUnderRemoteKey covers
+// BackendConfig's own MarshalYAML: AWS/Azure/Gcp are tagged `yaml:"-"`
+// since which one applies depends on InitConfig.Provider (decoded by
+// initconfig.Load's decodeBackendRemote, not by BackendConfig itself --
+// see BackendConfig's own doc comment), so MarshalYAML is what puts
+// whichever one is set back under the single `remote:` key rather than
+// a cloud-named one. Decoding the *other* direction (YAML -> struct)
+// needs Provider context BackendConfig alone doesn't have, so that's
+// covered at the initconfig.Load level instead (see
+// TestLoad_BackendAwsConfig).
+func TestBackendConfig_MarshalsRemoteAwsBlockUnderRemoteKey(t *testing.T) {
+	t.Parallel()
+	original := backendWrapper{Backend: BackendConfig{AWS: &AwsBackendConfig{Bucket: "my-bucket", Region: "eu-west-2"}}}
+	out, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	got := string(out)
+	want := "backend:\n    remote:\n        bucket: my-bucket\n        region: eu-west-2\n"
+	if got != want {
+		t.Errorf("marshal mismatch: got %q, want %q", got, want)
+	}
+}
+
 func TestBackendConfig_RoundTripsAwsBlock(t *testing.T) {
 	t.Parallel()
 	original := backendWrapper{Backend: BackendConfig{AWS: &AwsBackendConfig{Bucket: "my-bucket", Region: "eu-west-2"}}}
@@ -68,11 +79,17 @@ func TestBackendConfig_RoundTripsAwsBlock(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
+	// Unmarshalling the marshalled output back into a plain
+	// BackendConfig (with no Provider context) can't repopulate AWS --
+	// only initconfig.Load's decodeBackendRemote can, since it alone
+	// knows which provider's shape `remote:` should be decoded into.
+	// This asserts that limitation explicitly rather than leaving it
+	// implicit.
 	var roundTripped backendWrapper
 	if err := yaml.Unmarshal(out, &roundTripped); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if roundTripped.Backend.Local != nil || roundTripped.Backend.AWS == nil || *roundTripped.Backend.AWS != *original.Backend.AWS {
-		t.Errorf("round-trip mismatch: got %+v, want %+v", roundTripped.Backend, original.Backend)
+	if roundTripped.Backend.AWS != nil {
+		t.Errorf("expected AWS to stay nil without Provider context, got %+v", roundTripped.Backend.AWS)
 	}
 }

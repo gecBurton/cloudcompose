@@ -81,7 +81,7 @@ cp examples/hello/environment.yaml ./environment.yaml
 # edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
 ```
 
-`environment.yaml` must declare a `backend:` — either `local:` (state stays on this machine, at an authored `path:`) or a real remote backend (`aws:`/`azure:`/`gcp:`, with locking, for sharing one environment across multiple people/CI):
+`environment.yaml` must declare a `backend:` — either `local:` (state stays on this machine, at an authored `path:`) or `remote:` (a real remote backend, with locking, for sharing one environment across multiple people/CI; its shape depends on `provider:`):
 
 ```yaml
 backend:

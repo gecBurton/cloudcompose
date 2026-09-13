@@ -96,16 +96,11 @@ func runMain(cmd *cobra.Command, args []string) {
 	fmt.Printf("Success! Terraform manifest written to %s\n", filepath.Join(outputDir, "main.tf.json"))
 }
 
-// compileApp loads the environment -- from envDir (an already-applied
-// environment directory), or environmentFile (an authored
-// environment.yaml, resolved via resolveEnvironmentByDefinition; see
-// docs/deployment-identity-design.md), or synthesizes one from
-// demoCloud -- parses and normalizes composeFile, infers and
-// generates Terraform JSON, and writes it (plus any Docker build
-// contexts) to <dir of composeFile>/app-<environment name>-<project
-// name>, returning that output directory, where <project name> is
-// composeFile's own top-level `name:` field. Exactly one of
-// envDir/environmentFile/demoCloud must be non-empty.
+// compileApp loads the environment -- from envDir, environmentFile, or
+// demoCloud (exactly one must be set) -- then parses/normalizes
+// composeFile and writes the generated Terraform JSON to <dir of
+// composeFile>/app-<environment name>-<project name>, returning that
+// directory. Project name is composeFile's own top-level `name:`.
 func compileApp(composeFile, envDir, environmentFile, demoCloud string, subnetIndex int, subnetIndexSet bool) (string, error) {
 	absCompose, err := filepath.Abs(composeFile)
 	if err != nil {
@@ -149,21 +144,14 @@ func compileApp(composeFile, envDir, environmentFile, demoCloud string, subnetIn
 		return "", err
 	}
 
-	// Output lands in <dir of -f>/app-<environment name>-<project name>,
-	// not a fixed "terraform" directory, so different environments or
-	// projects compiled from the same compose file don't overwrite each
-	// other's output.
 	envName, err := environmentName(env)
 	if err != nil {
 		return "", err
 	}
 	outputDir := filepath.Join(filepath.Dir(absCompose), "app-"+envName+"-"+projectName)
 
-	// --subnet-index only means something on Azure; ignored on AWS/GCP.
-	// It has no default: an unspecified value is not the same as
-	// explicitly choosing subnet 0, and letting the two look identical
-	// would make regenerated Terraform silently wrong (see
-	// docs/deployment-identity-design.md, item 1).
+	// Required on Azure, ignored elsewhere -- no default, since an
+	// unspecified value isn't the same as explicitly choosing subnet 0.
 	if azureEnv, ok := env.(*models.AzureEnvironment); ok {
 		if !subnetIndexSet {
 			return "", fmt.Errorf("--subnet-index is required when compiling for Azure")
@@ -270,9 +258,6 @@ func environmentBackend(env any) (*models.BackendConfig, error) {
 	}
 }
 
-// appDir reports the app-<environment name>-<project name> output
-// directory compileApp writes to, without compiling anything.
-// projectName must already be resolved by the caller.
 // appDir reports the app-<environment name>-<project name> output
 // directory compileApp writes to, without compiling anything. The
 // project name comes from composeFile's own top-level `name:` field.

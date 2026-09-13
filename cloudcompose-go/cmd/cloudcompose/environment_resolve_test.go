@@ -9,11 +9,7 @@ import (
 )
 
 // TestCompile_EnvironmentFlagRejectsMissingBackend confirms
-// resolveEnvironmentByDefinition (reached via `compile --environment`)
-// requires a `backend:` block: local-only state isn't a durable
-// locator, so this entry point refuses rather than silently falling
-// back the way `env init`/`env up` do. See its own doc comment and
-// docs/deployment-identity-design.md.
+// --environment requires a `backend:` block.
 func TestCompile_EnvironmentFlagRejectsMissingBackend(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -58,15 +54,9 @@ func TestCompile_EnvironmentFlagRejectsMissingFile(t *testing.T) {
 }
 
 // TestCompile_EnvironmentFlagResolvesAndCompiles is the real
-// end-to-end path: --environment given an authored environment.yaml
-// with a backend: block resolves the environment (regenerating its
-// Terraform directory, running `terraform init`, then reading its
-// `environment`/`backend` outputs) without the caller ever needing to
-// know or pass that directory's location -- unlike --env <dir>. A fake
-// `terraform` on PATH stands in for both `terraform init` (a no-op
-// here, real init needs real cloud credentials) and `terraform output
-// -json` (answers with a fixed environment, mirroring
-// env_down_test.go's own fakeTerraformThatReturnsEnvironment).
+// end-to-end path: --environment resolves and compiles without the
+// caller knowing the environment's output directory. A fake
+// `terraform` on PATH stands in for `terraform init`/`output -json`.
 func TestCompile_EnvironmentFlagResolvesAndCompiles(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -110,17 +100,13 @@ exit 0
 		t.Fatalf("cloud-compose compile --environment failed: %v\n%s", err, out)
 	}
 
-	// The environment's own generated output directory sits next to
-	// environment.yaml, exactly as `env init` would have written it --
-	// resolveEnvironmentByDefinition reuses that generator, it doesn't
-	// invent a separate location.
+	// Environment output lands next to environment.yaml, as `env init`
+	// would have written it.
 	envOutputDir := filepath.Join(scratchDir, "env-demo")
 	if _, statErr := os.Stat(filepath.Join(envOutputDir, "main.tf.json")); statErr != nil {
 		t.Errorf("expected the environment's own main.tf.json to have been (re)generated at %s, got: %v", envOutputDir, statErr)
 	}
 
-	// The app itself compiled successfully against the resolved
-	// environment's facts (name "demo" from the fake terraform output).
 	appOutputDir := filepath.Join(composeDir, "app-demo-hello", "main.tf.json")
 	if _, statErr := os.Stat(appOutputDir); statErr != nil {
 		t.Errorf("expected %s to exist: %v", appOutputDir, statErr)

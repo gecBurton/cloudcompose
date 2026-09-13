@@ -19,13 +19,8 @@ func writeComposeFile(t *testing.T, dir, content string) string {
 	return path
 }
 
-// TestParseCompose_RequiresTopLevelName is the regression test for the
-// core identity decision in docs/deployment-identity-design.md: an
-// application's durable identity is its compose file's own top-level
-// `name:` field, not a directory basename, -p/--project flag, or
-// COMPOSE_PROJECT_NAME -- none of which survive deleting and
-// regenerating artifacts elsewhere. A compose file with no `name:`
-// must be rejected outright, not silently defaulted.
+// TestParseCompose_RequiresTopLevelName confirms a compose file with no
+// top-level `name:` is rejected outright, not silently defaulted.
 func TestParseCompose_RequiresTopLevelName(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -37,9 +32,8 @@ func TestParseCompose_RequiresTopLevelName(t *testing.T) {
 	}
 }
 
-// TestParseCompose_ReadsTopLevelName confirms the resolved
-// ComposeApplication.Name comes from the file's own `name:`, not
-// anything derived from the file's path.
+// TestParseCompose_ReadsTopLevelName confirms ComposeApplication.Name
+// comes from the file's own `name:`, not its path.
 func TestParseCompose_ReadsTopLevelName(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "some-other-directory-name")
@@ -57,12 +51,9 @@ func TestParseCompose_ReadsTopLevelName(t *testing.T) {
 	}
 }
 
-// TestParseCompose_RejectsNameContainingSlash confirms the same
-// backend-key-collision check applied to environment.yaml's `name:`
-// (initconfig.TestLoad_RejectsNameContainingSlash) and to backend
-// naming generally (ValidateBackendName's own tests) also applies
-// here: this name is used verbatim to build BackendKeyForApp, so an
-// unsanitized value could collide with another app's key.
+// TestParseCompose_RejectsNameContainingSlash confirms `name:` is
+// validated the same way as an environment's own name -- it's used
+// verbatim in a backend state key.
 func TestParseCompose_RejectsNameContainingSlash(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -74,8 +65,7 @@ func TestParseCompose_RejectsNameContainingSlash(t *testing.T) {
 	}
 }
 
-// TestParseCompose_AcceptsSafeNames confirms ordinary project names are
-// unaffected by the new validation.
+// TestParseCompose_AcceptsSafeNames confirms ordinary names pass.
 func TestParseCompose_AcceptsSafeNames(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"checkout-api", "web_api", "hello"} {

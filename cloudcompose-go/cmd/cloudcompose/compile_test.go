@@ -249,10 +249,7 @@ func TestMain_RejectsBothEnvAndDemo(t *testing.T) {
 }
 
 // TestMain_RejectsBothEnvAndEnvironment confirms --env and --environment
-// are also mutually exclusive -- they're two different ways of
-// resolving an environment (an already-applied directory vs. an
-// authored environment.yaml, see resolveEnvironmentByDefinition's own
-// doc comment), not two names for the same thing.
+// are also mutually exclusive.
 func TestMain_RejectsBothEnvAndEnvironment(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -287,12 +284,8 @@ func TestMain_DemoRejectsUnknownCloud(t *testing.T) {
 	}
 }
 
-// TestMain_AzureRequiresExplicitSubnetIndex is the regression test for
-// docs/deployment-identity-design.md's --subnet-index fix: a default of
-// 0 is indistinguishable from an operator explicitly choosing subnet 0,
-// so compiling for Azure with no --subnet-index at all must fail rather
-// than silently picking 0. AWS/GCP are unaffected -- the flag means
-// nothing there.
+// TestMain_AzureRequiresExplicitSubnetIndex confirms --subnet-index has
+// no default: compiling for Azure without it must fail.
 func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -307,13 +300,8 @@ func TestMain_AzureRequiresExplicitSubnetIndex(t *testing.T) {
 	}
 }
 
-// TestMain_AzureAcceptsExplicitSubnetIndex confirms compiling for Azure
-// succeeds once --subnet-index is given explicitly, including the
-// value 0 -- which must be accepted like any other explicit value, not
-// treated as though it were the (removed) default. Copies compose.yml
-// into a scratch directory rather than compiling directly against
-// examples/hello, so this doesn't leave an app-demo-hello/ directory
-// behind in the repo's own example.
+// TestMain_AzureAcceptsExplicitSubnetIndex confirms --subnet-index 0 is
+// accepted like any other explicit value.
 func TestMain_AzureAcceptsExplicitSubnetIndex(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
@@ -470,20 +458,13 @@ func TestMain_FileFlagMissingWithNoComposeFileInCwd(t *testing.T) {
 // regression test for a real bug found in review: compileApp's output
 // directory used to be app-<environment name> alone, so two different
 // project names compiled against the same environment silently
-// overwrote each other's main.tf.json on disk, even though every actual
-// Terraform resource they produce is genuinely different (every
-// resource name is env.Name-app.Name-..., so a different project name
-// really is a different deployment, not a re-compile of the same one).
-// The fix folds the project name into the output directory (app-
-// <environment name>-<project name>); this test compiles two compose
-// files -- identical except for their own top-level `name:` -- against
-// the same environment and asserts both outputs exist side-by-side with
-// different content, neither overwriting the other. (Project name now
-// comes from each file's `name:`, not a -p/--project flag -- see
-// docs/deployment-identity-design.md -- so two different names require
-// two different files, which is itself an illustration of the
-// intentional restriction discussed there: one compose file names one
-// deployment.)
+// overwrote each other's main.tf.json on disk, even though every
+// actual resource they produce is genuinely different. The fix folds
+// the project name into the output directory (app-<environment
+// name>-<project name>); this test compiles two compose files --
+// identical except for `name:` -- against the same environment and
+// asserts both outputs exist side-by-side, neither overwriting the
+// other.
 func TestMain_DifferentProjectsAgainstSameEnvironmentDoNotCollide(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)

@@ -26,14 +26,9 @@ per app).
 alternative to `-e`: given the same authored `environment.yaml` (which
 must have a `backend:` block configured — see "Sharing one environment
 across multiple users" below), it resolves the environment directly,
-without the caller needing to already know where a previous `env init`/
-`env up` wrote its output directory, or whether that directory still
-exists. It (re)generates that output directory as needed, runs
-`terraform init` against the backend key derived from the environment's
-own `name:`, and reads its facts the same way `-e` does. See
-`docs/deployment-identity-design.md` for the design rationale — `-e`
-still exists as the lower-level, directory-based affordance it always
-was.
+without needing to already know where a previous `env init`/`env up`
+wrote its output directory. See `docs/deployment-identity-design.md`
+for the design rationale — `-e` still works as before.
 
 ## Evaluating without a live environment: `--demo`
 
@@ -252,27 +247,18 @@ writes to `<dir of -e>/env-<name>`, and `compile` always writes to
 both derived from the input file's own location, not the shell's
 current directory, so output never depends on where a command happens
 to be run from. `compile`'s output directory name includes both the
-environment's name and the project's name specifically so the same
-compose.yml can be compiled against more than one environment (e.g. dev
-and prod) without one overwriting another's output — every actual
-Terraform resource `compile` produces is named `env.Name-app.Name-...`
-(see e.g. `aws/infer.go`'s `getName` closure). The project name is the
-compose file's own top-level `name:` field, not a flag — there is no
-`-p`/`--project` override and no directory-basename fallback; a compose
-file with no `name:` is rejected outright (see
-docs/deployment-identity-design.md for why: identity that isn't
-recorded in a file can't survive deleting generated artifacts and
-regenerating them elsewhere). Deploying the *same* codebase more than
-once within a single environment therefore needs a second compose file
-with its own `name:`, not a flag on a shared one — deliberately: two
-deployments sharing an identity, differentiated only by a CLI argument
-someone has to remember to keep passing, is exactly the failure mode
-this restriction exists to prevent. `app-<env>-<project>` pairs with
-`init`'s own `env-<name>`, naming both halves of one deployment
-consistently. `cloud-compose down` (see its own doc comment) resolves
-the same project name from the same compose file `compile` used — there
-is nowhere else `down` needs to recover it from, since it's read from
-the file itself rather than supplied separately each time.
+environment's name and the project's name so the same compose.yml can
+be compiled against more than one environment (e.g. dev and prod)
+without one overwriting another's output — every actual Terraform
+resource `compile` produces is named `env.Name-app.Name-...` (see e.g.
+`aws/infer.go`'s `getName` closure). The project name is the compose
+file's own top-level `name:` field, not a flag: there is no
+`-p`/`--project` override and no directory-basename fallback, and a
+compose file with no `name:` is rejected outright (see
+docs/deployment-identity-design.md for why). Deploying the same
+codebase more than once within one environment needs a second compose
+file with its own `name:`. `app-<env>-<project>` pairs with `init`'s
+own `env-<name>`, naming both halves of one deployment consistently.
 
 ## Known gap: GCP CDN inference
 

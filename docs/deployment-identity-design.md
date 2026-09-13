@@ -80,30 +80,20 @@ environment side exactly: environment identity is `environment.yaml`'s
 identity should work the same way.
 
 Note that compose-go's own precedence chain (`-p`/`WithName` >
-`COMPOSE_PROJECT_NAME` > top-level `name:` > directory basename, with a
-logged warning on symlinks) lives in the `cli` package
-(`compose-go/v2/cli/options.go:554-572`), which CloudCompose does *not*
-currently import — `ParseCompose` calls the lower-level `loader.Load`
-directly, which only implements the `name:` YAML-reading step natively.
-Deliberately don't pull in the `cli` package's fuller chain here: two of
-its four rungs (an env var, a directory basename) are exactly the ambient,
-un-derivable, un-persisted inputs the litmus test above rules out. Only
-the YAML-native `name:` resolution is used.
+`COMPOSE_PROJECT_NAME` > top-level `name:` > directory basename) lives
+in the `cli` package (`compose-go/v2/cli/options.go:554-572`), not the
+lower-level `loader.Load` `ParseCompose` calls. Deliberately don't pull
+in the `cli` package's fuller chain: two of its four rungs (an env var,
+a directory basename) are exactly the ambient, un-derivable, un-persisted
+inputs the litmus test above rules out. Only the YAML-native `name:`
+resolution is used.
 
-```go
-// ParseCompose already loads via loader.Load; require a name instead of
-// setting a placeholder, and surface it on the returned type.
-if project.Name == "" {  // no top-level `name:` in the compose file
-    return nil, fmt.Errorf("compose file must set a top-level `name:` (see docs/...)")
-}
-```
-
-Currently `ParseCompose` loads with a hardcoded placeholder project name
-(`parser.go:93-99`), and the real name is computed independently in
-`compile.go` via directory basename (`resolveProjectName`,
-`compile.go:277-289`) — both are deleted. The `-p`/`--project` flag is
-removed from `compile`/`compose up`/`compose down` entirely, not kept as
-an override.
+`ParseCompose` no longer loads with a hardcoded placeholder project
+name (`parser.go:93-99`); the real name is read from the file itself
+and required to be non-empty. `resolveProjectName`'s directory-basename
+computation in `compile.go` is deleted, along with the `-p`/`--project`
+flag on `compile`/`compose up`/`compose down` -- not kept as an
+override.
 
 **Case considered and rejected:** deploying the same `compose.yaml`
 more than once *within a single environment* (e.g. multiple instances of
@@ -138,53 +128,36 @@ silently accepting an unspecified value as if it were a real choice.
 identity; tracked here so they're known-deferred, not missed):
 
 - `resolveComposeFile`'s implicit directory scan when `-f` is omitted
-  (`compose_file.go:10-15`, `compose_discovery.go:21-32`) — same
-  "guessing from cwd" smell as the project-name fallback, but on the
-  input side. Worth a follow-up pass to require `-f` explicitly and
-  delete `FindComposeFile`.
-- `--env`/`--demo` mutual exclusivity checked at runtime
-  (`compile.go:76-82`) instead of declaratively via
-  `MarkFlagsMutuallyExclusive` — minor flag hygiene, unrelated to
-  identity.
+  (`compose_file.go:10-15`) — same "guessing from cwd" smell, on the
+  input side. Worth a follow-up to require `-f` explicitly.
+- `--env`/`--demo` mutual exclusivity checked at runtime instead of
+  declaratively via `MarkFlagsMutuallyExclusive` — minor flag hygiene.
 - `initEnvironment`'s pointer-field nil-check-and-default blocks in
-  `env_init.go:88-104` (`RetainDataOnDestroy`, `Domain`,
-  `HighAvailabilityEnabled`, `BackupRetentionDays`,
-  `LogRetentionDays`) — silent defaults baked into the CLI layer rather
-  than centralized in `shared/constants.go`. Same "explicit is better
-  than implicit" smell, no urgency; pick up opportunistically if
-  `env_init.go` is already being touched for item 2 below.
+  `env_init.go` — silent defaults baked into the CLI layer rather than
+  centralized in `shared/constants.go`. No urgency.
 
 ### 2. Make `environment.yaml` directly resolvable (done)
 
 Added `resolveEnvironmentByDefinition(environmentYamlPath)`
 (`cmd/cloudcompose/environment_resolve.go`), reachable via a new
 `--environment <file>` flag on `compile`/`compose up` (mutually
-exclusive with `--env <dir>`/`--demo`). It:
+exclusive with `--env <dir>`/`--demo`). It requires `backend:` to be
+set, regenerates the environment's `main.tf.json` on demand by calling
+`initEnvironment` (the same function `env init`/`env up` already use),
+runs `terraform init` against the backend key derived from
+`BackendKeyForEnvironment(name)`, then delegates to the existing
+`LoadEnvironment(dir)`.
 
-- requires `backend:` to be set (loud error if absent — this path is
-  specifically for portable/durable resolution; bare local state remains
-  a legitimate, separately-supported single-developer mode via
-  `env init`/`env up` as they exist today)
-- regenerates the environment's `main.tf.json` on demand, by calling
-  `initEnvironment` (the same function `env init`/`env up` already
-  use — idempotent, always overwrites)
-- runs `terraform init` against the backend key derived from
-  `BackendKeyForEnvironment(name)`
-- delegates to the existing `LoadEnvironment(dir)` unchanged
-
-No new types were needed (no `EnvironmentDefinition`/`EnvironmentState`
-split) — the shape already existed as `environment.yaml`'s `name` +
-`backend` fields plus `backend_naming.go`'s deterministic key derivation;
-this was purely a resolution function stitching existing pieces
-together. `--env <dir>` remains available as the lower-level/debug
-affordance it already was.
+No new types were needed — the shape already existed as
+`environment.yaml`'s `name` + `backend` fields plus
+`backend_naming.go`'s deterministic key derivation; this was purely a
+resolution function stitching existing pieces together. `--env <dir>`
+remains available as the lower-level/debug affordance it already was.
 
 Not yet extended to `compose down`/`compose ps`/`compose logs`/`env
-down` — those still take `--env <dir>` only. Worth a follow-up once
-there's a concrete need (e.g. tearing down or inspecting a deployment
-without a pre-existing directory), but `compile`/`compose up` are the
-primary "deploy an app" path this item exists to fix, so extending the
-rest was left out of this change's scope.
+down` — those still take `--env <dir>` only. `compile`/`compose up` are
+the primary "deploy an app" path this item exists to fix; extending
+the rest is a follow-up once there's concrete need.
 
 ### 3. Audit remaining non-deterministic regeneration inputs
 

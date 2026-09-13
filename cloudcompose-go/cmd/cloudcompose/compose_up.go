@@ -11,17 +11,7 @@ import (
 // composeUpCmd compiles a single app's Terraform manifest against an
 // already-applied environment and applies it -- the app half of what a
 // single bundled `up` command used to do. `env up` is the environment
-// half: init + apply on a shared environment.
-//
-// --env means an already-applied environment *directory* (created by a
-// previous `cloud-compose env init`/`env up`), the same meaning it has
-// on compile/ps/logs/down. --environment means an authored
-// environment.yaml instead, resolved directly (requires a `backend:`
-// block; see docs/deployment-identity-design.md) -- the two are
-// mutually exclusive.
-//
-// Terraform apply runs interactively (plan + y/n prompt) unless
-// --auto-approve is set.
+// half. See Long below for --env vs --environment.
 var composeUpCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Compile an app's Terraform manifest and apply it",

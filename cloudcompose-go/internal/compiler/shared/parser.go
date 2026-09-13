@@ -81,11 +81,9 @@ func splitEnvironment(
 }
 
 // composeFileName reads only the top-level `name:` field out of a
-// compose file, without interpolation, defaults, or validation --
-// needed because compose-go's loader requires a project name to be
-// supplied (imperatively or via the file) before it will parse
-// anything else, but the file's own declared name is exactly the
-// value this project treats as required identity. See ParseCompose.
+// compose file, with no interpolation/defaults/validation -- needed
+// because compose-go's loader requires a project name up front before
+// it will parse anything else. See ParseCompose.
 func composeFileName(filePath string) (string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -126,19 +124,14 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 			filePath,
 		)
 	}
-	// Validated here, not just left to the loader's own project-name
-	// syntax check: this name is later used verbatim to build backend
-	// state keys (BackendKeyForApp), where an unsanitized value could
-	// collide with another app's key.
+	// This name later becomes a backend state key (BackendKeyForApp),
+	// so it's validated the same way as an environment's own name:.
 	if err := ValidateBackendName("compose file's top-level `name:`", name); err != nil {
 		return nil, err
 	}
 
-	// name is set imperatively (rather than left for the loader to find
-	// on its own) so that InvalidProjectNameErr's validation of it runs
-	// with a clear source, and so nothing here depends on compose-go's
-	// own directory-basename/COMPOSE_PROJECT_NAME fallbacks, which this
-	// project deliberately does not use as identity sources.
+	// Set imperatively so compose-go's own directory-basename/
+	// COMPOSE_PROJECT_NAME fallbacks are never consulted.
 	project, err := loader.LoadWithContext(context.Background(), types.ConfigDetails{
 		WorkingDir: composeDir,
 		ConfigFiles: []types.ConfigFile{

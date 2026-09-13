@@ -22,6 +22,19 @@ environment this way, which is the main practical reason to use a shared
 environment at all (fewer NAT Gateways/ALBs paid for, rather than one
 per app).
 
+`cloud-compose compile --environment <environment.yaml>` is the portable
+alternative to `-e`: given the same authored `environment.yaml` (which
+must have a `backend:` block configured — see "Sharing one environment
+across multiple users" below), it resolves the environment directly,
+without the caller needing to already know where a previous `env init`/
+`env up` wrote its output directory, or whether that directory still
+exists. It (re)generates that output directory as needed, runs
+`terraform init` against the backend key derived from the environment's
+own `name:`, and reads its facts the same way `-e` does. See
+`docs/deployment-identity-design.md` for the design rationale — `-e`
+still exists as the lower-level, directory-based affordance it always
+was.
+
 ## Evaluating without a live environment: `--demo`
 
 `cloud-compose compile -d <cloud>` (`aws`/`azure`/`gcp`) generates the same
@@ -31,14 +44,14 @@ reading a real one — for a prospective user to see what their compose
 file becomes on a given cloud without first running `cloud-compose init`
 or holding any cloud credentials at all.
 
-`-e` and `-d` are mutually exclusive and one is required: there is no
-default when neither is given, the same "one way to configure, not two"
-reasoning `init`'s own flag set follows. The output is genuinely valid
-Terraform JSON (every demo environment is checked against the real
-provider schema via `terraform validate`), but it is not deployable
-as-is — the placeholder IDs (`vpc-demo...`, fake ARNs, etc.) don't
-correspond to anything real. `cloud-compose compile` prints a stderr
-banner saying so whenever `-d` is used.
+`-e`, `--environment`, and `-d` are mutually exclusive and exactly one is
+required: there is no default when none is given, the same "one way to
+configure, not two" reasoning `init`'s own flag set follows. The output
+is genuinely valid Terraform JSON (every demo environment is checked
+against the real provider schema via `terraform validate`), but it is not
+deployable as-is — the placeholder IDs (`vpc-demo...`, fake ARNs, etc.)
+don't correspond to anything real. `cloud-compose compile` prints a
+stderr banner saying so whenever `-d` is used.
 
 ## Schema: common envelope + discriminated provider block
 
@@ -308,6 +321,12 @@ schema change once it's built, not because anything consumes it yet.
   prints).
 - `cmd/cloudcompose/env_init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
+- `cmd/cloudcompose/environment_resolve.go` — `resolveEnvironmentByDefinition`,
+  reached via `compile`/`compose up`'s `--environment <environment.yaml>`
+  flag: resolves an environment directly from its authored config,
+  without the caller needing to already know its generated output
+  directory (requires `backend:`; see
+  `docs/deployment-identity-design.md`).
 - `cmd/cloudcompose/env_down.go` — `env down`'s dependent-app
   safety check and `--force` escape hatch.
 - `internal/compiler/{aws,azure,gcp}/environment_generator.go` — each

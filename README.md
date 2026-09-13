@@ -96,6 +96,14 @@ cloud-compose compose up --env env-prod
 
 That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
+If `environment.yaml` has a `backend:` block configured (see `docs/authored-environment-config.md`), `compose up` can instead be pointed straight at `environment.yaml` itself, without needing to know or pass `env-prod`'s own location:
+
+```bash
+cloud-compose compose up --environment environment.yaml
+```
+
+See `docs/deployment-identity-design.md` for why this exists: `--env env-prod` is a directory the operator has to find and remember; `--environment environment.yaml` is a portable handle that resolves to the same environment regardless of whether that directory currently exists on disk.
+
 ### Step-by-step path: review each stage
 
 Use this if you're deploying more than one app into the same environment, or want to see the generated Terraform before anything applies.

@@ -154,26 +154,37 @@ identity; tracked here so they're known-deferred, not missed):
   than implicit" smell, no urgency; pick up opportunistically if
   `env_init.go` is already being touched for item 2 below.
 
-### 2. Make `environment.yaml` directly resolvable
+### 2. Make `environment.yaml` directly resolvable (done)
 
-Add an entry point, e.g. `LoadEnvironmentByDefinition(environmentYamlPath)`,
-that:
+Added `resolveEnvironmentByDefinition(environmentYamlPath)`
+(`cmd/cloudcompose/environment_resolve.go`), reachable via a new
+`--environment <file>` flag on `compile`/`compose up` (mutually
+exclusive with `--env <dir>`/`--demo`). It:
 
 - requires `backend:` to be set (loud error if absent — this path is
   specifically for portable/durable resolution; bare local state remains
   a legitimate, separately-supported single-developer mode via
   `env init`/`env up` as they exist today)
-- regenerates the environment's `main.tf.json` on demand (reusing
-  `env_init`'s generator)
+- regenerates the environment's `main.tf.json` on demand, by calling
+  `initEnvironment` (the same function `env init`/`env up` already
+  use — idempotent, always overwrites)
 - runs `terraform init` against the backend key derived from
   `BackendKeyForEnvironment(name)`
 - delegates to the existing `LoadEnvironment(dir)` unchanged
 
-This requires no new types (no `EnvironmentDefinition`/`EnvironmentState`
-split) — the shape already exists as `environment.yaml`'s `name` +
-`backend` fields plus `backend_naming.go`'s deterministic key derivation.
-Keep `--env <dir>` around as the lower-level/debug affordance it already
-is; add `--environment <file>` (name TBD) as the portable path.
+No new types were needed (no `EnvironmentDefinition`/`EnvironmentState`
+split) — the shape already existed as `environment.yaml`'s `name` +
+`backend` fields plus `backend_naming.go`'s deterministic key derivation;
+this was purely a resolution function stitching existing pieces
+together. `--env <dir>` remains available as the lower-level/debug
+affordance it already was.
+
+Not yet extended to `compose down`/`compose ps`/`compose logs`/`env
+down` — those still take `--env <dir>` only. Worth a follow-up once
+there's a concrete need (e.g. tearing down or inspecting a deployment
+without a pre-existing directory), but `compile`/`compose up` are the
+primary "deploy an app" path this item exists to fix, so extending the
+rest was left out of this change's scope.
 
 ### 3. Audit remaining non-deterministic regeneration inputs
 

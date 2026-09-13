@@ -10,9 +10,13 @@ import (
 // resolveEnvironmentByDefinition resolves an environment directly from
 // its authored environment.yaml, without needing the caller to already
 // know where a previous `env init`/`env up` wrote its output
-// directory. Requires a remote `backend:` (not `local`): state has to
-// be durably locatable by name, not just wherever a local
-// terraform.tfstate happens to sit. See docs/deployment-identity-design.md.
+// directory. Works for both `local:` and remote backends: `local:`'s
+// path is authored and resolved relative to environment.yaml's own
+// directory (see models.LocalBackendConfig), so it's just as
+// deterministic to regenerate as a remote backend's derived state key
+// -- deleting and regenerating the environment's own output directory
+// always reconnects to the same state file. See
+// docs/deployment-identity-design.md.
 func resolveEnvironmentByDefinition(environmentYamlPath string) (any, error) {
 	fileConfig, err := initconfig.Load(environmentYamlPath)
 	if err != nil {
@@ -23,15 +27,6 @@ func resolveEnvironmentByDefinition(environmentYamlPath string) (any, error) {
 			"%s not found -- pass the authored environment.yaml that "+
 				"produced the environment you mean, not an already-applied "+
 				"output directory",
-			environmentYamlPath,
-		)
-	}
-	if fileConfig.Backend.IsLocal {
-		return nil, fmt.Errorf(
-			"%s declares `backend: local` -- required to resolve an "+
-				"environment from environment.yaml alone (see "+
-				"docs/authored-environment-config.md), or use --env "+
-				"<directory> instead",
 			environmentYamlPath,
 		)
 	}

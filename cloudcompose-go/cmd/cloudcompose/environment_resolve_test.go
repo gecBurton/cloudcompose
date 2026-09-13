@@ -34,32 +34,45 @@ func TestCompile_EnvironmentFlagRejectsMissingBackend(t *testing.T) {
 	}
 }
 
-// TestCompile_EnvironmentFlagRejectsLocalBackend confirms
-// --environment specifically rejects `backend: local` (as opposed to
-// backend: being absent, TestCompile_EnvironmentFlagRejectsMissingBackend
-// above): local-only state has no durable locator to resolve from
-// environment.yaml alone, so resolveEnvironmentByDefinition rejects it
-// even though initconfig.Load itself accepts it as a valid choice.
-func TestCompile_EnvironmentFlagRejectsLocalBackend(t *testing.T) {
+// TestCompile_EnvironmentFlagResolvesLocalBackend confirms
+// --environment works for a local: backend too, not just a remote one:
+// local:'s path is authored and resolved relative to environment.yaml's
+// own directory (see models.LocalBackendConfig), so regenerating the
+// environment's output directory always reconnects to the same state
+// file -- just as deterministic to resolve as a remote backend's
+// derived state key.
+func TestCompile_EnvironmentFlagResolvesLocalBackend(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)
 	scratchDir := t.TempDir()
 
 	envFile := filepath.Join(scratchDir, "environment.yaml")
-	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\nbackend: local\n"
+	envYAML := "provider: aws\nname: demo\naws:\n  vpc_cidr: 10.0.0.0/16\nbackend:\n  local:\n    path: ./tfstate\n"
 	if err := os.WriteFile(envFile, []byte(envYAML), 0644); err != nil {
 		t.Fatalf("write environment.yaml: %v", err)
+	}
+
+	fakeTerraformDir := t.TempDir()
+	logFile := filepath.Join(fakeTerraformDir, "invocations.log")
+	fakeTerraform := filepath.Join(fakeTerraformDir, "terraform")
+	fakeTerraformScript := fmt.Sprintf(`#!/bin/sh
+echo "$PWD $@" >> %s
+if [ "$1" = "output" ]; then
+  echo '{"environment": {"value": {"target": "aws", "name": "demo", "vpc_id": "vpc-1", "public_subnets": ["s1"], "private_subnets": ["s2"], "ecs_cluster_arn": "arn:aws:ecs:x"}}}'
+fi
+exit 0
+`, logFile)
+	if err := os.WriteFile(fakeTerraform, []byte(fakeTerraformScript), 0755); err != nil {
+		t.Fatalf("write fake terraform: %v", err)
 	}
 
 	cmd := exec.Command(bin, "compile",
 		"-f", "../../../examples/hello/compose.yml",
 		"--environment", envFile)
+	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected a non-zero exit for backend: local, got success:\n%s", out)
-	}
-	if !contains(string(out), "local") {
-		t.Errorf("expected the error to mention backend: local, got:\n%s", out)
+	if err != nil {
+		t.Fatalf("cloud-compose compile --environment with a local backend failed: %v\n%s", err, out)
 	}
 }
 

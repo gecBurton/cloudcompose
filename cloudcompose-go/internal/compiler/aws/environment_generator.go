@@ -11,11 +11,15 @@ import (
 // environment: a VPC with public/private subnets across AZs, NAT
 // Gateways, an optional ALB, and an ECS Cluster.
 //
-// backend, if non-nil, is emitted both as this environment's own
-// `terraform { backend "s3" {...} }` block and as a plain `output
-// "backend"` block, so LoadAwsEnvironment can hand the same
-// bucket/region/lock-table facts back to `cloudcompose compile`. Nil
-// means an ordinary local terraform.tfstate file with no backend block.
+// backend is required: `local` emits a `terraform { backend "local"
+// {...} }` block with the authored path and no `output "backend"`
+// (apps compiled against this environment keep using Terraform's own
+// default local state, unrelated to the environment's own path -- see
+// docs/deployment-identity-design.md); a real remote backend
+// (`aws`/`azure`/`gcp`) is emitted as both the environment's own
+// `terraform.backend` block and a plain `output "backend"` block, so
+// LoadAwsEnvironment can hand the same bucket/region/lock-table facts
+// back to `cloudcompose compile`.
 func GenerateAwsEnvironment(
 	name, region, vpcCIDR string,
 	azCount int,
@@ -65,7 +69,10 @@ func GenerateAwsEnvironment(
 	terraform := map[string]any{"required_version": ">= 1.5", "required_providers": requiredProviders}
 
 	var backendConfig map[string]any
-	if backend != nil && backend.AWS != nil {
+	switch {
+	case backend != nil && backend.Local != nil:
+		terraform["backend"] = map[string]any{"local": map[string]any{"path": backend.Local.Path}}
+	case backend != nil && backend.AWS != nil:
 		s3Backend := map[string]any{
 			"bucket":  backend.AWS.Bucket,
 			"key":     shared.BackendKeyForEnvironment(name),

@@ -41,7 +41,9 @@ aws:
   vpc_cidr: 10.0.0.0/16
   az_count: 2
   create_alb: true
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -67,7 +69,9 @@ func TestLoad_RejectsUnknownTopLevelKey(t *testing.T) {
 provider: aws
 name: prod
 bogus_field: oops
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -84,7 +88,9 @@ aws:
   vpc_cidr: 10.0.0.0/16
 azure:
   vnet_cidr: 10.0.0.0/16
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -156,7 +162,9 @@ name: prod
 gcp:
   vpc_cidr: 10.0.0.0/16
   project_id: my-project
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -176,7 +184,9 @@ domain: example.com
 gcp:
   vpc_cidr: 10.0.0.0/16
   project_id: my-project
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -194,7 +204,9 @@ provider: azure
 name: prod
 azure:
   vnet_cidr: 10.0.0.0/16
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	config, err := Load(path)
 	if err != nil {
@@ -212,7 +224,7 @@ func TestValidate_RejectsBlockNotMatchingProvider(t *testing.T) {
 		Name:     "prod",
 		AWS:      &models.AwsInitConfig{VpcCIDR: "10.0.0.0/16"},
 		Gcp:      &models.GcpInitConfig{ProjectID: "leftover-from-a-copy-paste"},
-		Backend:  models.BackendConfig{IsLocal: true},
+		Backend:  models.BackendConfig{Local: &models.LocalBackendConfig{Path: "./tfstate"}},
 	}
 	if err := Validate(config); err == nil {
 		t.Fatalf("expected an error for a gcp block present alongside provider: aws")
@@ -268,14 +280,16 @@ provider: aws
 name: prod
 aws:
   vpc_cidr: 10.0.0.0/16
-backend: local
+backend:
+  local:
+    path: ./tfstate
 `)
 	config, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if !config.Backend.IsLocal {
-		t.Errorf("expected Backend.IsLocal = true, got %+v", config.Backend)
+	if config.Backend.Local == nil || config.Backend.Local.Path != "./tfstate" {
+		t.Errorf("expected Backend.Local.Path = ./tfstate, got %+v", config.Backend)
 	}
 }
 
@@ -293,6 +307,38 @@ backend:
 	_, err := Load(path)
 	if err == nil {
 		t.Fatalf("expected an error when backend.aws is missing region")
+	}
+}
+
+func TestLoad_RejectsBackendLocalMissingPath(t *testing.T) {
+	t.Parallel()
+	path := writeTemp(t, `
+provider: aws
+name: prod
+aws:
+  vpc_cidr: 10.0.0.0/16
+backend:
+  local: {}
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatalf("expected an error when backend.local is missing path")
+	}
+}
+
+func TestValidate_RejectsBackendLocalAlongsideRemote(t *testing.T) {
+	t.Parallel()
+	config := &models.InitConfig{
+		Provider: "aws",
+		Name:     "prod",
+		AWS:      &models.AwsInitConfig{VpcCIDR: "10.0.0.0/16"},
+		Backend: models.BackendConfig{
+			Local: &models.LocalBackendConfig{Path: "./tfstate"},
+			AWS:   &models.AwsBackendConfig{Bucket: "my-org-tfstate", Region: "eu-west-2"},
+		},
+	}
+	if err := Validate(config); err == nil {
+		t.Fatalf("expected an error when backend.local and backend.aws are both present")
 	}
 }
 
@@ -345,7 +391,7 @@ func TestValidate_RejectsBackendGcpMissingBucket(t *testing.T) {
 
 func TestBackendWarnings_LocalBackendHasNoWarnings(t *testing.T) {
 	t.Parallel()
-	config := &models.InitConfig{Provider: "aws", Name: "prod", Backend: models.BackendConfig{IsLocal: true}}
+	config := &models.InitConfig{Provider: "aws", Name: "prod", Backend: models.BackendConfig{Local: &models.LocalBackendConfig{Path: "./tfstate"}}}
 	warnings := BackendWarnings(config)
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings for backend: local, got %v", warnings)

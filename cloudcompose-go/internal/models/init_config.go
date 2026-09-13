@@ -1,11 +1,5 @@
 package models
 
-import (
-	"fmt"
-
-	yaml "go.yaml.in/yaml/v4"
-)
-
 // InitConfig is the authored input to `cloudcompose init`: the decisions a
 // human makes about a shared environment before any infrastructure
 // exists, as opposed to the facts Terraform assigns once that
@@ -44,79 +38,46 @@ type InitConfig struct {
 	Gcp   *GcpInitConfig   `yaml:"gcp,omitempty"`
 
 	// Backend is the required Terraform state backend this environment
-	// (and every app compiled against it) uses -- `local` (state stays
-	// on this machine) or a real remote backend (`aws:`/`azure:`/
-	// `gcp:`). There is no way to omit backend: entirely: unlike every
-	// other field here, an omitted backend: used to silently mean
-	// local state, which is exactly the kind of implicit default this
-	// project's identity model rules out elsewhere -- see
-	// docs/deployment-identity-design.md item 4. Validated by
-	// initconfig.Validate, which also enforces that at most one of
-	// Backend's own AWS/Azure/Gcp fields is set, and that it matches
-	// Provider.
+	// (and every app compiled against it) uses -- a `local:` block
+	// (state stays on this machine, at an authored path) or a real
+	// remote backend (`aws:`/`azure:`/`gcp:`). There is no way to omit
+	// backend: entirely: unlike every other field here, an omitted
+	// backend: used to silently mean local state, which is exactly the
+	// kind of implicit default this project's identity model rules out
+	// elsewhere -- see docs/deployment-identity-design.md item 4.
+	// Validated by initconfig.Validate, which also enforces that at
+	// most one of Backend's own Local/AWS/Azure/Gcp fields is set, and
+	// that a remote one matches Provider.
 	Backend BackendConfig `yaml:"backend"`
 }
 
 // BackendConfig is the `backend:` block of an authored environment.yaml:
-// either the bare string `local` (state stays on this machine, no
-// `terraform.backend` block emitted), or a mapping naming exactly one
-// of aws/azure/gcp. The state key within a remote backend is never
-// authored here -- it's always derived from InitConfig.Name.
+// a mapping naming exactly one of local/aws/azure/gcp. The state key
+// within a remote backend is never authored here -- it's always
+// derived from InitConfig.Name.
 //
-// IsLocal distinguishes "authored as `local`" from "zero value/not yet
-// unmarshalled" -- a BackendConfig with IsLocal false and every
-// AWS/Azure/Gcp field nil is not a valid parsed value; initconfig.Load
-// always produces either IsLocal true or exactly one of AWS/Azure/Gcp
-// set, enforced by UnmarshalYAML and initconfig.Validate together.
+// A zero-value BackendConfig (every field nil) is not a valid parsed
+// value; initconfig.Load always produces exactly one field set,
+// enforced by initconfig.Validate.
 type BackendConfig struct {
-	IsLocal bool
-	AWS     *AwsBackendConfig
-	Azure   *AzureBackendConfig
-	Gcp     *GcpBackendConfig
+	Local *LocalBackendConfig `yaml:"local,omitempty"`
+	AWS   *AwsBackendConfig   `yaml:"aws,omitempty"`
+	Azure *AzureBackendConfig `yaml:"azure,omitempty"`
+	Gcp   *GcpBackendConfig   `yaml:"gcp,omitempty"`
 }
 
-// UnmarshalYAML accepts either the bare scalar `local` or a mapping
-// with exactly one of aws/azure/gcp -- anything else (an empty mapping,
-// a list, a number, the string "aws" with no block, etc.) is rejected
-// outright rather than silently treated as one or the other.
-func (b *BackendConfig) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind == yaml.ScalarNode {
-		var s string
-		if err := node.Decode(&s); err != nil {
-			return err
-		}
-		if s != "local" {
-			return fmt.Errorf(`backend: %q is not a supported value -- use "local" or a mapping with aws:/azure:/gcp:`, s)
-		}
-		*b = BackendConfig{IsLocal: true}
-		return nil
-	}
-
-	var raw struct {
-		AWS   *AwsBackendConfig   `yaml:"aws"`
-		Azure *AzureBackendConfig `yaml:"azure"`
-		Gcp   *GcpBackendConfig   `yaml:"gcp"`
-	}
-	if err := node.Decode(&raw); err != nil {
-		return err
-	}
-	*b = BackendConfig{AWS: raw.AWS, Azure: raw.Azure, Gcp: raw.Gcp}
-	return nil
-}
-
-// MarshalYAML renders IsLocal as the bare scalar "local", or a mapping
-// with whichever of AWS/Azure/Gcp is set -- the inverse of
-// UnmarshalYAML, used when env_init.go writes a resolved copy of
-// environment.yaml back out.
-func (b BackendConfig) MarshalYAML() (interface{}, error) {
-	if b.IsLocal {
-		return "local", nil
-	}
-	return struct {
-		AWS   *AwsBackendConfig   `yaml:"aws,omitempty"`
-		Azure *AzureBackendConfig `yaml:"azure,omitempty"`
-		Gcp   *GcpBackendConfig   `yaml:"gcp,omitempty"`
-	}{b.AWS, b.Azure, b.Gcp}, nil
+// LocalBackendConfig configures Terraform's `local` backend.
+//
+// Path is required, with no default: an environment's state file
+// location is otherwise an ambient side effect of whichever directory
+// `terraform apply` happened to be run in, not an authored fact --
+// exactly the kind of implicit default this project's identity model
+// rules out elsewhere. Resolved relative to environment.yaml's own
+// directory (matching how init/compile derive every other output
+// location from an input file's location, never the shell's current
+// directory), never as an absolute path or relative to cwd.
+type LocalBackendConfig struct {
+	Path string `yaml:"path"`
 }
 
 // AwsBackendConfig configures Terraform's `s3` backend. DynamoDBTable is

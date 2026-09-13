@@ -27,4 +27,6 @@ aws:
   az_count: 2
   create_alb: true
 
-backend: local
+backend:
+  local:
+    path: ./terraform-aws.tfstate

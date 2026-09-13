@@ -207,7 +207,7 @@ func requireAwsOrAzure(cmdName string, env any) error {
 		return nil
 	default:
 		target, _ := environmentTarget(env)
-		return fmt.Errorf("`cloud-compose compose %s` does not support %s environments yet", cmdName, target)
+		return fmt.Errorf("`cloud-compose %s` does not support %s environments yet", cmdName, target)
 	}
 }
 

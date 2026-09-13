@@ -27,18 +27,18 @@ cd cloudcompose-go
 go run ./cmd/cloudcompose compile -f ../examples/hello/compose.yml --explain
 ```
 
-## The fast path to a real deployment: `env up` + `compose up`
+## The fast path to a real deployment: `env up` + `up`
 
 For the common case -- one app, one environment -- `cloud-compose env up`
 runs the environment's `init` -> `apply` flow described below in one
-command, and `cloud-compose compose up` does the same for the app's own
+command, and `cloud-compose up` does the same for the app's own
 `compile` -> `apply` flow, each stopping to show you its own `terraform
 apply`'s plan and prompt for confirmation exactly as it would if you ran
 the steps by hand (no `-auto-approve` anywhere). `--env`/`-e` always
 means the authored environment.yaml file, on every command -- `env up`,
-`env init`, `compose up`, `compile`, `ps`, `logs`, `compose down`,
+`env init`, `up`, `compile`, `ps`, `logs`, `down`,
 `env down` alike. It's resolved from the file, not passed as a
-directory: `compose up`/`compile`/etc. derive `env-<name>` from the
+directory: `up`/`compile`/etc. derive `env-<name>` from the
 file themselves and read it directly, but never create or apply it --
 if the environment hasn't been applied yet, they fail clearly instead
 (see docs/deployment-identity-design.md).
@@ -46,7 +46,7 @@ if the environment hasn't been applied yet, they fail clearly instead
 ```bash
 cd cloudcompose-go
 go run ./cmd/cloudcompose env up --env ../examples/hello/environment.yaml
-go run ./cmd/cloudcompose compose up -f ../examples/hello/compose.yml --env ../examples/hello/environment.yaml
+go run ./cmd/cloudcompose up -f ../examples/hello/compose.yml --env ../examples/hello/environment.yaml
 ```
 
 If you're deploying more than one app into the same environment, or want

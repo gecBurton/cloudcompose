@@ -59,17 +59,16 @@ cloudcompose-go/
 │   ├── env_down.go              # `env down`: terraform destroy on the
 │   │                            #   environment, refuses if apps depend
 │   │                            #   on it
-│   ├── compose.go               # `compose` parent command (single app)
-│   ├── compose_up.go            # `compose up`: compile + terraform apply
-│   ├── compose_down.go          # `compose down`: terraform destroy on a
+│   ├── compose_up.go            # `up`: compile + terraform apply, app only
+│   ├── compose_down.go          # `down`: terraform destroy on a
 │   │                            #   single app, never the environment
-│   ├── compose_ps.go            # `compose ps`: live service status
+│   ├── compose_ps.go            # `ps`: live service status
 │   │                            #   (AWS/Azure)
-│   ├── compose_logs.go          # `compose logs`: recent log output
+│   ├── compose_logs.go          # `logs`: recent log output
 │   │                            #   (AWS/Azure)
 │   └── terraform.go             # shared terraformApply/terraformInit/
 │                                  #   terraformDestroy helpers used by
-│                                  #   env up/down and compose up/down
+│                                  #   env up/down and the top-level up/down
 ├── cmd/schema-check/            # Dev tool (not shipped): cross-checks
 │                                  #   internal/models's structs against
 │                                  #   the real Terraform provider schema

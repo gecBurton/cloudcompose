@@ -1,6 +1,25 @@
 # CLI Rename Proposal: `cloudcompose` → a Shorter Binary, `env`/`compose` Subcommands
 
-## Status: proposal, independent of `docs/multi-user-state.md`
+## Status: partially implemented; binary rename still just a proposal
+
+The binary rename (`cloudcompose` → a shorter `<bin>`, with a
+transitional shim) never happened -- the binary is still
+`cloud-compose`, and that section below remains a proposal, not a plan
+with a committed name. The CLI restructure did happen, but not exactly
+as designed: `env` became a real subcommand group (`env init`/`env
+up`/`env down`), and `compose` was implemented as its own group too
+(`compose up`/`down`/`ps`/`logs`) for a period -- but typing `compose`
+before every single-app verb turned out to feel redundant in practice
+(there's no competing top-level `up`/`down`/`ps`/`logs` for it to
+disambiguate against, unlike `env up` vs. a hypothetical bare `up`
+meaning something else), so `compose` was later removed and
+`up`/`down`/`ps`/`logs` were flattened back onto the root command.
+`env` stayed grouped, since it operates on a genuinely different
+target (the shared platform, not a single app) and collides with
+nothing at the top level. The rest of this doc is kept as originally
+written for historical context; read its `compose <verb>` examples as
+describing an intermediate state that no longer exists, not the
+current CLI.
 
 This is a UX-motivated proposal, not a correctness fix — it doesn't
 depend on, and isn't depended on by, the remote-backend/state-locking

@@ -25,7 +25,7 @@ writes an uncommitted `backend_ci.tf` next to `main.tf.json` — not a
 `cloud-compose` feature, and with no state locking (S3: `encrypt = true`
 only, no `dynamodb_table`; see `ci/main.tf`).
 
-A related, second-order problem: `cloud-compose compose down` only ever destroys
+A related, second-order problem: `cloud-compose down` only ever destroys
 a single app's directory, deliberately never the shared environment
 (`down.go`'s own doc comment) — the right safety default, but it leaves
 tearing an environment down as a bare `terraform destroy` a human runs
@@ -150,7 +150,7 @@ they're already passed.
 
 ### 3. Apps get backends too, derived the same way
 
-Apps (`cloud-compose compose up`/`cloud-compose compose down`) read their environment's
+Apps (`cloud-compose up`/`cloud-compose down`) read their environment's
 facts via `LoadEnvironment(envDir)` (`internal/compiler/environment.go`),
 which already shells out to `terraform output -json` in `envDir` — a
 call that works identically whether that directory's state is local or
@@ -255,7 +255,7 @@ list objects under that prefix (S3 `ListObjectsV2`/azurerm blob
 list/GCS list) before proceeding, and treat any key other than the
 environment's own `environment.tfstate` as a live dependent app. This
 needs no new Terraform resource, no registration step added to
-`compose up`, and no extra state for `compile`/`up` to write — the
+`up`, and no extra state for `compile`/`up` to write — the
 existing state-key naming convention (§3) already encodes exactly the
 information needed; adding a redundant marker resource inside each
 app's own state would duplicate that with nothing to justify the extra
@@ -264,7 +264,7 @@ moving part.
 - **Behavior**: if dependent app state keys exist, environment teardown
   refuses by default, listing the offending project names (recovered
   from each key's own filename, no need to open the state itself) and
-  suggesting `cloud-compose compose down` for each first. `--force` skips the
+  suggesting `cloud-compose down` for each first. `--force` skips the
   check entirely (documented as exactly that — a deliberate override,
   matching `--auto-approve`'s own framing in `up.go`/`down.go`'s doc
   comments).
@@ -280,7 +280,7 @@ moving part.
   its state key behind forever and permanently blocking teardown short
   of `--force`. There must be an explicit way to clear this that
   doesn't require trusting `--force` blindly: at minimum, a documented
-  "resolve a stale registration" procedure — re-point `compose down`'s
+  "resolve a stale registration" procedure — re-point `down`'s
   `--env` at the environment, with a compose file whose top-level
   `name:` matches the project name recovered from the stale key (it's
   literally the key's own path segment, so no separate lookup is
@@ -334,12 +334,15 @@ moving part.
 
 ## Related but out of scope
 
-The CLI has since been renamed to `cloud-compose` and restructured into
-`env`/`compose` subcommand groups (see `docs/cli-rename-proposal.md`
-for the original motivation). This doc's command names (`cloudcompose
-init`/`up`/`down`) should be read as their current equivalents:
-`cloud-compose env init`, `cloud-compose env up`, and
-`cloud-compose env down`/`cloud-compose compose down` respectively.
+The CLI has since been renamed to `cloud-compose` and restructured: an
+`env` subcommand group for the shared-platform commands (`env
+init`/`env up`/`env down`), with the single-app commands (`up`/`down`/
+`ps`/`logs`) left top-level rather than nested under their own group
+(see `docs/cli-rename-proposal.md` for the original motivation, and
+its own note on why the single-app group was later flattened). This
+doc's command names (`cloudcompose init`/`up`/`down`) should be read as
+their current equivalents: `cloud-compose env init`, `cloud-compose env
+up`, and `cloud-compose env down`/`cloud-compose down` respectively.
 
 ## Implementation reference (once built)
 

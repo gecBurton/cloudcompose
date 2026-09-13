@@ -11,7 +11,10 @@ import (
 // composeUpCmd compiles a single app's Terraform manifest against an
 // already-applied environment and applies it -- the app half of what a
 // single bundled `up` command used to do. `env up` is the environment
-// half.
+// half. Top-level (not nested under a `compose` group): unlike `env
+// up`/`env init`/`env down`, which operate on the shared platform,
+// `up`/`down`/`ps`/`logs` are the commands used most often day to day,
+// so they stay one word each rather than two.
 var composeUpCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Compile an app's Terraform manifest and apply it",
@@ -62,7 +65,7 @@ func runComposeUp(cmd *cobra.Command, args []string) {
 }
 
 func init() {
-	composeCmd.AddCommand(composeUpCmd)
+	rootCmd.AddCommand(composeUpCmd)
 
 	composeUpCmd.Flags().StringP("env", "e", "", "Path to the authored environment.yaml that produced the environment to deploy into (must already be applied -- `cloud-compose env init`/`env up` first).")
 	composeUpCmd.Flags().Bool("auto-approve", false, "Skip the terraform apply confirmation prompt, for non-interactive callers (CI, scripts). Off by default -- a human should normally review the plan first.")

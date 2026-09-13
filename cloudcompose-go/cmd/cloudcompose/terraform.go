@@ -10,7 +10,7 @@ import (
 // with stdin/stdout/stderr connected to the terminal. If autoApprove is
 // false, stdin is connected and no -auto-approve is passed, so
 // Terraform's own confirmation prompt behaves normally. Shared by `env
-// up` and `compose up`.
+// up` and the top-level `up`.
 func terraformApply(dir string, autoApprove bool) error {
 	fmt.Printf("Running terraform in %s\n", dir)
 
@@ -50,7 +50,7 @@ func terraformInit(dir string) error {
 // terraformDestroy runs `terraform init` and then `terraform destroy`
 // in dir. Interactive with stdin connected and no -auto-approve when
 // autoApprove is false, or -auto-approve passed with stdin left
-// unconnected when true. Shared by `env down` and `compose down`.
+// unconnected when true. Shared by `env down` and the top-level `down`.
 func terraformDestroy(dir string, autoApprove bool) error {
 	fmt.Printf("Running terraform destroy in %s\n", dir)
 

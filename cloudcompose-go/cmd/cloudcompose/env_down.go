@@ -26,13 +26,13 @@ var envDownCmd = &cobra.Command{
 		"(env-<name>, written by a previous `cloud-compose env init`/`env up`), " +
 		"derived from --env's authored environment.yaml -- the same meaning " +
 		"--env has everywhere else. The environment must already be applied.\n\n" +
-		"Unlike `cloud-compose compose down` (which only ever destroys a single " +
+		"Unlike `cloud-compose down` (which only ever destroys a single " +
 		"app), this destroys the shared environment itself -- so it first checks " +
 		"whether any app still depends on it (every app compiled against a " +
 		"backend-configured environment registers its own state under that " +
 		"environment's own backend, see docs/multi-user-state.md) and refuses " +
 		"by default if any are found, listing their project names and " +
-		"suggesting `cloud-compose compose down` for each first.\n\n" +
+		"suggesting `cloud-compose down` for each first.\n\n" +
 		"Without a configured backend, this check has nothing to list against " +
 		"and is skipped with a warning -- the same as if it found no dependent " +
 		"apps, but without the guarantee that none exist.\n\n" +
@@ -70,7 +70,7 @@ func runEnvDown(cmd *cobra.Command, args []string) {
 	if !force {
 		if err := checkNoDependentApps(env); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			fmt.Fprintln(os.Stderr, "\nRun `cloud-compose compose down` for each app listed above first, or pass --force to skip this check.")
+			fmt.Fprintln(os.Stderr, "\nRun `cloud-compose down` for each app listed above first, or pass --force to skip this check.")
 			os.Exit(1)
 		}
 	}

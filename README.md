@@ -95,12 +95,12 @@ cloud-compose env up --env environment.yaml
 `env up` runs `env init` (writes the environment's Terraform manifest) → `terraform apply`, in one step. Once that succeeds, deploy an app into it:
 
 ```bash
-cloud-compose compose up --env environment.yaml
+cloud-compose up --env environment.yaml
 ```
 
-`compose up` runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand. That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
+`up` runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand. That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
-`--env` resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `compose up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-identity-design.md` for the full reasoning.
+`--env` resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-identity-design.md` for the full reasoning.
 
 If you'd rather review each stage yourself instead of `env up`'s one-step apply:
 
@@ -120,20 +120,20 @@ See `docs/authored-environment-config.md` for the full `environment.yaml` schema
 
 ```bash
 # Live status of each service -- ECS/ALB on AWS, Container Apps on Azure
-cloud-compose compose ps --env environment.yaml
+cloud-compose ps --env environment.yaml
 
 # Recent logs, one service or every service, interleaved by timestamp
-cloud-compose compose logs --env environment.yaml
-cloud-compose compose logs --env environment.yaml web --since 1h --tail 500
+cloud-compose logs --env environment.yaml
+cloud-compose logs --env environment.yaml web --since 1h --tail 500
 
 # Tear the app down again (never touches the shared environment)
-cloud-compose compose down --env environment.yaml
+cloud-compose down --env environment.yaml
 
 # Tear the shared environment down too, once no app depends on it
 cloud-compose env down --env environment.yaml
 ```
 
-`ps`/`logs` query the cloud directly, not anything already implied by `compose.yml` or Terraform state, AWS and Azure are supported; GCP is not yet. Both take `--json` for scripting. Every command that runs Terraform (`env up`, `env down`, `compose up`, `compose down`) stays interactive by default; pass `--auto-approve` for non-interactive callers like CI.
+`ps`/`logs` query the cloud directly, not anything already implied by `compose.yml` or Terraform state, AWS and Azure are supported; GCP is not yet. Both take `--json` for scripting. Every command that runs Terraform (`env up`, `env down`, `up`, `down`) stays interactive by default; pass `--auto-approve` for non-interactive callers like CI.
 
 ---
 

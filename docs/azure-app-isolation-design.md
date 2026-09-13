@@ -87,7 +87,8 @@ headroom is needed.
 
 Implemented (2026-08-11). `cloud-compose init` no longer creates a
 Container Apps Environment or subnets; `cloud-compose compile` creates its
-own per app. Verified against real Azure (`production-stack`): the
+own per app. Verified against real Azure (`production-stack`, renamed
+to `edge-and-scaling` since): the
 per-app Container Apps Environment and all four delegated subnets
 created and destroyed cleanly.
 

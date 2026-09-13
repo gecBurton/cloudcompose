@@ -160,7 +160,7 @@ func TestResolveEnvVarAzure_ConfidentialWithNoIdentityFallsBackToPlainValue(t *t
 // service.Env, not just that the helper works in isolation. This is
 // exactly the shape of the real bug found while doing this item --
 // DATABASE_HOST: db shipping literally, unreachable once db is a
-// managed Flexible Server -- confirmed against the doctor/production-stack
+// managed Flexible Server -- confirmed against the doctor/edge-and-scaling
 // golden fixtures too, this is the unit-level companion to those.
 func TestContainerSpecAzure_AuthoredEnvVarsAreSubstituted(t *testing.T) {
 	t.Parallel()
@@ -336,11 +336,11 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 	}
 }
 
-// TestInferAzure_RealWebApiExample_PeerContainerReferenceStaysLiteral
-// exercises the full pipeline against the real web-api example: unlike
+// TestInferAzure_RealServiceDiscoveryExample_PeerContainerReferenceStaysLiteral
+// exercises the full pipeline against the real service-discovery example: unlike
 // AWS (which rewrites web's API_URL: http://api to api's ECS Cloud Map
 // FQDN, since ECS tasks get no DNS name of their own -- see
-// aws/permissions_test.go's TestInferPermissionsAndWiring_RealWebApiExample),
+// aws/permissions_test.go's TestInferPermissionsAndWiring_RealServiceDiscoveryExample),
 // Azure Container Apps already resolve a bare service name natively
 // within their own environment, so no rewrite happens here: connections
 // is only ever populated for managed-service substitutions
@@ -349,13 +349,13 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 // byte-diff, since a future change that started populating connections
 // for container peers would otherwise pass unnoticed until the golden
 // file was regenerated to match it.
-func TestInferAzure_RealWebApiExample_PeerContainerReferenceStaysLiteral(t *testing.T) {
+func TestInferAzure_RealServiceDiscoveryExample_PeerContainerReferenceStaysLiteral(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/web-api/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/service-discovery/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "web-api")
+	app, err := shared.Normalize(composeApp, "service-discovery")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}

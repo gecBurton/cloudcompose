@@ -20,8 +20,8 @@ var awsGoldenExamples = []string{
 	"scaling",
 	"platform-config",
 	"compute-tuning",
-	"production-stack",
-	"web-api",
+	"edge-and-scaling",
+	"service-discovery",
 	"doctor",
 }
 

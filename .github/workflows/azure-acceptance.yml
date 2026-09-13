@@ -13,9 +13,9 @@ on:
         default: hello
         options:
           - hello
-          - web-api
+          - service-discovery
           - doctor
-          - production-stack
+          - edge-and-scaling
       region:
         description: Azure region to deploy into
         type: choice
@@ -119,8 +119,8 @@ jobs:
             hello)
               export COMPOSE=examples/hello/compose.yml PROJECT=hello \
                      EXPECT="Server name" ;;
-            web-api)
-              export COMPOSE=examples/web-api/compose.yml PROJECT=webapi \
+            service-discovery)
+              export COMPOSE=examples/service-discovery/compose.yml PROJECT=svcdiscovery \
                      EXPECT="Server name" ;;
             doctor)
               # First real-Azure exercise of image build+push (docker_image /
@@ -130,10 +130,10 @@ jobs:
               # docs/azure-todo.md.
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
-            production-stack)
+            edge-and-scaling)
               # Postgres and the CDN endpoint are both slow to provision, so
               # this is the longest run by some margin.
-              export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
+              export COMPOSE=examples/edge-and-scaling/compose.yml PROJECT=edgescale \
                      EXPECT="Welcome to nginx" POLL_TIMEOUT=480 ;;
             *)
               echo "::error::no smoke-test configuration for '${{ inputs.example }}'"

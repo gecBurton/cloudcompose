@@ -12,8 +12,8 @@ cleanly with nothing left in the subscription:
 | Example | Proves |
 | --- | --- |
 | `hello` | Container App, ingress, the environment stack |
-| `web-api` | Two services talking to each other |
-| `production-stack` | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs, Front Door (`cdn: true`), end-to-end traffic through Front Door's own CDN endpoint |
+| `service-discovery` (was `web-api`) | Two services talking to each other |
+| `edge-and-scaling` (was `production-stack`) | PostgreSQL Flexible Server, Managed Redis, Key Vault, Container Apps Jobs, Front Door (`cdn: true`), end-to-end traffic through Front Door's own CDN endpoint |
 
 Run one with:
 

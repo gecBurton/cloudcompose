@@ -118,7 +118,7 @@ func TestInferScheduledTasks_CreatesEventBridgeResources(t *testing.T) {
 // eventbridgeExpression handles the *models.RateSchedule/*models.
 // CronSchedule pointer types the real normalizer actually produces (see
 // normalizer.go), not just the value types hand-built tests reach for --
-// a real end-to-end run against the production-stack example (which has
+// a real end-to-end run against the edge-and-scaling example (which has
 // a cron schedule) panicked with "unknown schedule type
 // *models.CronSchedule" despite every hand-built value-type test
 // passing.

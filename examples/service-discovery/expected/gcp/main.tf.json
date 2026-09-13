@@ -13,7 +13,7 @@
         "autogenerate_revision_name": true,
         "ingress": "internal",
         "location": "us-central1",
-        "name": "prod-web-api-api",
+        "name": "prod-service-discovery-api",
         "project_id": "my-project-123",
         "template": {
           "metadata": {
@@ -50,7 +50,7 @@
         "autogenerate_revision_name": true,
         "ingress": "all",
         "location": "us-central1",
-        "name": "prod-web-api-web",
+        "name": "prod-service-discovery-web",
         "project_id": "my-project-123",
         "template": {
           "metadata": {

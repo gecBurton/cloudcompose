@@ -128,11 +128,11 @@ func TestFetchLogs_NotYetDeployedIsNotAnError(t *testing.T) {
 // services' log groups, not every container service in the app.
 func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 	t.Parallel()
-	composeApp, err := shared.ParseCompose("../../../../examples/production-stack/compose.yml")
+	composeApp, err := shared.ParseCompose("../../../../examples/edge-and-scaling/compose.yml")
 	if err != nil {
 		t.Fatalf("ParseCompose failed: %v", err)
 	}
-	app, err := shared.Normalize(composeApp, "production-stack")
+	app, err := shared.Normalize(composeApp, "edge-and-scaling")
 	if err != nil {
 		t.Fatalf("Normalize failed: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestFetchLogs_FiltersToNamedServices(t *testing.T) {
 		}
 	}
 	if containerService == "" {
-		t.Fatal("expected at least one container-capability service in production-stack")
+		t.Fatal("expected at least one container-capability service in edge-and-scaling")
 	}
 
 	client := &fakeCloudWatchLogsClient{events: map[string][]cwltypes.FilteredLogEvent{}}

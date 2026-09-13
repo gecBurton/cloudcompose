@@ -13,8 +13,8 @@ on:
         options:
           - hello
           - doctor
-          - production-stack
-          - web-api
+          - edge-and-scaling
+          - service-discovery
       region:
         description: AWS region to deploy into
         type: choice
@@ -42,7 +42,7 @@ jobs:
     # GitHub's 6 hour default while a NAT gateway and ALB bill by the hour.
     # CloudFront is the long pole: a distribution takes about fifteen minutes to
     # deploy and must be disabled and propagated before it can be deleted, so a
-    # production-stack run is far longer than the others.
+    # edge-and-scaling run is far longer than the others.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
@@ -106,11 +106,11 @@ jobs:
             doctor)
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
-            web-api)
-              export COMPOSE=examples/web-api/compose.yml PROJECT=webapi \
+            service-discovery)
+              export COMPOSE=examples/service-discovery/compose.yml PROJECT=svcdiscovery \
                      EXPECT="Server name" ;;
-            production-stack)
-              export COMPOSE=examples/production-stack/compose.yml PROJECT=prodstack \
+            edge-and-scaling)
+              export COMPOSE=examples/edge-and-scaling/compose.yml PROJECT=edgescale \
                      EXPECT="Welcome to nginx" POLL_TIMEOUT=600 ;;
           esac
           scripts/smoke-test.sh

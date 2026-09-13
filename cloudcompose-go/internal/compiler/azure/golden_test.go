@@ -47,8 +47,8 @@ func mockAzureProdEnv() models.AzureEnvironment {
 var azureGoldenExamples = []string{
 	"hello",
 	"doctor",
-	"production-stack",
-	"web-api",
+	"edge-and-scaling",
+	"service-discovery",
 	"platform-config",
 	// "scaling" is deliberately not in this list: its web service's
 	// `size: large` maps to 4 vCPU, which exceeds Azure Container Apps'

@@ -4,7 +4,7 @@ Docker Compose for the Cloud
 > [!CAUTION]
 > **Project Status: PRE-ALPHA**, APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.
 
-Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform, VPCs, load balancers, IAM policies, auto-scaling rules. Cloud Compose Compiler reads your existing `docker-compose.yml` and compiles it straight to deployable Terraform for AWS, Azure, or GCP:
+Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform, VPCs, load balancers, IAM policies, auto-scaling rules. Cloud Compose Compiler reads your existing `docker-compose.yml` (with a top-level `name:` — see "Deploy for real" below) and compiles it straight to deployable Terraform for AWS, Azure, or GCP:
 
 ```bash
 # Local development
@@ -81,7 +81,17 @@ cp examples/hello/environment.yaml ./environment.yaml
 # edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
 ```
 
-You'll also need a `docker-compose.yml` for the app itself. Every command below auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass `-f` explicitly, the same way `docker compose` itself does.
+`environment.yaml` must declare a `backend:` — either `local:` (state stays on this machine, at an authored `path:`) or a real remote backend (`aws:`/`azure:`/`gcp:`, with locking, for sharing one environment across multiple people/CI):
+
+```yaml
+backend:
+  local:
+    path: ./terraform.tfstate   # resolved relative to this file's own directory
+```
+
+See `docs/authored-environment-config.md` for the remote-backend shapes.
+
+You'll also need a `docker-compose.yml` for the app itself, with a top-level `name:` — this is the app's own durable identity (see `docs/deployment-identity-design.md`), not a `-p`/`--project` flag or a directory name. Every command below auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass `-f` explicitly, the same way `docker compose` itself does.
 
 From here, pick one:
 
@@ -96,13 +106,13 @@ cloud-compose compose up --env env-prod
 
 That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
-If `environment.yaml` has a `backend:` block configured (see `docs/authored-environment-config.md`), `compose up` can be pointed straight at `environment.yaml` itself instead of `env-prod`'s own directory:
+If `environment.yaml` declares a real remote `backend:` (not `local:`), `compose up` can be pointed straight at `environment.yaml` itself instead of `env-prod`'s own directory:
 
 ```bash
 cloud-compose compose up --environment environment.yaml
 ```
 
-See `docs/deployment-identity-design.md` for why: it's a portable handle that resolves to the same environment regardless of whether that directory currently exists on disk.
+See `docs/deployment-identity-design.md` for why: it's a portable handle that resolves to the same environment regardless of whether that directory currently exists on disk. Local state has no such durable locator, so `--environment` requires a real backend even though `local:` is a perfectly valid choice for `env up` itself.
 
 ### Step-by-step path: review each stage
 
@@ -170,6 +180,20 @@ services:
 
 The same declaration becomes ECS target-tracking on AWS, KEDA scale rules on Azure, or Cloud Run autoscaling on GCP, whichever is idiomatic for that cloud. Unknown keys under `x-cloud` are a hard compile-time error rather than silently ignored, so a typo fails immediately instead of surfacing later at deploy time.
 
+On Azure, an app also needs a top-level (not per-service) `x-cloud.azure.subnet_index` — each app gets its own Container Apps Environment for isolation, carved out of the shared environment's address space, so this picks which slice:
+
+```yaml
+name: myapp
+x-cloud:
+  azure:
+    subnet_index: 0   # unique per app sharing one environment; required on Azure, ignored elsewhere
+services:
+  api:
+    image: myapp
+```
+
+See `docs/azure-app-isolation-design.md` for why.
+
 ---
 
 ## Supported clouds
@@ -187,6 +211,9 @@ GCP is intentionally less mature than AWS/Azure, see `AGENTS.md`'s "GCP has no c
 ## Documentation
 
 - [Authored environment.yaml schema](docs/authored-environment-config.md)
+- [Deployment identity: how environments and apps are located](docs/deployment-identity-design.md)
+- [Azure per-app isolation and subnet allocation](docs/azure-app-isolation-design.md)
+- [Multi-user state: remote backends and safe teardown](docs/multi-user-state.md)
 - [Azure deployment status](docs/azure-todo.md)
 - [Azure/AWS feature parity gap analysis](docs/azure-aws-parity-todo.md)
 - [More design docs and spikes](docs/)

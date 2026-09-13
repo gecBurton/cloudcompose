@@ -36,6 +36,23 @@ aws:
   az_count: 2
   create_alb: true
 
+# local: is the default here for a bare local run (PROFILE set,
+# STATE_BUCKET unset): state stays on disk under build/aws/env-<name>,
+# fine for a laptop where the files persist between commands. When
+# STATE_BUCKET is set (always true in CI -- see acceptance.yml),
+# scripts/smoke-test.sh's own templating step replaces this entire
+# block with `remote:` (S3, bucket/region/dynamodb_table from
+# STATE_BUCKET/STATE_REGION/STATE_TABLE) before calling `env init` --
+# cloud-compose then generates both the environment's own backend
+# block AND every app compiled against it, with a deterministic,
+# collision-free key derived from name: (see
+# internal/compiler/shared/backend_naming.go's BackendKeyForEnvironment/
+# BackendKeyForApp) -- no separate, hand-rolled backend file needed on
+# top of what `env init`/`compile` already emit (a previous version of
+# this script wrote one anyway, which collided with this block once
+# backend: became mandatory and produced a real "Duplicate backend
+# configuration" failure -- see the run this comment was added
+# alongside fixing).
 backend:
   local:
     path: ./terraform.tfstate

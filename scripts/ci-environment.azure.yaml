@@ -1,8 +1,10 @@
 # Shared environment.yaml for the Azure acceptance workflow
 # (.github/workflows/azure-acceptance.yml). See
 # scripts/ci-environment.aws.yaml's own comments for why this is one
-# shared file rather than one per example, and why name: is a
-# placeholder scripts/smoke-test.sh substitutes per run.
+# shared file rather than one per example, why name: is a
+# placeholder scripts/smoke-test.sh substitutes per run, and why
+# backend: below gets replaced with `remote:` (azurerm) the same way
+# when STATE_RG is set.
 #
 # region is francecentral, not the more obvious eastus: eastus has
 # documented PostgreSQL Flexible Server and Managed Redis capacity/quota

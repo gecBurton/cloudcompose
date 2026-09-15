@@ -1,20 +1,20 @@
-# cloud compose up
+# cloud-compose
 Docker Compose for the Cloud
 
 > [!CAUTION]
 > **Project Status: PRE-ALPHA**, APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.
 
-Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform, VPCs, load balancers, IAM policies, auto-scaling rules. Cloud Compose Compiler reads your existing `docker-compose.yml` (with a top-level `name:` — see "Deploy for real" below) and compiles it straight to deployable Terraform for AWS, Azure, or GCP:
+Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform, VPCs, load balancers, IAM policies, auto-scaling rules. `cloud-compose` reads your existing `docker-compose.yml` (with a top-level `name:` — the app's own durable identity, see `docs/deployment-identity-design.md`) and a new file, `environment.yaml`, that describes your cloud environment, and compiles them straight to deployable Terraform for AWS, Azure, or GCP.
 
 ```bash
 # Local development
 docker compose up
 
 # Production deployment (same file!)
-cloud-compose compile -f docker-compose.yml -e environment.yaml
+cloud-compose up -f docker-compose.yml -e environment.yaml
 ```
 
-No `--flags` describing your infrastructure, no new config format to learn, it infers what it can (`image: postgres` → a managed database) and lets you override the rest with a small `x-cloud:` block when you need to.
+No `--flags` describing your infrastructure, no new config format to learn, it infers what it can (`image: postgres` → a managed database) and lets you override the rest with a small `x-cloud:` block when you need to. `-f`/`--file` is optional — every command auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass it, the same way `docker compose` itself does.
 
 ---
 
@@ -25,8 +25,8 @@ Download a prebuilt binary from the
 archives are published for Linux, macOS, and Windows (amd64 and arm64):
 
 ```bash
-curl -LO https://github.com/gecBurton/cloudcompose/releases/latest/download/cloud-compose_<version>_darwin_arm64.tar.gz
-tar -xzf cloud-compose_<version>_darwin_arm64.tar.gz
+curl -LO https://github.com/gecBurton/cloudcompose/releases/download/v0.3.0/cloud-compose_0.3.0_darwin_arm64.tar.gz
+tar -xzf cloud-compose_0.3.0_darwin_arm64.tar.gz
 chmod +x cloud-compose
 ```
 
@@ -34,13 +34,57 @@ Or build from source (requires Go 1.26+):
 
 ```bash
 git clone https://github.com/gecBurton/cloudcompose.git
-cd cloudcompose/cloudcompose-go
-go build -o cloud-compose ./cmd/cloudcompose
+cd cloudcompose
+make build
 ```
 
 You'll also need the **Terraform CLI**, **Docker** (only if a service has a `build:` section), and credentials for whichever cloud you're deploying to.
 
-### See what it infers before deploying anything
+---
+
+## Set up an environment
+
+The `environment.yaml` describes the essential features of your environment such as:
+* which cloud you are using
+* what region it is in
+* where the terraform state is stored
+
+The environment also contains all the most expensive parts of the deployment — VPC, ALB/Container Apps Environment, ECS cluster, etc — and as such many applications can be deployed to the same environment, saving money and deployment time.
+
+The environment must be set up before any application can be deployed to it:
+
+```bash
+cloud-compose env up --env environment.yaml
+```
+
+A typical environment might be:
+
+```yaml
+provider: aws
+name: preproduction
+region: eu-west-2
+retain_data_on_destroy: true
+high_availability_enabled: false # Multi-AZ roughly doubles RDS compute cost; opt-in
+backup_retention_days: 7
+log_retention_days: 7
+tags:
+  Team: platform
+
+aws:
+  vpc_cidr: 10.0.0.0/16
+  az_count: 2
+  create_alb: true
+
+backend:
+  local:
+    path: ./terraform-aws.tfstate
+```
+
+`backend:` must declare either `local:` (state stays on this machine, as shown above) or `remote:` (a real remote backend, with locking, for sharing one environment across multiple people/CI). See `docs/authored-environment-config.md` for the remote-backend shapes.
+
+---
+
+## How it works
 
 `--explain` reports every inference the compiler makes and writes nothing — no cloud account or `environment.yaml` needed:
 
@@ -63,44 +107,15 @@ db
 7 decision(s)
 ```
 
----
+`--env`/`-e` always means the authored `environment.yaml`, on every command (`env init`, `env up`, `compile`, `up`, `down`, `ps`, `logs`, `env down`). It resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-identity-design.md` for the full reasoning.
 
-## Deploy for real
-
-Every cloud target needs a one-time shared environment (VPC, ALB/Container Apps Environment, ECS cluster, etc.), created once, then reused by every app deployed into it. You author it the same way you'd author `docker-compose.yml`: a small, reviewable `environment.yaml`, not a pile of `--flags`.
-
-```bash
-cp examples/hello/environment.yaml ./environment.yaml
-# edit name/region/vpc_cidr etc. to taste -- e.g. set name: prod
-```
-
-`environment.yaml` must declare a `backend:` — either `local:` (state stays on this machine, at an authored `path:`) or `remote:` (a real remote backend, with locking, for sharing one environment across multiple people/CI; its shape depends on `provider:`):
-
-```yaml
-backend:
-  local:
-    path: ./terraform.tfstate   # resolved relative to this file's own directory
-```
-
-See `docs/authored-environment-config.md` for the remote-backend shapes.
-
-You'll also need a `docker-compose.yml` for the app itself, with a top-level `name:` — this is the app's own durable identity (see `docs/deployment-identity-design.md`), not a `-p`/`--project` flag or a directory name. Every command below auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass `-f` explicitly, the same way `docker compose` itself does.
-
-`--env`/`-e` always means the authored `environment.yaml`, on every command, including this next step:
-
-```bash
-cloud-compose env up --env environment.yaml
-```
-
-`env up` runs `env init` (writes the environment's Terraform manifest) → `terraform apply`, in one step. Once that succeeds, deploy an app into it:
+Once the environment is applied, deploy an app into it:
 
 ```bash
 cloud-compose up --env environment.yaml
 ```
 
 `up` runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand. That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
-
-`--env` resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-identity-design.md` for the full reasoning.
 
 If you'd rather review each stage yourself instead of `env up`'s one-step apply:
 
@@ -116,7 +131,10 @@ See `docs/authored-environment-config.md` for the full `environment.yaml` schema
 
 ---
 
-## Operate it like `docker compose`
+## Inspection
+
+Having deployed your application in a similar manner to docker-compose you can now inspect it using
+the same familiar tooling:
 
 ```bash
 # Live status of each service -- ECS/ALB on AWS, Container Apps on Azure
@@ -139,7 +157,7 @@ cloud-compose env down --env environment.yaml
 
 ## What it infers
 
-| You write | Cloud Compose Compiler infers |
+| You write | `cloud-compose` infers |
 |-----------|-----------------|
 | `image: postgres` | A managed database (RDS, Cloud SQL, Flexible Server) |
 | `image: redis` | A managed cache (ElastiCache, Memorystore, Cache for Redis) |

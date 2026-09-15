@@ -1,5 +1,4 @@
 # cloud-compose up!
-Docker Compose for the Cloud
 
 > [!CAUTION]
 > **Project Status: PRE-ALPHA**, APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.

@@ -4,7 +4,7 @@ Docker Compose for the Cloud
 > [!CAUTION]
 > **Project Status: PRE-ALPHA**, APIs, models, and generated infrastructure are subject to breaking changes. Not recommended for production use yet.
 
-Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform, VPCs, load balancers, IAM policies, auto-scaling rules. `cloud-compose` reads your existing `docker-compose.yml` (with a top-level `name:` — the app's own durable identity, see `docs/deployment-identity-design.md`) and a new file, `environment.yaml`, that describes your cloud environment, and compiles them straight to deployable Terraform for AWS, Azure, or GCP.
+Running services locally with Docker Compose is easy. Deploying the same app to the cloud usually means hand-writing hundreds of lines of Terraform, VPCs, load balancers, IAM policies, auto-scaling rules. `cloud-compose` reads your existing `docker-compose.yml` and a new file, `environment.yaml`, that describes your cloud environment, and compiles them straight to deployable Terraform for AWS, Azure, or GCP.
 
 ```bash
 # Local development

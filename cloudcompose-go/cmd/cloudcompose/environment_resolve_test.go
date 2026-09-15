@@ -202,8 +202,23 @@ exit 0
 		t.Fatalf("write fake terraform: %v", err)
 	}
 
+	// Compile against a copy of the example compose file in a scratch
+	// dir, not examples/hello/compose.yml directly -- compiling writes
+	// app-demo-hello/main.tf.json alongside the compose file, which
+	// would otherwise leave real, untracked output inside the repo's
+	// own examples/ directory (caught by goreleaser's dirty-git check).
+	composeDir := t.TempDir()
+	composeSrc, err := os.ReadFile("../../../examples/hello/compose.yml")
+	if err != nil {
+		t.Fatalf("read example compose.yml: %v", err)
+	}
+	composeFile := filepath.Join(composeDir, "compose.yml")
+	if err := os.WriteFile(composeFile, composeSrc, 0644); err != nil {
+		t.Fatalf("write compose.yml: %v", err)
+	}
+
 	cmd := exec.Command(bin, "compile",
-		"-f", "../../../examples/hello/compose.yml",
+		"-f", composeFile,
 		"--env", envFile)
 	cmd.Env = append(os.Environ(), "PATH="+fakeTerraformDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()

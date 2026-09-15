@@ -1,4 +1,4 @@
-# cloud-compose
+# cloud-compose up!
 Docker Compose for the Cloud
 
 > [!CAUTION]

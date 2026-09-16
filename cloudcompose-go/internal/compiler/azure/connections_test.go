@@ -16,13 +16,22 @@ import (
 // containerSpecAzure's own <SERVER>_URL synthesis, not a replacement --
 // see resolveEnvVarAzure's own doc comment for why both coexist.
 
+// dbAppAzure returns a minimal app with a single database-capability
+// service named "db", the shape most resolveEnvVarAzure tests in this
+// file need just to let redisTLSSchemeAzure's capability lookup resolve.
+func dbAppAzure() *models.Application {
+	return &models.Application{
+		Services: []models.Service{{Name: "db", Capability: models.CapabilityDatabase}},
+	}
+}
+
 func TestResolveEnvVarAzure_BareHostnameReferenceSubstituted(t *testing.T) {
 	t.Parallel()
 	resources := models.NewAzureResources()
 	connections := map[string]models.Connection{
 		"db": {Host: "${azurerm_postgresql_flexible_server.main.fqdn}", AddressedBy: "host"},
 	}
-	envVar, secret := resolveEnvVarAzure(resources, "web", "DATABASE_HOST", "db", connections, []string{"db"}, testGetNameAzure, nil, "")
+	envVar, secret := resolveEnvVarAzure(resources, dbAppAzure(), "web", "DATABASE_HOST", "db", connections, []string{"db"}, testGetNameAzure, nil, "")
 	if envVar.Value != connections["db"].Host {
 		t.Errorf("envVar.Value = %q, want %q (the real, deployed hostname, not the local container name)", envVar.Value, connections["db"].Host)
 	}
@@ -35,7 +44,7 @@ func TestResolveEnvVarAzure_UnreferencedValuePassesThroughUnchanged(t *testing.T
 	t.Parallel()
 	resources := models.NewAzureResources()
 	connections := map[string]models.Connection{"db": {Host: "h"}}
-	envVar, secret := resolveEnvVarAzure(resources, "web", "NODE_ENV", "development", connections, []string{"db"}, testGetNameAzure, nil, "")
+	envVar, secret := resolveEnvVarAzure(resources, dbAppAzure(), "web", "NODE_ENV", "development", connections, []string{"db"}, testGetNameAzure, nil, "")
 	if envVar.Value != "development" {
 		t.Errorf("envVar.Value = %q, want unchanged 'development'", envVar.Value)
 	}
@@ -59,7 +68,7 @@ func TestResolveEnvVarAzure_ConfidentialURLStoredInKeyVault(t *testing.T) {
 		},
 	}
 	identityID := "${azurerm_user_assigned_identity.main.id}"
-	envVar, secret := resolveEnvVarAzure(resources, "web", "DATABASE_URL", "postgres://user@db:5432/localdb", connections, []string{"db"}, testGetNameAzure, nil, identityID)
+	envVar, secret := resolveEnvVarAzure(resources, dbAppAzure(), "web", "DATABASE_URL", "postgres://user@db:5432/localdb", connections, []string{"db"}, testGetNameAzure, nil, identityID)
 
 	if envVar.Value != "" {
 		t.Errorf("expected no plain Value on a confidential resolution, got %q", envVar.Value)
@@ -100,7 +109,7 @@ func TestResolveEnvVarAzure_GrantsKeyVaultAccessEvenWithoutARelationship(t *test
 	password := "s3cret"
 	connections := map[string]models.Connection{"db": {Host: "h", Password: &password}}
 
-	resolveEnvVarAzure(resources, "web", "DATABASE_URL", "postgres://db/x", connections, []string{"db"}, testGetNameAzure, nil, "${azurerm_user_assigned_identity.main.id}")
+	resolveEnvVarAzure(resources, dbAppAzure(), "web", "DATABASE_URL", "postgres://db/x", connections, []string{"db"}, testGetNameAzure, nil, "${azurerm_user_assigned_identity.main.id}")
 
 	if _, ok := resources.RoleAssignment["kv_role"]; !ok {
 		t.Errorf("expected a kv_role RoleAssignment granting Key Vault access, got none")
@@ -122,7 +131,7 @@ func TestResolveEnvVarAzure_KeyVaultSecretNameHasNoUnderscores(t *testing.T) {
 	connections := map[string]models.Connection{
 		"db": {Host: "h", Password: &password},
 	}
-	_, secret := resolveEnvVarAzure(resources, "web", "DATABASE_URL", "postgres://db/x", connections, []string{"db"}, testGetNameAzure, nil, "${azurerm_user_assigned_identity.main.id}")
+	_, secret := resolveEnvVarAzure(resources, dbAppAzure(), "web", "DATABASE_URL", "postgres://db/x", connections, []string{"db"}, testGetNameAzure, nil, "${azurerm_user_assigned_identity.main.id}")
 	if secret == nil {
 		t.Fatalf("expected a secret")
 	}
@@ -146,7 +155,7 @@ func TestResolveEnvVarAzure_ConfidentialWithNoIdentityFallsBackToPlainValue(t *t
 	resources := models.NewAzureResources()
 	password := "s3cret"
 	connections := map[string]models.Connection{"db": {Host: "h", Password: &password}}
-	envVar, secret := resolveEnvVarAzure(resources, "web", "DATABASE_URL", "postgres://db/x", connections, []string{"db"}, testGetNameAzure, nil, "")
+	envVar, secret := resolveEnvVarAzure(resources, dbAppAzure(), "web", "DATABASE_URL", "postgres://db/x", connections, []string{"db"}, testGetNameAzure, nil, "")
 	if secret != nil {
 		t.Errorf("expected no secret when no identity is available, got %+v", secret)
 	}
@@ -242,7 +251,8 @@ func TestContainerSpecAzure_ObjectStorageRendersAsBareHost(t *testing.T) {
 
 // TestContainerSpecAzure_CacheRendersAsRedisURL mirrors the same fix for
 // a cache relationship: previously rendered as a Postgres-shaped URL,
-// now renders as redis:// with the cache's own host/port/password.
+// now renders as rediss:// (TLS -- Azure Managed Redis is TLS-only, see
+// connectionURLAzure's own comment) with the cache's own host/port/password.
 func TestContainerSpecAzure_CacheRendersAsRedisURL(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{
@@ -277,7 +287,7 @@ func TestContainerSpecAzure_CacheRendersAsRedisURL(t *testing.T) {
 	// so this exercises the plain-render fallback path, not the
 	// secretRef path -- see TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef
 	// for that one.
-	want := "redis://:" + password + "@${azurerm_managed_redis.cache_redis.hostname}:10000"
+	want := "rediss://:" + password + "@${azurerm_managed_redis.cache_redis.hostname}:10000"
 	if container.Env[0].Value != want {
 		t.Errorf("got %q, want %q", container.Env[0].Value, want)
 	}
@@ -315,8 +325,12 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("containerSpecAzure failed: %v", err)
 	}
-	if len(container.Env) != 1 {
-		t.Fatalf("expected 1 env var, got %d", len(container.Env))
+	// 2 env vars: DB_URL (the <SERVER>_URL synthesis under test here) plus
+	// DB_PASSWORD, which containerSpecAzure now injects for every
+	// referenced database connection alongside it (see
+	// TestContainerSpecAzure_DatabaseConnectionInjectsUsernameAndPassword).
+	if len(container.Env) != 2 {
+		t.Fatalf("expected 2 env vars (DB_URL, DB_PASSWORD), got %d: %+v", len(container.Env), container.Env)
 	}
 	if container.Env[0].Value != "" {
 		t.Errorf("expected no plaintext Value when a Key Vault secret exists, got %q", container.Env[0].Value)
@@ -324,14 +338,80 @@ func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 	if container.Env[0].SecretName == "" {
 		t.Errorf("expected SecretName to be set")
 	}
-	if len(secrets) != 1 {
-		t.Fatalf("expected 1 secret, got %d", len(secrets))
+	if len(secrets) != 2 {
+		t.Fatalf("expected 2 secrets (db-url, db-password), got %d", len(secrets))
 	}
 	if secrets[0].KeyVaultSecretID != "${azurerm_key_vault_secret.db_secret.versionless_id}" {
 		t.Errorf("KeyVaultSecretID = %q, want the db_secret's versionless_id", secrets[0].KeyVaultSecretID)
 	}
 	if secrets[0].Identity != "${azurerm_user_assigned_identity.main.id}" {
 		t.Errorf("Identity = %q, want the user-assigned identity's resource ID", secrets[0].Identity)
+	}
+}
+
+// TestContainerSpecAzure_DatabaseConnectionInjectsUsernameAndPassword
+// checks the real bug this closes: an app authoring DB_HOST itself
+// (rather than consuming the synthesized <SERVER>_URL) still needs
+// DB_USERNAME/DB_PASSWORD to actually connect, since the compose file
+// never authors credentials for a container about to be replaced by a
+// managed database. Mirrors AWS's grantDatabasePermissions, which
+// injects the same two literal env var names from Secrets Manager.
+func TestContainerSpecAzure_DatabaseConnectionInjectsUsernameAndPassword(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, Env: map[string]string{"DB_HOST": "db"}},
+			{Name: "db", Capability: models.CapabilityDatabase},
+		},
+		Relationships: []models.Relationship{{Client: "web", Server: "db"}},
+	}
+	env := mockAzureProdEnv()
+	resources := models.NewAzureResources()
+	resources.KeyVaultSecret["db_secret"] = models.NewKeyVaultSecret()
+	resources.UserAssignedIdentity["main"] = models.UserAssignedIdentity{Name: "prod-app-identity"}
+
+	password := "supersecret"
+	username := "cloudcompose"
+	connections := map[string]models.Connection{
+		"db": {Host: "db.example.com", Username: &username, Password: &password},
+	}
+
+	container, secrets, err := containerSpecAzure(&app.Services[0], app, &env, resources, connections, []string{"db"}, testGetNameAzure, nil, "")
+	if err != nil {
+		t.Fatalf("containerSpecAzure failed: %v", err)
+	}
+
+	byName := map[string]models.ContainerAppEnvVar{}
+	for _, e := range container.Env {
+		byName[e.Name] = e
+	}
+
+	if byName["DB_USERNAME"].Value != "cloudcompose" {
+		t.Errorf("DB_USERNAME = %+v, want plaintext value %q (a username is never confidential)", byName["DB_USERNAME"], "cloudcompose")
+	}
+	dbPassword, ok := byName["DB_PASSWORD"]
+	if !ok {
+		t.Fatalf("expected a DB_PASSWORD env var, got %+v", container.Env)
+	}
+	if dbPassword.Value != "" {
+		t.Errorf("DB_PASSWORD.Value = %q, want empty (must come from Key Vault, not plaintext)", dbPassword.Value)
+	}
+	if dbPassword.SecretName == "" {
+		t.Errorf("expected DB_PASSWORD.SecretName to be set")
+	}
+
+	var found bool
+	for _, s := range secrets {
+		if s.Name == dbPassword.SecretName {
+			found = true
+			if s.KeyVaultSecretID != "${azurerm_key_vault_secret.db_secret.versionless_id}" {
+				t.Errorf("KeyVaultSecretID = %q, want the db_secret's versionless_id", s.KeyVaultSecretID)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected a ContainerAppSecret named %q, got %+v", dbPassword.SecretName, secrets)
 	}
 }
 

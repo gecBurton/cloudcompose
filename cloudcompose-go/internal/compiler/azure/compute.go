@@ -144,7 +144,7 @@ func containerSpecAzure(
 	envVars := make([]models.ContainerAppEnvVar, 0, len(service.Env))
 	var secrets []models.ContainerAppSecret
 	for _, k := range shared.SortedKeys(service.Env) {
-		envVar, secret := resolveEnvVarAzure(resources, service.Name, k, service.Env[k], connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		envVar, secret := resolveEnvVarAzure(resources, app, service.Name, k, service.Env[k], connections, connectionOrder, getName, tags, managedServiceIdentityID)
 		envVars = append(envVars, envVar)
 		if secret != nil {
 			secrets = append(secrets, *secret)
@@ -187,13 +187,38 @@ func containerSpecAzure(
 				Identity:         managedServiceIdentityRef(resources),
 			})
 			envVars = append(envVars, models.ContainerAppEnvVar{Name: envVarName, SecretName: secretName})
-			continue
+		} else {
+			envVars = append(envVars, models.ContainerAppEnvVar{
+				Name:  envVarName,
+				Value: connectionURLAzure(capability, &conn),
+			})
 		}
 
-		envVars = append(envVars, models.ContainerAppEnvVar{
-			Name:  envVarName,
-			Value: connectionURLAzure(capability, &conn),
-		})
+		// A database connection also gets DB_USERNAME/DB_PASSWORD, the
+		// same literal names AWS's grantDatabasePermissions injects
+		// (Secrets Manager there, Key Vault here): an app authoring
+		// DB_HOST itself (rather than consuming <SERVER>_URL) still
+		// needs credentials to actually connect, and the compose file
+		// never authors a password for a container that's about to be
+		// replaced by a managed database.
+		if capability == models.CapabilityDatabase {
+			if conn.Username != nil {
+				envVars = append(envVars, models.ContainerAppEnvVar{Name: "DB_USERNAME", Value: *conn.Username})
+			}
+			if conn.Password != nil {
+				if secretRef := keyVaultSecretRefFor(resources, dbName); secretRef != "" {
+					secretName := dbName + "-password"
+					secrets = append(secrets, models.ContainerAppSecret{
+						Name:             secretName,
+						KeyVaultSecretID: secretRef,
+						Identity:         managedServiceIdentityRef(resources),
+					})
+					envVars = append(envVars, models.ContainerAppEnvVar{Name: "DB_PASSWORD", SecretName: secretName})
+				} else {
+					envVars = append(envVars, models.ContainerAppEnvVar{Name: "DB_PASSWORD", Value: *conn.Password})
+				}
+			}
+		}
 	}
 
 	// Compose secrets:/platform config:.
@@ -225,6 +250,7 @@ func containerSpecAzure(
 // still need their own secret.
 func resolveEnvVarAzure(
 	resources *models.AzureResources,
+	app *models.Application,
 	serviceName, varName, value string,
 	connections map[string]models.Connection,
 	connectionOrder []string,
@@ -233,6 +259,7 @@ func resolveEnvVarAzure(
 	managedServiceIdentityID string,
 ) (models.ContainerAppEnvVar, *models.ContainerAppSecret) {
 	resolved := shared.ResolveValue(value, connections, connectionOrder)
+	resolved.Value = redisTLSSchemeAzure(resolved.Value, app, resolved.Service)
 	if !resolved.Confidential {
 		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
 	}
@@ -274,6 +301,27 @@ func resolveEnvVarAzure(
 		}
 }
 
+// redisTLSSchemeAzure rewrites an authored URL's scheme to "rediss" when
+// it resolved against a cache-capability service, since
+// shared.rebuildURL otherwise keeps whatever scheme the compose file
+// wrote (plain "redis") and Azure Managed Redis is TLS-only (see
+// connectionURLAzure's own comment). Only touches values that actually
+// resolved against a connection; a value with no matching service is
+// returned unchanged.
+func redisTLSSchemeAzure(value string, app *models.Application, resolvedService *string) string {
+	if resolvedService == nil {
+		return value
+	}
+	server := findServiceByNameAzure(app, *resolvedService)
+	if server == nil || server.Capability != models.CapabilityCache {
+		return value
+	}
+	if strings.HasPrefix(value, "redis://") {
+		return "rediss://" + strings.TrimPrefix(value, "redis://")
+	}
+	return value
+}
+
 // connectionURLAzure renders a connection as a URL, choosing the scheme
 // from the target service's capability. Only reached for a connection
 // with no stored secret; credential-bearing connections should go
@@ -281,7 +329,12 @@ func resolveEnvVarAzure(
 func connectionURLAzure(capability models.Capability, conn *models.Connection) string {
 	switch capability {
 	case models.CapabilityCache:
-		scheme := "redis"
+		// rediss:// (TLS), not redis://: Azure Managed Redis is
+		// provisioned with client_protocol "Encrypted" (see
+		// inferCachesAzure) and rejects a plaintext connection outright
+		// -- a client using the non-TLS scheme gets a bare "connection
+		// closed by server" with no more specific error to go on.
+		scheme := "rediss"
 		password := ""
 		if conn.Password != nil {
 			password = ":" + *conn.Password + "@"

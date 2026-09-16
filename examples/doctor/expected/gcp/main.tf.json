@@ -32,23 +32,31 @@
                 "env": [
                   {
                     "name": "BUCKET_NAME",
-                    "value": "blobs"
+                    "value": "${google_storage_bucket.blobs_bucket.name}"
                   },
                   {
                     "name": "DATABASE_URL",
-                    "value": "postgres://user@db:5432/app"
+                    "value": "postgres://cloudcompose:${random_password.db_root.result}@${google_sql_database_instance.main.public_ip_address}:5432/doctor_db"
                   },
                   {
                     "name": "DB_HOST",
-                    "value": "db"
+                    "value": "${google_sql_database_instance.main.public_ip_address}"
                   },
                   {
                     "name": "REDIS_URL",
-                    "value": "redis://cache:6379"
+                    "value": "redis://${google_redis_instance.cache_redis.host}:6379"
                   },
                   {
                     "name": "DB_URL",
                     "value": "postgresql://cloudcompose:${random_password.db_root.result}@${google_sql_database_instance.main.public_ip_address}:5432/doctor_db"
+                  },
+                  {
+                    "name": "DB_USERNAME",
+                    "value": "cloudcompose"
+                  },
+                  {
+                    "name": "DB_PASSWORD",
+                    "value": "${random_password.db_root.result}"
                   },
                   {
                     "name": "CACHE_URL",

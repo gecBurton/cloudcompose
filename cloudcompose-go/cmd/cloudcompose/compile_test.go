@@ -242,7 +242,7 @@ func TestMain_FileFlagWorksBeforeOrAfterSubcommand(t *testing.T) {
 	}
 	// Project name comes from the compose file's own top-level `name:`
 	// (here "hello", from examples/hello/compose.yml), not composeDir's
-	// basename -- see docs/deployment-identity-design.md.
+	// basename -- see docs/deployment-model.md.
 	appDirName := "app-demo-hello"
 	if _, statErr := os.Stat(filepath.Join(composeDir, appDirName, "main.tf.json")); statErr != nil {
 		t.Errorf("expected main.tf.json from -f before the subcommand, got: %v", statErr)
@@ -415,4 +415,4 @@ func TestMain_ExplainReportsDroppedPortsFromRealComposeModel(t *testing.T) {
 // top-level `name:` is the sole source of an application's identity --
 // see internal/compiler/shared/parser_test.go's
 // TestParseCompose_RequiresTopLevelName/RejectsNameContainingSlash/
-// AcceptsSafeNames, and docs/deployment-identity-design.md.
+// AcceptsSafeNames, and docs/deployment-model.md.

@@ -242,7 +242,7 @@ shipped `cloud-compose` binary.
   is deliberate (see e.g. `gcp/infer.go`'s
   `pyNoneStringGcp`/`buildConnectionURLGcp` for one still-open documented
   example — Azure's equivalent was fixed in a later pass, see
-  `docs/azure-aws-parity-todo.md`)
+  `docs/compiler-design.md`)
 
 ### Error Handling
 
@@ -360,9 +360,9 @@ library).
   an unset connection field) but is intentional, commented explicitly
   where it occurs. Don't "fix" one without checking whether it's
   deliberate first — and don't assume a "still open" comment stays true
-  forever, either: Azure had the same quirk until
-  `docs/azure-aws-parity-todo.md`'s Priority 1 work fixed it; the comment
-  pointing at it was updated at the same time, not left to drift.
+  forever, either: Azure had the same quirk until an earlier parity pass
+  fixed it; the comment pointing at it was updated at the same time, not
+  left to drift.
 
 ## Debugging
 

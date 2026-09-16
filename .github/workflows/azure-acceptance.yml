@@ -126,8 +126,7 @@ jobs:
               # First real-Azure exercise of image build+push (docker_image /
               # docker_registry_image -> ACR) plus a compose secret. If this
               # fails at the pull step, the registry identity likely also
-              # needs an explicit AcrPull role assignment -- see
-              # docs/azure-todo.md.
+              # needs an explicit AcrPull role assignment.
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
             edge-and-scaling)

@@ -72,7 +72,7 @@ func TestTerraformOutputs_MissingOutputIsAnError(t *testing.T) {
 }
 
 // TestOptionalTerraformOutputs_MissingOutputReturnsNilNil is the
-// behavior docs/multi-user-state.md's "no backend configured" default
+// behavior docs/environment-and-state.md's "no backend configured" default
 // depends on: an environment generated without backend: configured has
 // no `backend` output at all (see
 // internal/compiler/{aws,azure,gcp}/environment_generator.go), and

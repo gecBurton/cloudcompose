@@ -31,7 +31,7 @@ provider "google" {
 }
 
 # Terraform state for every environment/app backend: configures against
-# this bucket -- see docs/multi-user-state.md's key-naming convention
+# this bucket -- see docs/environment-and-state.md's key-naming convention
 # ("cloudcompose/<env>/environment.tfstate",
 # "cloudcompose/<env>/apps/<project>.tfstate"). One bucket per
 # organization/project, shared across every environment, not one per

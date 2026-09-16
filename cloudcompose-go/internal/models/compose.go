@@ -13,7 +13,7 @@ type ComposeApplication struct {
 	// set (see ParseCompose) rather than falling back to a directory
 	// name, an environment variable, or a CLI flag: identity that isn't
 	// recorded in a file can't survive deleting generated artifacts and
-	// regenerating them elsewhere. See docs/deployment-identity-design.md.
+	// regenerating them elsewhere. See docs/deployment-model.md.
 	Name string `json:"name,omitempty"`
 
 	// XCloud is the compose file's own top-level `x-cloud:` block --
@@ -295,7 +295,7 @@ type AppXCloud struct {
 //
 // SubnetIndex selects which /24 slice of the environment's reserved
 // apps_cidr range this app's own Container Apps Environment/subnets
-// are carved from (see docs/azure-app-isolation-design.md). Authored
+// are carved from (see docs/deployment-model.md). Authored
 // here, on the app itself, rather than supplied per `compile`
 // invocation via a flag: it's part of what makes this app's deployment
 // reproducible from its own compose file alone. Two apps sharing an
@@ -303,7 +303,7 @@ type AppXCloud struct {
 // resulting overlapping subnet address ranges at `terraform apply`,
 // which is deliberately left as the mechanism that catches a
 // collision, rather than CloudCompose maintaining its own registry of
-// claimed indices (see docs/deployment-identity-design.md).
+// claimed indices (see docs/deployment-model.md).
 type AppXCloudAzure struct {
 	SubnetIndex *int `json:"subnet_index,omitempty"`
 }

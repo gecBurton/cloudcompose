@@ -2,8 +2,8 @@
 
 Provisions the S3 bucket and DynamoDB lock table `backend.aws:` in
 `environment.yaml` expects to already exist (see
-`docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" and `docs/multi-user-state.md`). `cloud-compose` never
+`docs/environment-and-state.md`'s "Sharing one environment across
+multiple users" section). `cloud-compose` never
 creates this itself -- it's a one-time, manually-applied setup per
 organization/account, run before any `environment.yaml` references it.
 
@@ -41,7 +41,7 @@ backend:
   own backend requirements), plus `s3:ListBucket` scoped to the
   `cloudcompose/` prefix specifically if `env-destroy`'s dependent-app
   check is to work without falling back to a warning (see
-  `docs/multi-user-state.md`'s "IAM footprint" note -- a locked-down org
+  `docs/environment-and-state.md`'s "IAM footprint" note -- a locked-down org
   may reasonably withhold that last one).
 - Does not delete anything on `terraform destroy` here by default
   (`force_destroy = false`, unlike `ci/main.tf`'s own throwaway state

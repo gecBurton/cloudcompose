@@ -23,7 +23,7 @@ import (
 // are deliberately NOT set here: InferAzure computes them itself now
 // (appSubnetsAzure, from AppsCIDR + SubnetIndex), matching what a real
 // `cloudcompose main` run does -- see
-// docs/azure-app-isolation-design.md. SubnetIndex=0 here matches every
+// docs/deployment-model.md. SubnetIndex=0 here matches every
 // golden fixture, which all assume a single app per environment.
 func mockAzureProdEnv() models.AzureEnvironment {
 	env := models.NewAzureEnvironment()

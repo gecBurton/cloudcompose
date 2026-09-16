@@ -17,7 +17,7 @@ import (
 // Environment changes are deliberate acts (`env init`/`env up`), never
 // a side effect of deploying an app: this fails clearly if the
 // environment hasn't been applied yet, rather than applying it on the
-// caller's behalf. See docs/deployment-identity-design.md.
+// caller's behalf. See docs/deployment-model.md.
 func resolveEnvironmentByDefinition(environmentYamlPath string) (any, error) {
 	_, dir, err := environmentDirFromDefinition(environmentYamlPath)
 	if err != nil {

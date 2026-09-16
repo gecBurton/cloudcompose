@@ -264,7 +264,7 @@ func TestGcp_MatchesExpectedStructure(t *testing.T) {
 
 // TestGenerateGcp_NilEnvBackendOmitsBackendBlock mirrors
 // aws.TestGenerateAWS_NilEnvBackendOmitsBackendBlock for the GCP
-// app-level generator. See docs/multi-user-state.md.
+// app-level generator. See docs/environment-and-state.md.
 func TestGenerateGcp_NilEnvBackendOmitsBackendBlock(t *testing.T) {
 	t.Parallel()
 	resources := models.NewGcpResources()

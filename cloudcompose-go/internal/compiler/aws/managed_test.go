@@ -240,7 +240,7 @@ func TestInferDatabase_DiscardSkipsSnapshot(t *testing.T) {
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 4 backup/HA item:
+// Tests for backup/HA item:
 // AwsEnvironment.HighAvailabilityEnabled/BackupRetentionDays wired into
 // aws_db_instance.multi_az/backup_retention_period.
 

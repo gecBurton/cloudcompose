@@ -30,7 +30,7 @@ var envDownCmd = &cobra.Command{
 		"app), this destroys the shared environment itself -- so it first checks " +
 		"whether any app still depends on it (every app compiled against a " +
 		"backend-configured environment registers its own state under that " +
-		"environment's own backend, see docs/multi-user-state.md) and refuses " +
+		"environment's own backend, see docs/environment-and-state.md) and refuses " +
 		"by default if any are found, listing their project names and " +
 		"suggesting `cloud-compose down` for each first.\n\n" +
 		"Without a configured backend, this check has nothing to list against " +

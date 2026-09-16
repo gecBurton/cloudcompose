@@ -94,7 +94,7 @@ STATE_CONTAINER="${STATE_CONTAINER:-tfstate}"            # blob container within
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # ENV_DIR and BUILD_DIR are no longer passed to cloud-compose via an
 # output-location flag -- init/compile don't take one (see
-# docs/authored-environment-config.md's "no -o/--output flag" note).
+# docs/environment-and-state.md's "no -o/--output flag" note).
 # Both are instead derived here to exactly match what init/compile derive
 # themselves, so this script can still cd/destroy/reference them: init
 # always writes to <dir of its -e>/env-<name>, so ENV_DIR is
@@ -299,7 +299,7 @@ rm -rf "$ENV_DIR"
 cd "$ROOT"
 
 # cloud-compose env init takes no decision flags -- environment.yaml is its only
-# input (see docs/authored-environment-config.md). name: and region: are
+# input (see docs/environment-and-state.md). name: and region: are
 # the fields this script can't commit statically: name: needs a unique
 # resource prefix per run, and region: is itself a workflow input for
 # both clouds (region-restricted managed-service capacity has caused a
@@ -378,7 +378,7 @@ fi
 log "Compiling $COMPOSE with cloud-compose…"
 cd "$ROOT"
 # compile has no output-location flag: it always writes to
-# <dir of -f>/terraform (see docs/authored-environment-config.md's "no
+# <dir of -f>/terraform (see docs/environment-and-state.md's "no
 # -o/--output flag" note). $COMPOSE's own directory (e.g. examples/doctor)
 # is a committed example directory this script must not write build
 # artifacts into, so the whole directory (compose file + any build
@@ -396,7 +396,7 @@ COMPOSE_BUILD_COPY="$APP_BUILD_SRC/$(basename "$COMPOSE")"
 sed -i.bak "s/^name: .*/name: $PROJECT/" "$COMPOSE_BUILD_COPY" && rm -f "$COMPOSE_BUILD_COPY.bak"
 if [[ "$PROVIDER" == "azure" ]]; then
   # x-cloud.azure.subnet_index is required on Azure (see
-  # docs/azure-app-isolation-design.md); 0 is correct here since
+  # docs/deployment-model.md); 0 is correct here since
   # exactly one example deploys per CI run's environment.
   printf 'x-cloud:\n  azure:\n    subnet_index: 0\n' >> "$COMPOSE_BUILD_COPY"
 fi
@@ -452,7 +452,7 @@ if [[ "$PROVIDER" == "azure" ]]; then
       # itself at runtime.
       #
       # This was misdiagnosed for a long time as pure RBAC propagation
-      # delay (docs/azure-todo.md's Key Vault RBAC item): real propagation
+      # delay (a known misdiagnosis): real propagation
       # delay for azurerm_role_assignment.kv_role does also exist on top of
       # this (Microsoft's own docs cite up to 10 minutes), which is why a
       # `time_sleep` + retry genuinely helped some runs without fully
@@ -464,7 +464,7 @@ if [[ "$PROVIDER" == "azure" ]]; then
       # from `apply`'s own replan/refresh cost entirely.
       KV_NAME="$(eval "$TF output -raw key_vault_name" 2>/dev/null || true)"
       [[ -n "$KV_NAME" ]] || fail "terraform apply failed for the app stack with ForbiddenByRbac, but no key_vault_name output to poll against"
-      log "Key Vault RBAC propagation not yet visible (docs/azure-todo.md, ci/README.md) — polling $KV_NAME's data plane directly (up to 600s) instead of blind apply retries…"
+      log "Key Vault RBAC propagation not yet visible (see ci/README.md) — polling $KV_NAME's data plane directly (up to 600s) instead of blind apply retries…"
       kv_deadline=$(( SECONDS + 600 ))
       kv_visible=0
       while (( SECONDS < kv_deadline )); do
@@ -639,7 +639,7 @@ echo
 (( ps_ok == 1 )) || fail "cloud-compose ps did not report the deployed service as running after ${PS_ASSERT_TIMEOUT}s (RunningCount/target-health convergence delay, or a real regression -- check the diagnostics above)"
 
 # --- 4b. Front Door: confirm traffic actually flows through the CDN itself ---
-# docs/azure-todo.md's Front Door item: a clean `terraform apply` only ever
+# A clean `terraform apply` only ever
 # proved the five Front Door resources exist and reference each other
 # correctly, never that Front Door actually proxies real traffic to the
 # Container App end to end. cdn_fqdn (see azureCdnFQDN in generator.go) is

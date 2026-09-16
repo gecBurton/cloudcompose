@@ -21,7 +21,7 @@ import (
 // deploy apps with `cloud-compose compile --env <output>`.
 //
 // Reads an authored `environment.yaml` and nothing else -- there are
-// no decision flags on this command. See docs/authored-environment-config.md.
+// no decision flags on this command. See docs/environment-and-state.md.
 var envInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Write a shared infrastructure environment's Terraform manifest (no apply)",
@@ -31,7 +31,7 @@ var envInitCmd = &cobra.Command{
 		"run once by a platform team, and then developers deploy apps with " +
 		"`cloud-compose compile`.\n\n" +
 		"Reads an authored environment.yaml -- there are no decision flags; " +
-		"to change a decision, edit the file. See docs/authored-environment-config.md " +
+		"to change a decision, edit the file. See docs/environment-and-state.md " +
 		"for the schema and examples/hello/environment.yaml for a starting point.",
 	Run: runEnvInit,
 }
@@ -69,7 +69,7 @@ func initEnvironment(configFile string) (string, error) {
 		return "", fmt.Errorf(
 			"%s not found.\n\ncloud-compose env init reads an authored environment.yaml -- there are no\n"+
 				"decision flags. Create one (see examples/hello/environment.yaml for\n"+
-				"a starting point, or docs/authored-environment-config.md for the full\n"+
+				"a starting point, or docs/environment-and-state.md for the full\n"+
 				"schema), then run:\n\n  cloud-compose env init -e %s",
 			configFile, configFile,
 		)
@@ -233,5 +233,5 @@ func lowerASCII(s string) string {
 func init() {
 	envCmd.AddCommand(envInitCmd)
 
-	envInitCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/authored-environment-config.md). init itself applies (writes main.tf.json for) this file -- everywhere else, --env means the same file, but already applied.")
+	envInitCmd.Flags().StringP("env", "e", "environment.yaml", "Path to the authored environment.yaml (see docs/environment-and-state.md). init itself applies (writes main.tf.json for) this file -- everywhere else, --env means the same file, but already applied.")
 }

@@ -46,7 +46,7 @@ func writeTerraformOutputsFixture(t *testing.T, valueHCL string) string {
 // dispatching to the right cloud-specific loader based on the declared
 // target field, now read from a real (offline, no provider) Terraform
 // state's `environment` output rather than a hand-written YAML file --
-// see docs/authored-environment-config.md for why LoadEnvironment reads
+// see docs/environment-and-state.md for why LoadEnvironment reads
 // live Terraform state instead.
 func TestLoadEnvironment_DispatchesOnTarget(t *testing.T) {
 	t.Parallel()

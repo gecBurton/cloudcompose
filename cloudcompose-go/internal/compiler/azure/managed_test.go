@@ -262,7 +262,7 @@ func TestAzureRedisSkuFor_SizeMapping(t *testing.T) {
 
 // --- CDN: only ever exercised with exactly one CDN-enabled service.
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 2 items: compose
+// Tests for items: compose
 // secrets:, platform config:, database sizing, MariaDB detection, and
 // CPU/Memory autoscaling -- all previously silent no-ops on Azure.
 
@@ -366,7 +366,7 @@ func TestInferDatabasesAzure_SharedServerSizedForLargestConsumer(t *testing.T) {
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 3 Redis private
+// Tests for Redis private
 // networking item.
 
 func TestInferCachesAzure_NoPrivateEndpointWithoutRedisSubnetID(t *testing.T) {
@@ -467,10 +467,10 @@ func TestInferCachesAzure_SharedPrivateDnsZoneForMultipleCaches(t *testing.T) {
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 4 size-ceiling
+// Tests for size-ceiling
 // item.
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 4 backup/HA item:
+// Tests for backup/HA item:
 // AzureEnvironment.HighAvailabilityEnabled/BackupRetentionDays wired
 // into azurerm_postgresql_flexible_server/azurerm_mysql_flexible_server's
 // high_availability/backup_retention_days.

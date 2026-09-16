@@ -3,9 +3,8 @@
 One Terraform project per cloud, provisioning exactly what `backend:` in
 `environment.yaml` expects to already exist (a bucket, and for AWS a
 DynamoDB lock table) -- see
-`docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" section and `docs/multi-user-state.md` for the full
-design this supports.
+`docs/environment-and-state.md`'s "Sharing one environment across
+multiple users" section for the full design this supports.
 
 Unlike every other example in this repo, these are **not** compiled by
 `cloud-compose` -- they're plain, hand-written Terraform meant to be
@@ -30,5 +29,5 @@ same chicken-and-egg reason most infrastructure tools leave this to a
 human: Terraform state needs somewhere to live, and provisioning that
 somewhere is itself infrastructure that would need its own state.
 Rather than leave every team to reinvent this from scratch, these three
-projects are the ready-to-copy starting point `docs/multi-user-state.md`
+projects are the ready-to-copy starting point `docs/environment-and-state.md`
 promises exists.

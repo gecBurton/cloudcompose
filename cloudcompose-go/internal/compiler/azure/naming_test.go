@@ -108,7 +108,7 @@ func TestKeyVaultName_StableAcrossCalls(t *testing.T) {
 
 // TestFrontDoorFirewallPolicyName_ObeysAzureRules checks the real
 // constraint found via a terraform validate failure while adding this
-// item (docs/azure-aws-parity-todo.md's WAF/security-policy item):
+// item (WAF/security-policy item):
 // azurerm_cdn_frontdoor_firewall_policy.name is alphanumeric only, no
 // dashes at all -- genuinely stricter than FrontDoorProfileName's own
 // dash-permitting shape a few lines above, not the same rule applied

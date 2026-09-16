@@ -6,7 +6,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// Tests for docs/azure-aws-parity-todo.md's FrontDoorOriginGroup.HealthProbe
+// Tests for FrontDoorOriginGroup.HealthProbe
 // item: populating Front Door's origin-health probe from the same
 // service.Ingress.HealthCheck.Path already collected for Container Apps'
 // own liveness_probe. Not an AWS-parity item -- CloudFront's origin
@@ -127,7 +127,7 @@ func TestInferCdnAzure_OriginGroupHasHealthProbe(t *testing.T) {
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's WAF/security-policy item:
+// Tests for WAF/security-policy item:
 // inferCdnAzure now also creates a FrontDoorFirewallPolicy +
 // FrontDoorSecurityPolicy per CDN-enabled service, matching AWS's own
 // per-service granularity (aws/edge.go's wafKey := service.Name + "_waf").

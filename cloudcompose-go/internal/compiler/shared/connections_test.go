@@ -8,7 +8,7 @@ import (
 
 // ResolveValue was originally aws-only (internal/compiler/aws/connections.go);
 // moved here once Azure needed the identical substitution
-// (docs/azure-aws-parity-todo.md's "generalize Azure's connection-string
+// ("generalize Azure's connection-string
 // rendering" item) -- see connections.go's own doc comment. These tests
 // moved unchanged along with the code; they were never AWS-specific in
 // the first place (nothing here constructs an AWS resource or asserts

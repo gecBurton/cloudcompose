@@ -79,7 +79,7 @@ backend:
     path: ./terraform-aws.tfstate
 ```
 
-`backend:` must declare either `local:` (state stays on this machine, as shown above) or `remote:` (a real remote backend, with locking, for sharing one environment across multiple people/CI). See `docs/authored-environment-config.md` for the remote-backend shapes.
+`backend:` must declare either `local:` (state stays on this machine, as shown above) or `remote:` (a real remote backend, with locking, for sharing one environment across multiple people/CI). See `docs/environment-and-state.md` for the remote-backend shapes.
 
 ---
 
@@ -106,7 +106,7 @@ db
 7 decision(s)
 ```
 
-`--env`/`-e` always means the authored `environment.yaml`, on every command (`env init`, `env up`, `compile`, `up`, `down`, `ps`, `logs`, `env down`). It resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-identity-design.md` for the full reasoning.
+`--env`/`-e` always means the authored `environment.yaml`, on every command (`env init`, `env up`, `compile`, `up`, `down`, `ps`, `logs`, `env down`). It resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-model.md` for the full reasoning.
 
 Once the environment is applied, deploy an app into it:
 
@@ -126,7 +126,7 @@ cloud-compose compile --env environment.yaml
 
 (`env init` derives `env-<name>` from `environment.yaml`'s own `name:` field, alongside `environment.yaml` itself, and writes a copy of the resolved config there too.) Deploying to Azure or GCP instead just means starting from `environment.azure.yaml`/`environment.gcp.yaml`.
 
-See `docs/authored-environment-config.md` for the full `environment.yaml` schema, or `examples/README.md` for a real, runnable walkthrough.
+See `docs/environment-and-state.md` for the full `environment.yaml` schema, or `examples/README.md` for a real, runnable walkthrough.
 
 ---
 
@@ -195,7 +195,7 @@ services:
     image: myapp
 ```
 
-See `docs/azure-app-isolation-design.md` for why.
+See `docs/deployment-model.md` for why.
 
 ---
 
@@ -204,22 +204,19 @@ See `docs/azure-app-isolation-design.md` for why.
 | Cloud | Status | Compute | Database | Cache | Storage | Scheduled tasks | CDN |
 |-------|--------|---------|----------|-------|---------|------------------|-----|
 | **AWS** | ✅ Verified against real deployments | ECS Fargate | RDS | ElastiCache | S3 | ✅ EventBridge | ✅ CloudFront + WAF |
-| **Azure** | ✅ Verified against real deployments (see [`docs/azure-todo.md`](docs/azure-todo.md)) | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
+| **Azure** | ✅ Verified against real deployments, full feature parity with AWS | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
 | **GCP** | ⚠️ Compiles and passes structural tests; not yet verified against a real deployment or covered by golden-file regression tests | Cloud Run | Cloud SQL | Memorystore | Cloud Storage | ❌ not implemented | ❌ not implemented |
 
-GCP is intentionally less mature than AWS/Azure, see `AGENTS.md`'s "GCP has no committed golden files" note for the testing gap specifically. Azure has closed most of its feature/security gaps with AWS (RBAC and Key Vault-backed secrets, compose `secrets:`/platform `config:` support, database sizing, autoscaling), see [`docs/azure-aws-parity-todo.md`](docs/azure-aws-parity-todo.md) for what's still open.
+GCP is intentionally less mature than AWS/Azure — see [`docs/compiler-design.md`](docs/compiler-design.md) for what's still open, and `AGENTS.md`'s "GCP has no committed golden files" note for the testing gap specifically.
 
 ---
 
 ## Documentation
 
-- [Authored environment.yaml schema](docs/authored-environment-config.md)
-- [Deployment identity: how environments and apps are located](docs/deployment-identity-design.md)
-- [Azure per-app isolation and subnet allocation](docs/azure-app-isolation-design.md)
-- [Multi-user state: remote backends and safe teardown](docs/multi-user-state.md)
-- [Azure deployment status](docs/azure-todo.md)
-- [Azure/AWS feature parity gap analysis](docs/azure-aws-parity-todo.md)
-- [More design docs and spikes](docs/)
+- [Environment configuration and state](docs/environment-and-state.md) — `environment.yaml` schema, remote backends, and safe teardown
+- [Deployment model](docs/deployment-model.md) — how environments and apps are identified/located, Azure per-app isolation, CLI shape
+- [Compiler design](docs/compiler-design.md) — intent-based abstractions and known GCP gaps
+- [Design spikes (historical)](docs/spikes/)
 - [Examples](examples/)
 
 ## Contributing

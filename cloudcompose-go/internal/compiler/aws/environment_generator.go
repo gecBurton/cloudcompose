@@ -15,7 +15,7 @@ import (
 // {...} }` block with the authored path and no `output "backend"`
 // (apps compiled against this environment keep using Terraform's own
 // default local state, unrelated to the environment's own path -- see
-// docs/deployment-identity-design.md); a real remote backend
+// docs/deployment-model.md); a real remote backend
 // (`aws`/`azure`/`gcp`) is emitted as both the environment's own
 // `terraform.backend` block and a plain `output "backend"` block, so
 // LoadAwsEnvironment can hand the same bucket/region/lock-table facts

@@ -41,7 +41,7 @@ func TestGenerateAzure_NoIngressProducesNoOutputKey(t *testing.T) {
 	}
 }
 
-// --- output.cdn_fqdn presence: docs/azure-todo.md's Front Door item --
+// --- output.cdn_fqdn presence: Front Door item --
 // a clean apply had only ever been verified by polling the Container
 // App's own FQDN (output.fqdn), never Front Door's actual endpoint
 // hostname, so this output publishes the latter for a smoke test to
@@ -198,7 +198,7 @@ func TestInferContainerRegistry_BuildDictKeyOrder(t *testing.T) {
 
 // TestGenerateAzure_NilEnvBackendOmitsBackendBlock mirrors
 // aws.TestGenerateAWS_NilEnvBackendOmitsBackendBlock for the Azure
-// app-level generator. See docs/multi-user-state.md.
+// app-level generator. See docs/environment-and-state.md.
 func TestGenerateAzure_NilEnvBackendOmitsBackendBlock(t *testing.T) {
 	t.Parallel()
 	resources := models.NewAzureResources()

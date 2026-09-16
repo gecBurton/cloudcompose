@@ -185,7 +185,7 @@ func TestListDependentApps_PaginatesAcrossMultiplePages(t *testing.T) {
 // permissions failure surfaces as ErrBackendListPermissionDenied
 // specifically (via errors.Is), so callers (environment teardown) can
 // distinguish it from every other failure and degrade to a warning
-// instead of a hard error -- see docs/multi-user-state.md's "IAM
+// instead of a hard error -- see docs/environment-and-state.md's "IAM
 // footprint" note.
 func TestListDependentApps_AccessDeniedReturnsSentinelError(t *testing.T) {
 	t.Parallel()

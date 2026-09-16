@@ -8,7 +8,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 4 "New gap found"
+// Tests for "New gap found"
 // item: Azure Container Apps' Consumption plan requires CPU and memory
 // to be an exact matched pair from a fixed table, not just independently
 // under the 2vCPU/4GiB cap.
@@ -386,7 +386,7 @@ func TestGetCPUCoresAzure_MediumMatchesAwsSizeMappings(t *testing.T) {
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's health-check/probe item:
+// Tests for health-check/probe item:
 // Container Apps' liveness_probe/startup_probe built from a service's
 // ingress health check and StartupGracePeriod.
 

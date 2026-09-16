@@ -88,7 +88,7 @@ func TestEnvDown_FailsWhenEnvDirDoesNotExist(t *testing.T) {
 // writeAwsEnvironmentFixture, but also declares a `backend` output --
 // see aws.GenerateAwsEnvironment's own doc comment for the shape every
 // environment_generator.go writes there, and
-// docs/multi-user-state.md for why LoadEnvironment decodes it into
+// docs/environment-and-state.md for why LoadEnvironment decodes it into
 // env.Backend. Returns the environment.yaml path (--env's form) and
 // the env-<name> directory real terraform applied it in (needed by
 // tests that assert on where the fake terraform, put on PATH by the

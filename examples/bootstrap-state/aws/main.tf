@@ -25,7 +25,7 @@ provider "aws" {
 }
 
 # Terraform state for every environment/app backend: configures against
-# this bucket -- see docs/multi-user-state.md's key-naming convention
+# this bucket -- see docs/environment-and-state.md's key-naming convention
 # ("cloudcompose/<env>/environment.tfstate",
 # "cloudcompose/<env>/apps/<project>.tfstate"). One bucket per
 # organization/account, shared across every environment, not one per
@@ -71,7 +71,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
 # The lock table `backend.aws.dynamodb_table:` points at --
 # `cloud-compose env init` warns if a configured AWS backend omits this, since
 # unlocked S3 state has the same concurrent-apply race as no backend at
-# all (see docs/multi-user-state.md). PAY_PER_REQUEST: lock traffic is
+# all (see docs/environment-and-state.md). PAY_PER_REQUEST: lock traffic is
 # proportional to how often humans/CI run `terraform apply`/`destroy`
 # against these environments, not a steady load worth provisioning fixed
 # capacity for.

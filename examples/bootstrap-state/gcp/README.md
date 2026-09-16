@@ -1,14 +1,14 @@
 # Backend bootstrap: GCP (GCS bucket)
 
 Provisions the GCS bucket `backend.gcp:` in `environment.yaml` expects to
-already exist (see `docs/authored-environment-config.md`'s "Sharing one
-environment across multiple users" and `docs/multi-user-state.md`).
+already exist (see `docs/environment-and-state.md`'s "Sharing one
+environment across multiple users" section).
 `cloud-compose` never creates this itself -- it's a one-time,
 manually-applied setup per organization/project, run before any
 `environment.yaml` references it.
 
 GCS backend locking is automatic (object generation preconditions) and
-needs no separate lock resource -- see `docs/multi-user-state.md`'s
+needs no separate lock resource -- see `docs/environment-and-state.md`'s
 "State locking" section. GCP support is otherwise the least-verified of
 the three clouds this project targets (see `AGENTS.md`); this bootstrap
 config has not been exercised against a real deployment.

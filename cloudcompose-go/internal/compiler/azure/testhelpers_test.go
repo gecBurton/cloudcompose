@@ -7,7 +7,7 @@ import "github.com/gecburton/cloudcompose/internal/models"
 // consistent set of fields, not the fully-formed resource IDs
 // mockAzureProdEnv (golden_test.go) needs for byte-identical fixture
 // comparison. subnetIndex is a parameter (not hardcoded to 0) since
-// docs/azure-app-isolation-design.md's per-app subnet allocation is
+// docs/deployment-model.md's per-app subnet allocation is
 // exactly what distinguishes otherwise-identical apps sharing one
 // environment -- most tests just want testAppEnv(0).
 func testAppEnv(subnetIndex int) models.AzureEnvironment {

@@ -41,7 +41,7 @@ means the authored environment.yaml file, on every command -- `env up`,
 directory: `up`/`compile`/etc. derive `env-<name>` from the
 file themselves and read it directly, but never create or apply it --
 if the environment hasn't been applied yet, they fail clearly instead
-(see docs/deployment-identity-design.md).
+(see docs/deployment-model.md).
 
 ```bash
 cd cloudcompose-go
@@ -68,7 +68,7 @@ cd cloudcompose-go
 # Step 1: bootstrap the shared platform infrastructure -- VPC + ECS
 # cluster on AWS; resource group + Log Analytics workspace + VNet on
 # Azure (no Container Apps Environment: that's per-app now, created by
-# `compile` below, not shared -- see docs/azure-app-isolation-design.md
+# `compile` below, not shared -- see docs/deployment-model.md
 # for why Azure's isolation boundary doesn't work the same way AWS's
 # does). Run once per environment, typically by whoever owns the cloud
 # account, not by every developer.
@@ -102,7 +102,7 @@ cd -
 # compile's own output lands at
 # <dir of -f>/app-<environment name>-<project name> (here, app-demo-hello/,
 # "hello" coming from compose.yml's own top-level `name:` field, not a
-# flag or a directory name -- see docs/deployment-identity-design.md)
+# flag or a directory name -- see docs/deployment-model.md)
 # -- named after both the environment and the project so the same
 # compose.yml can be compiled again against a different
 # environment.yaml (e.g. dev vs prod) without overwriting this output.
@@ -124,13 +124,13 @@ creates them), which are never written to a file at all: `cloud-compose
 compile -e <environment.yaml>` reads those live via `terraform output
 -json` against the applied environment directory it derives from that
 file. See
-`docs/authored-environment-config.md` for the full design and the
+`docs/environment-and-state.md` for the full design and the
 reasoning behind that split.
 
 To try a different example, or a different cloud, swap `hello`/`aws` for
 any other example directory and the sibling `environment.<cloud>.yaml`
 (or write your own — see the schema in
-`docs/authored-environment-config.md`).
+`docs/environment-and-state.md`).
 
 ## What each example is for
 
@@ -198,8 +198,8 @@ Everything above assumes a single machine applying `cloud-compose env init`/
 `env up` against its own local Terraform state. Once more than one person
 (or a laptop and CI) needs to apply against the *same* environment,
 state has to live somewhere shared, with locking -- see
-`docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" section and `docs/multi-user-state.md` for the full
+`docs/environment-and-state.md`'s "Sharing one environment across
+multiple users" section for the full
 design. [`bootstrap-state/`](bootstrap-state/) has the one-time,
 manually-applied Terraform each cloud's `backend:` block needs to
 already exist before `environment.yaml` references it.

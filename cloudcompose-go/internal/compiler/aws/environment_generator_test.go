@@ -215,7 +215,7 @@ func TestGenerateAwsEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 
 	// The environment's facts are exposed only via a plain Terraform
 	// output -- no local_file resource writes them to disk (see
-	// docs/authored-environment-config.md); cloudcompose main reads them
+	// docs/environment-and-state.md); cloudcompose main reads them
 	// directly via `terraform output -json` instead.
 	output, ok := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
 	if !ok {
@@ -323,7 +323,7 @@ func TestGenerateAwsEnvironment_RetainDataFalse(t *testing.T) {
 }
 
 // TestGenerateAwsEnvironment_LogRetentionDaysFlowsIntoOutput is the
-// counterpart to docs/azure-aws-parity-todo.md's "per-service
+// counterpart to "per-service
 // log-retention" item: LogRetentionDays existed on the runtime
 // AwsEnvironment model and was read by aws/compute.go's CloudWatch Log
 // Group inference, but had no environment.yaml field and was never
@@ -463,12 +463,12 @@ func TestGenerateAwsEnvironment_AwsEndpointFlowsIntoProvider(t *testing.T) {
 	}
 }
 
-// --- Backend coverage (docs/multi-user-state.md) --------------------------
+// --- Backend coverage (docs/environment-and-state.md) --------------------------
 
 // TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock confirms
 // today's default behavior (no backend: configured) emits no
 // `terraform.backend` block at all, and no `output "backend"` block --
-// see docs/multi-user-state.md's "no backend configured" default.
+// see docs/environment-and-state.md's "no backend configured" default.
 func TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock(t *testing.T) {
 	t.Parallel()
 	out, err := GenerateAwsEnvironment(
@@ -496,7 +496,7 @@ func TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock(t *testing.T) {
 // configured backend.local produces a `terraform { backend "local"
 // {path = ...} }` block with the authored path, and no `output
 // "backend"` -- apps compiled against this environment don't inherit
-// a local backend (see docs/deployment-identity-design.md).
+// a local backend (see docs/deployment-model.md).
 func TestGenerateAwsEnvironment_LocalBackendEmitsPathNoOutput(t *testing.T) {
 	t.Parallel()
 	backend := &models.BackendConfig{
@@ -605,7 +605,7 @@ func TestGenerateAwsEnvironment_BackendWithoutLockTableOmitsField(t *testing.T) 
 // lock-table facts LoadAwsEnvironment will hand back to `cloudcompose
 // compile`, so every app compiled against this environment can derive
 // its own backend under the same bucket (see
-// shared.BackendKeyForApp and docs/multi-user-state.md).
+// shared.BackendKeyForApp and docs/environment-and-state.md).
 func TestGenerateAwsEnvironment_BackendOutputSurfacesFactsForApps(t *testing.T) {
 	t.Parallel()
 	backend := &models.BackendConfig{

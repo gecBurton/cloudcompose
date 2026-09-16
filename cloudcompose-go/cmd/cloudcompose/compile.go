@@ -129,7 +129,7 @@ func compileApp(composeFile, envFile string) (string, error) {
 		if appSettings.Azure == nil || appSettings.Azure.SubnetIndex == nil {
 			return "", fmt.Errorf(
 				"%s must declare x-cloud.azure.subnet_index when compiling for Azure "+
-					"(see docs/azure-app-isolation-design.md)",
+					"(see docs/deployment-model.md)",
 				composeFile,
 			)
 		}

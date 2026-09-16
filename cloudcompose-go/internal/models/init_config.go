@@ -47,7 +47,7 @@ type InitConfig struct {
 	// other field here, an omitted backend: used to silently mean
 	// local state, which is exactly the kind of implicit default this
 	// project's identity model rules out elsewhere -- see
-	// docs/deployment-identity-design.md item 4. Populated by
+	// docs/deployment-model.md item 4. Populated by
 	// initconfig.Load, which also enforces that exactly one of
 	// Backend's own Local/AWS/Azure/Gcp fields is set.
 	Backend BackendConfig `yaml:"backend"`

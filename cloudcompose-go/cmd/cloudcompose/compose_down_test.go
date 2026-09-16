@@ -14,7 +14,7 @@ import (
 // own doc comment for why --auto-approve exists (non-interactive
 // callers) and is off by default. The project name is no longer a
 // flag here -- it comes from the compose file's own top-level `name:`,
-// see appDir's own doc comment and docs/deployment-identity-design.md.
+// see appDir's own doc comment and docs/deployment-model.md.
 func TestComposeDown_Help(t *testing.T) {
 	t.Parallel()
 	bin := buildCloudComposeBinary(t)

@@ -3,7 +3,7 @@
 Companion to `../azure/README.md`, same method: design-time spike before
 GCP was implemented. GCP has since been implemented with deliberately
 lighter verification than AWS/Azure — it has never been tested against a
-real deployment (see `../../azure-aws-parity-todo.md` for current
+real deployment (see `../../gcp-gaps.md` for current
 status).
 
 **Verdict at the time**: the capability vocabulary held for a third
@@ -14,7 +14,7 @@ findings — `RateSchedule` not always renderable on Cloud Scheduler
 (cron-only, no rate concept), Cloud SQL's idiomatic connection path being
 a unix socket rather than host:port, `cdn: true` needing a `domain` GCP
 has no free hostname equivalent for — remain partially open; see
-`../../azure-aws-parity-todo.md`'s GCP section.
+`../../gcp-gaps.md`.
 
 ## Three-cloud comparison (resources emitted for `examples/hello`)
 

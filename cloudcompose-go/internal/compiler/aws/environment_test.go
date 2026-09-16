@@ -61,7 +61,7 @@ const minimalAwsEnvironmentHCL = `{
 
 // TestLoadAwsEnvironment_NoBackendOutputLeavesBackendNil confirms an
 // environment applied without a `backend` output at all (today's
-// default -- see docs/multi-user-state.md) leaves env.Backend nil,
+// default -- see docs/environment-and-state.md) leaves env.Backend nil,
 // rather than LoadAwsEnvironment erroring on the missing output.
 func TestLoadAwsEnvironment_NoBackendOutputLeavesBackendNil(t *testing.T) {
 	t.Parallel()

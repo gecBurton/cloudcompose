@@ -7,7 +7,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// Tests for docs/azure-aws-parity-todo.md's Priority 2 items: compose
+// Tests for items: compose
 // secrets:, platform config:, database sizing, MariaDB detection, and
 // CPU/Memory autoscaling -- all previously silent no-ops on Azure.
 
@@ -148,7 +148,7 @@ func TestGrantManagedServicePermissions_DoesNotDuplicateKeyVaultRoleAssignment(t
 	}
 }
 
-// Tests for docs/azure-todo.md's "Key Vault role-assignment RBAC
+// Tests for "Key Vault role-assignment RBAC
 // propagation" item: azurerm_role_assignment.kv_role reporting created
 // does not mean the grant has actually propagated on Azure's side
 // --
@@ -236,7 +236,7 @@ func TestGenerateAzure_TimeProviderOnlyDeclaredWhenNeeded(t *testing.T) {
 	}
 }
 
-// Tests for docs/azure-aws-parity-todo.md's "Azure's RBAC/identity-granting
+// Tests for "Azure's RBAC/identity-granting
 // model is depends_on:-driven, where AWS's is usage-driven" item.
 // referencedServersAzure/inferManagedServiceIdentity/
 // grantManagedServicePermissions/identityForService now all grant based on

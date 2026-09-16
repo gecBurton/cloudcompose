@@ -222,7 +222,7 @@ func Validate(config *models.InitConfig) error {
 func validateBackend(config *models.InitConfig) error {
 	backend := config.Backend
 	if backend.Local == nil && backend.AWS == nil && backend.Azure == nil && backend.Gcp == nil {
-		return fmt.Errorf(`backend: is required -- use local:/remote: (see docs/authored-environment-config.md)`)
+		return fmt.Errorf(`backend: is required -- use local:/remote: (see docs/environment-and-state.md)`)
 	}
 
 	if backend.Local != nil {
@@ -275,7 +275,7 @@ func BackendWarnings(config *models.InitConfig) []string {
 	if config.Provider == "aws" && config.Backend.AWS != nil && config.Backend.AWS.DynamoDBTable == "" {
 		return []string{
 			"backend.aws has no dynamodb_table configured — concurrent `terraform apply`/`destroy` runs " +
-				"against this environment are not protected by a state lock (see docs/multi-user-state.md).",
+				"against this environment are not protected by a state lock (see docs/environment-and-state.md).",
 		}
 	}
 

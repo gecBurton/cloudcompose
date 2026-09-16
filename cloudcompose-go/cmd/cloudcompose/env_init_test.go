@@ -22,7 +22,7 @@ func buildCloudComposeBinary(t *testing.T) string {
 }
 
 // TestEnvInit_MissingFileFailsWithHelpfulMessage mirrors
-// docs/authored-environment-config.md's "cloudcompose init behavior":
+// docs/environment-and-state.md's "cloudcompose init behavior":
 // cloud-compose env init has no flags-only fallback -- a missing
 // environment.yaml is an error naming the missing path and pointing at
 // examples/hello/environment.yaml, not a silent flags-based bootstrap.

@@ -1,6 +1,6 @@
 # Authored environment.yaml for the "hello" example, used by
 # `cloud-compose env init` to bootstrap the shared platform infrastructure this
-# app deploys into. See docs/authored-environment-config.md for the
+# app deploys into. See docs/environment-and-state.md for the
 # full design and examples/README.md for how this fits into the overall
 # init -> apply -> compile flow.
 #

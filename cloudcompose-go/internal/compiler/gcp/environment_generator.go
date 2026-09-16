@@ -129,7 +129,7 @@ func GenerateGcpEnvironment(
 	}
 	if backendConfig != nil {
 		outputs["backend"] = map[string]any{
-			"description": "This environment's own backend config (provider name plus bucket), so every app compiled against this environment can derive its own backend under the same bucket. See docs/multi-user-state.md.",
+			"description": "This environment's own backend config (provider name plus bucket), so every app compiled against this environment can derive its own backend under the same bucket. See docs/environment-and-state.md.",
 			"value":       map[string]any{"provider": "gcp", "gcp": backendConfig},
 		}
 	}

@@ -20,7 +20,7 @@ func TestBackendKeyForEnvironment_DerivedFromName(t *testing.T) {
 
 // TestBackendKeyForApp_NestedUnderEnvironmentPrefix confirms an app's
 // key lives under its environment's own prefix, distinguished only by
-// project name -- the property docs/multi-user-state.md's dependent-app
+// project name -- the property docs/environment-and-state.md's dependent-app
 // listing check for environment teardown depends on.
 func TestBackendKeyForApp_NestedUnderEnvironmentPrefix(t *testing.T) {
 	t.Parallel()

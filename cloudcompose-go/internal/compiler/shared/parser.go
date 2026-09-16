@@ -103,7 +103,7 @@ func composeFileName(filePath string) (string, error) {
 // CloudCompose requires this as the application's durable identity
 // rather than falling back to a directory name, COMPOSE_PROJECT_NAME,
 // or a CLI flag, none of which survive deleting and regenerating
-// artifacts elsewhere. See docs/deployment-identity-design.md.
+// artifacts elsewhere. See docs/deployment-model.md.
 func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	// WorkingDir must be absolute: ResolveRelativePaths resolves build
 	// contexts against it, and left unset it defaults to the process's
@@ -120,7 +120,7 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 	if name == "" {
 		return nil, fmt.Errorf(
 			"%s must declare a top-level `name:` -- this is the application's "+
-				"durable identity (see docs/deployment-identity-design.md)",
+				"durable identity (see docs/deployment-model.md)",
 			filePath,
 		)
 	}

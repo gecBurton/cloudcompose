@@ -61,7 +61,7 @@ func TestCidrsubnet_MatchesTerraformsOwnDocumentedExample(t *testing.T) {
 }
 
 // TestCidrsubnet_RejectsNetnumBeyondNewbitsCapacity is a regression test
-// for a real bug found while implementing docs/azure-app-isolation-design.md's
+// for a real bug found while implementing docs/deployment-model.md's
 // --subnet-index: netnum=128 with newbits=7 used to silently compute
 // 10.1.0.0/24 -- a full range past the intended 10.0.128.0/17 block,
 // with no error at all. Confirmed against Terraform's own documentation

@@ -35,7 +35,7 @@ resource "azurerm_resource_group" "state" {
 }
 
 # Terraform state for every environment/app backend: configures against
-# this account -- see docs/multi-user-state.md's key-naming convention
+# this account -- see docs/environment-and-state.md's key-naming convention
 # ("cloudcompose/<env>/environment.tfstate",
 # "cloudcompose/<env>/apps/<project>.tfstate"). One account per
 # organization/subscription, shared across every environment, not one

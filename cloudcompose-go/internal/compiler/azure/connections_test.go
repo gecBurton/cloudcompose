@@ -8,7 +8,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// Tests for docs/azure-aws-parity-todo.md's "generalize Azure's
+// Tests for "generalize Azure's
 // connection-string rendering" item: resolveEnvVarAzure substitutes a
 // service's own authored environment: values against real managed-service
 // connections, the same way aws/permissions.go's per-entry loop already
@@ -199,7 +199,7 @@ func TestContainerSpecAzure_AuthoredEnvVarsAreSubstituted(t *testing.T) {
 }
 
 // TestContainerSpecAzure_ObjectStorageRendersAsBareHost mirrors the fix
-// described in docs/azure-aws-parity-todo.md Priority 1 item 3: a
+// described in item 3: a
 // storage relationship used to render as a nonsensical Postgres-shaped
 // URL ("postgresql://None:None@<host>:None/None"); it now renders as the
 // bare host, matching the target's actual capability.
@@ -290,8 +290,7 @@ func TestContainerSpecAzure_CacheRendersAsRedisURL(t *testing.T) {
 // a KeyVaultSecret has been stored for a connection (as
 // grantManagedServicePermissions does in the real pipeline), the
 // container references it via SecretName rather than interpolating the
-// password directly -- see docs/azure-aws-parity-todo.md Priority 1
-// items 1-2.
+// password directly.
 func TestContainerSpecAzure_DatabaseUsesKeyVaultSecretRef(t *testing.T) {
 	t.Parallel()
 	app := &models.Application{

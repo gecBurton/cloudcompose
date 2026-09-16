@@ -9,7 +9,7 @@ import (
 // TestAppBackendBlock_NilBackendReturnsNil confirms today's default (no
 // backend: configured) produces no backend block at all, mirroring
 // every environment generator's own nil-backend behavior (see
-// docs/multi-user-state.md).
+// docs/environment-and-state.md).
 func TestAppBackendBlock_NilBackendReturnsNil(t *testing.T) {
 	t.Parallel()
 	if got := AppBackendBlock("prod", "checkout-api", nil); got != nil {

@@ -6,7 +6,7 @@ import (
 	"github.com/gecburton/cloudcompose/internal/models"
 )
 
-// Tests for docs/azure-app-isolation-design.md: appSubnetsAzure creates
+// Tests for docs/deployment-model.md: appSubnetsAzure creates
 // each app's own Container Apps Environment and four delegated subnets,
 // carved out of the environment's shared AppsCIDR at the app's own
 // SubnetIndex.
@@ -75,7 +75,7 @@ func TestAppSubnetsAzure_DistinctSubnetIndexesDoNotOverlap(t *testing.T) {
 
 func TestAppSubnetsAzure_LastValidIndexFitsInAppsCIDR(t *testing.T) {
 	t.Parallel()
-	// docs/azure-app-isolation-design.md's own math: a /17 AppsCIDR
+	// docs/deployment-model.md's own math: a /17 AppsCIDR
 	// supports up to 128 apps (indexes 0-127) at /24 each. Index 127
 	// must still succeed; this is the boundary the design's own claim
 	// rests on, not just a mid-range sanity check.
@@ -186,7 +186,7 @@ func TestAppSubnetsAzure_SetsSubnetIDFieldsOnEnvironment(t *testing.T) {
 // the real integration test: InferAzure itself (not just
 // appSubnetsAzure in isolation) produces genuinely isolated per-app
 // networking for two different apps sharing one environment, which is
-// the entire point of docs/azure-app-isolation-design.md.
+// the entire point of docs/deployment-model.md.
 func TestInferAzure_TwoAppsWithDifferentSubnetIndexesDoNotShareSubnets(t *testing.T) {
 	t.Parallel()
 	app1 := &models.Application{Name: "app-one", Services: []models.Service{{Name: "web", Capability: models.CapabilityContainer}}}

@@ -2,8 +2,8 @@
 
 Provisions the storage account and blob container `backend.azure:` in
 `environment.yaml` expects to already exist (see
-`docs/authored-environment-config.md`'s "Sharing one environment across
-multiple users" and `docs/multi-user-state.md`). `cloud-compose` never
+`docs/environment-and-state.md`'s "Sharing one environment across
+multiple users" section). `cloud-compose` never
 creates this itself -- it's a one-time, manually-applied setup per
 organization/subscription, run before any `environment.yaml` references
 it.
@@ -15,7 +15,7 @@ everything else in this directory, and so it's reviewable/repeatable the
 same way.
 
 Unlike S3, azurerm's own blob-lease locking is automatic and needs no
-separate lock-table resource -- see `docs/multi-user-state.md`'s
+separate lock-table resource -- see `docs/environment-and-state.md`'s
 "State locking" section.
 
 ## Usage

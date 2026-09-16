@@ -9,7 +9,7 @@ import (
 // ResolveValue itself, and its own tests, moved to
 // internal/compiler/shared/connections.go +
 // internal/compiler/shared/connections_test.go once Azure needed the
-// identical substitution (docs/azure-aws-parity-todo.md's "generalize
+// identical substitution ("generalize
 // Azure's connection-string rendering" item). DefaultPort stayed here:
 // it's unused outside this package today and is about security-group
 // port rules, an AWS-specific concept with no Azure equivalent to share

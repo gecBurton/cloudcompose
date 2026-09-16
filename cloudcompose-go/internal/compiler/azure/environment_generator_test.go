@@ -14,7 +14,7 @@ import (
 // anymore: those moved to cloudcompose main (appSubnetsAzure,
 // azure/appsubnets.go), one set per app, carved out of this
 // environment's own apps_cidr output -- see
-// docs/azure-app-isolation-design.md. This function now only creates
+// docs/deployment-model.md. This function now only creates
 // the Cloud Compose Environment layer: resource group, Log Analytics
 // workspace, VNet.
 func TestGenerateAzureEnvironment_ValidStructure(t *testing.T) {
@@ -158,7 +158,7 @@ func TestGenerateAzureEnvironment_ComprehensiveResourcePresence(t *testing.T) {
 }
 
 // TestGenerateAzureEnvironment_AppsCIDRIsUpperHalfOfVnet checks the
-// actual CIDR math docs/azure-app-isolation-design.md's "Decided: CIDR
+// actual CIDR math docs/deployment-model.md's "Decided: CIDR
 // math" section commits to: apps_cidr is the upper half of the VNet
 // (Cidrsubnet(vnetCIDR, 1, 1)), not derived some other way that would
 // happen to produce a same-sized but differently-placed range.
@@ -178,7 +178,7 @@ func TestGenerateAzureEnvironment_AppsCIDRIsUpperHalfOfVnet(t *testing.T) {
 	}
 }
 
-// --- Backend coverage (docs/multi-user-state.md) --------------------------
+// --- Backend coverage (docs/environment-and-state.md) --------------------------
 
 // TestGenerateAzureEnvironment_NilBackendOmitsBackendBlock mirrors
 // aws.TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock: today's

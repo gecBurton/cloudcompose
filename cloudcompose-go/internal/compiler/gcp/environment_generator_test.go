@@ -120,7 +120,7 @@ func TestGenerateGcpEnvironment_DomainOmittedWhenNotSet(t *testing.T) {
 	}
 }
 
-// --- Backend coverage (docs/multi-user-state.md) --------------------------
+// --- Backend coverage (docs/environment-and-state.md) --------------------------
 
 // TestGenerateGcpEnvironment_NilBackendOmitsBackendBlock mirrors
 // aws.TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock: today's

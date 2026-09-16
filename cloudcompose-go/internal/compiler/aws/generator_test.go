@@ -234,7 +234,7 @@ func TestGenerateAWS_NoEmptyResourceBlocks(t *testing.T) {
 // compiled against an environment with no backend: configured (the
 // env.Backend nil default) produces no terraform.backend block --
 // mirroring aws.TestGenerateAwsEnvironment_NilBackendOmitsBackendBlock
-// for the app-level generator. See docs/multi-user-state.md.
+// for the app-level generator. See docs/environment-and-state.md.
 func TestGenerateAWS_NilEnvBackendOmitsBackendBlock(t *testing.T) {
 	resources := models.NewAWSResources()
 	env := minimalAwsEnv()

@@ -86,44 +86,6 @@ breaks this must be either derived deterministically or stored durably
   local-backend environment keep using Terraform's own default local
   state, unrelated to the environment's own authored path.
 
-### History
-
-This model replaced several earlier, weaker mechanisms, in order:
-
-1. **Resolved Compose project identity** — deleted `-p`/`--project` and
-   the directory-basename fallback (`compile.go`'s old
-   `resolveProjectName`); `ParseCompose` now requires a non-empty
-   top-level `name:`. Bundled into the same change: `--subnet-index`'s
-   silent default of `0` was removed (a default of `0` is
-   indistinguishable from an operator explicitly choosing subnet 0).
-2. **`environment.yaml` became directly resolvable** — added
-   `resolveEnvironmentByDefinition` (now `environmentDirFromDefinition`),
-   reachable at the time via a separate `--environment <file>` flag
-   alongside the older `--env <dir>` debug affordance.
-3. **Azure's `--subnet-index` flag was removed**, replaced by the
-   required `x-cloud.azure.subnet_index` field described below.
-4. **`backend:` became mandatory**, with an explicit `local:` value —
-   `Backend == nil` used to mean local state silently; now `local:
-   {path: ...}` is the explicit, authored choice that omission used to
-   stand in for.
-5. **`--env`/`--environment` were unified** into a single `--env`/`-e`
-   flag meaning the authored file, on every command. The old
-   directory-pointing `--env <dir>` was removed entirely, since the
-   directory it named was already 100% mechanically derived from
-   `environment.yaml`'s `name:`.
-6. **`backend:`'s remote shape stopped naming the cloud twice** —
-   collapsed AWS/Azure/GCP's separate remote blocks into a single
-   `remote:` key, whatever fields it accepts chosen by `provider:`
-   rather than by which YAML key was used.
-7. **`compile --demo` was removed** — it compiled against a built-in
-   synthetic environment (placeholder VPC/ALB/ARN IDs, etc.) instead of
-   a real, applied one. Removed for cost of keeping three clouds' worth
-   of placeholder shapes in sync; `--env` is now unconditionally
-   required to `compile`.
-8. **`compose up`/`down`/`ps`/`logs` were flattened back onto the root
-   command** — see "CLI shape" below for why the `compose` group was
-   removed after being tried.
-
 ## Per-app isolation on Azure
 
 ### The problem
@@ -211,12 +173,10 @@ headroom is needed.
 
 ### Status
 
-Implemented (2026-08-11). `cloud-compose init` no longer creates a
-Container Apps Environment or subnets; `cloud-compose compile` creates its
-own per app. Verified against real Azure (`production-stack`, renamed
-to `edge-and-scaling` since): the
-per-app Container Apps Environment and all four delegated subnets
-created and destroyed cleanly.
+`cloud-compose init` no longer creates a Container Apps Environment or
+subnets; `cloud-compose compile` creates its own per app. Verified
+against real Azure: the per-app Container Apps Environment and all four
+delegated subnets created and destroyed cleanly.
 
 ### Deferred
 
@@ -225,13 +185,9 @@ this same lens. Not assumed to share Azure's gap; a separate
 investigation, consistent with GCP's existing lighter-verification scope
 decision (see `docs/compiler-design.md`'s GCP gaps section).
 
-## CLI shape: history and current state
+## CLI shape
 
-### Current state
-
-The binary is `cloud-compose` (no rename ever happened — a shorter
-name was proposed but never checked for namespace availability, so it
-stayed a proposal). The CLI tree has two groups:
+The binary is `cloud-compose`. The CLI tree has two groups:
 
 - `env init` / `env up` / `env down` — the shared-platform commands
   (`env` is a real subcommand group, since it operates on a genuinely
@@ -239,20 +195,3 @@ stayed a proposal). The CLI tree has two groups:
 - `up` / `down` / `ps` / `logs` — the single-app commands, top-level on
   the root command.
 - `compile` — top-level, unchanged: the explain/no-apply pipeline stage.
-
-### History
-
-This doc originally proposed a `<bin> env <verb>` / `<bin> compose
-<verb>` structure, mirroring `docker`/`docker compose`. The `env` half
-landed as designed. A `compose` parent (`compose up`/`down`/`ps`/`logs`)
-was also implemented for a period, but typing `compose` before every
-single-app verb turned out to feel redundant in practice — unlike `env`,
-which disambiguates against a real top-level collision risk, `compose`
-resolved nothing, since there was never a competing bare `up`/`down`/
-`ps`/`logs` to confuse it with. `compose` was removed and those verbs
-flattened back onto the root command.
-
-The binary rename itself (`cloudcompose` → a shorter name) never
-happened. The original open question — whether a short name like
-`cloud` is even available across Homebrew/apt/PyPI/npm — was never
-resolved, and the idea was dropped rather than pursued further.

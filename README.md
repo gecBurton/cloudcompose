@@ -214,7 +214,7 @@ GCP is intentionally less mature than AWS/Azure — see [`docs/compiler-design.m
 ## Documentation
 
 - [Environment configuration and state](docs/environment-and-state.md) — `environment.yaml` schema, remote backends, and safe teardown
-- [Deployment model](docs/deployment-model.md) — how environments and apps are identified/located, Azure per-app isolation, CLI shape and history
+- [Deployment model](docs/deployment-model.md) — how environments and apps are identified/located, Azure per-app isolation, CLI shape
 - [Compiler design](docs/compiler-design.md) — intent-based abstractions and known GCP gaps
 - [Design spikes (historical)](docs/spikes/)
 - [Examples](examples/)

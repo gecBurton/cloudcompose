@@ -6,10 +6,12 @@ the same image validates any environment. Returns 200 only if every active check
 passes, 503 otherwise — with a per-service breakdown.
 
 Env contract (what cloudcompose injects):
-  S3    : BUCKET_NAME               (bucket id)
+  S3/Blob/GCS : BUCKET_NAME + BLOBS_URL   (bucket/account id + endpoint;
+                BLOBS_URL's scheme/host picks which object-storage SDK to
+                use -- see check_s3's own comment)
   RDS   : DB_HOST + DB_USERNAME/DB_PASSWORD (secrets)
   RDS   : DATABASE_URL              (secret; credentials and database included)
-  Redis : REDIS_URL                 (redis://host:port)
+  Redis : REDIS_URL                 (redis://host:port, or rediss:// on Azure)
 """
 
 import os
@@ -22,19 +24,58 @@ app.json.compact = False
 
 
 def check_s3():
+    """Round-trips a small object through whichever object-storage service
+    cloudcompose substituted minio for.
+
+    BUCKET_NAME alone doesn't say which cloud's SDK to use: AWS, Azure, and
+    GCP all inject it as the bucket/account identifier. BLOBS_URL (the
+    endpoint) disambiguates by scheme/host -- AWS never sets it (an app
+    talking to S3 doesn't need an explicit endpoint), Azure's is a
+    *.blob.core.windows.net URL, and GCP's is gs://.
+    """
     bucket = os.environ.get("BUCKET_NAME")
     if not bucket:
         return "skipped: BUCKET_NAME not set"
+
+    blobs_url = os.environ.get("BLOBS_URL", "")
+    key = "cloudcompose-doctor/health.txt"
+    payload = b"cloudcompose-doctor"
+
+    if blobs_url.startswith("gs://"):
+        from google.cloud import storage
+
+        blob = storage.Client().bucket(bucket).blob(key)
+        blob.upload_from_string(payload)
+        got = blob.download_as_bytes()
+        if got != payload:
+            raise RuntimeError("GCS round-trip mismatch")
+        return f"ok: put+get on GCS bucket {bucket}"
+
+    if ".blob.core.windows.net" in blobs_url:
+        from azure.identity import DefaultAzureCredential
+        from azure.storage.blob import BlobServiceClient
+
+        # The container is always named after the compose service doctor's
+        # own compose.yml declares it as ("blobs") -- the same name
+        # inferStorageAzure gives the azurerm_storage_container it creates
+        # for that service, deterministically, not something this app
+        # discovers at runtime.
+        client = BlobServiceClient(account_url=blobs_url, credential=DefaultAzureCredential())
+        blob_client = client.get_blob_client(container="blobs", blob=key)
+        blob_client.upload_blob(payload, overwrite=True)
+        got = blob_client.download_blob().readall()
+        if got != payload:
+            raise RuntimeError("Azure Blob round-trip mismatch")
+        return f"ok: put+get on Azure Blob container 'blobs' (account {bucket})"
+
     import boto3
 
     s3 = boto3.client("s3")
-    key = "cloudcompose-doctor/health.txt"
-    payload = b"cloudcompose-doctor"
     s3.put_object(Bucket=bucket, Key=key, Body=payload)
     got = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
     if got != payload:
         raise RuntimeError("S3 round-trip mismatch")
-    return f"ok: put+get on bucket {bucket}"
+    return f"ok: put+get on S3 bucket {bucket}"
 
 
 def check_db():

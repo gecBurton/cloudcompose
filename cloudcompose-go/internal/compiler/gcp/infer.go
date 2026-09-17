@@ -243,7 +243,16 @@ func inferCloudRunServicesGcp(
 
 		envVars := make([]models.CloudRunEnvVar, 0, len(service.Env))
 		for _, k := range shared.SortedKeys(service.Env) {
-			envVars = append(envVars, models.CloudRunEnvVar{Name: k, Value: service.Env[k]})
+			// Substitutes a service's own authored environment: value
+			// against a real managed-service connection, the same way
+			// aws/permissions.go and azure/compute.go's resolveEnvVarAzure
+			// already do (all three built on shared.ResolveValue) -- an
+			// app authoring DB_HOST: db or BUCKET_NAME: blobs itself
+			// (rather than consuming the synthesized <SERVER>_URL below)
+			// otherwise ships that literal, locally-scoped value verbatim,
+			// unreachable once the service becomes managed.
+			resolved := shared.ResolveValue(service.Env[k], connections, connectionOrder)
+			envVars = append(envVars, models.CloudRunEnvVar{Name: k, Value: resolved.Value})
 		}
 
 		for _, targetName := range connectionOrder {
@@ -265,6 +274,26 @@ func inferCloudRunServicesGcp(
 				Name:  strings.ToUpper(targetName) + "_URL",
 				Value: buildConnectionURLGcp(&conn),
 			})
+
+			// A database connection also gets DB_USERNAME/DB_PASSWORD,
+			// the same literal names AWS's grantDatabasePermissions and
+			// Azure's containerSpecAzure inject: an app authoring
+			// DB_HOST itself still needs credentials to actually
+			// connect, and the compose file never authors a password
+			// for a container about to be replaced by a managed
+			// database. Rendered plaintext, consistent with this
+			// function's existing no-Secret-Manager gap (see
+			// buildConnectionURLGcp's own credentials-in-the-URL
+			// precedent) -- not yet wired through Secret Manager.
+			target := findServiceByNameGcp(app, targetName)
+			if target != nil && target.Capability == models.CapabilityDatabase {
+				if conn.Username != nil {
+					envVars = append(envVars, models.CloudRunEnvVar{Name: "DB_USERNAME", Value: *conn.Username})
+				}
+				if conn.Password != nil {
+					envVars = append(envVars, models.CloudRunEnvVar{Name: "DB_PASSWORD", Value: *conn.Password})
+				}
+			}
 		}
 
 		container.Env = envVars
@@ -310,6 +339,16 @@ func inferCloudRunServicesGcp(
 
 		resources.CloudRunService[service.Name] = cr
 	}
+}
+
+// findServiceByNameGcp finds a service by name.
+func findServiceByNameGcp(app *models.Application, name string) *models.Service {
+	for i := range app.Services {
+		if app.Services[i].Name == name {
+			return &app.Services[i]
+		}
+	}
+	return nil
 }
 
 // cpuLimitGcp converts service size or explicit CPU to a Cloud Run CPU

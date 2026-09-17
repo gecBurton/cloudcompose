@@ -175,6 +175,11 @@
           },
           {
             "identity": "${azurerm_user_assigned_identity.main.id}",
+            "key_vault_secret_id": "${azurerm_key_vault_secret.db_secret.versionless_id}",
+            "name": "db-password"
+          },
+          {
+            "identity": "${azurerm_user_assigned_identity.main.id}",
             "key_vault_secret_id": "${azurerm_key_vault_secret.cache_secret.versionless_id}",
             "name": "cache-url"
           }
@@ -195,6 +200,14 @@
                 {
                   "name": "DB_URL",
                   "secret_name": "db-url"
+                },
+                {
+                  "name": "DB_USERNAME",
+                  "value": "cloudcompose"
+                },
+                {
+                  "name": "DB_PASSWORD",
+                  "secret_name": "db-password"
                 },
                 {
                   "name": "CACHE_URL",
@@ -337,7 +350,7 @@
           ]
         },
         "name": "prod-edge-and-scaling-web-redis-url",
-        "value": "redis://${azurerm_managed_redis.cache_redis.hostname}:10000"
+        "value": "rediss://${azurerm_managed_redis.cache_redis.hostname}:10000"
       }
     },
     "azurerm_managed_redis": {

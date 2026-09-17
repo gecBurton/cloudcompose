@@ -85,6 +85,118 @@ func TestInferGcp_VpcConnectorCreatedForDatabase(t *testing.T) {
 	}
 }
 
+// gcpEnvValue looks up one env var's rendered Value on a Cloud Run
+// service's single container, failing the test if the service or the
+// env var isn't found.
+func gcpEnvValue(t *testing.T, resources *models.GcpResources, serviceName, envName string) string {
+	t.Helper()
+	cr, ok := resources.CloudRunService[serviceName]
+	if !ok {
+		t.Fatalf("no google_cloud_run_service found for %q", serviceName)
+	}
+	for _, e := range cr.Template.Spec.Containers[0].Env {
+		if e.Name == envName {
+			return e.Value
+		}
+	}
+	t.Fatalf("no env var %q on service %q, got %+v", envName, serviceName, cr.Template.Spec.Containers[0].Env)
+	return ""
+}
+
+// TestInferCloudRunServicesGcp_AuthoredEnvVarsAreSubstituted checks the
+// real bug this closes: an app authoring DB_HOST: db / BUCKET_NAME: blobs
+// itself (rather than consuming the synthesized <SERVER>_URL) previously
+// shipped that literal, locally-scoped compose value straight through --
+// unreachable once the referenced service becomes a managed Cloud
+// SQL/GCS resource. Mirrors AWS's per-entry loop and Azure's
+// resolveEnvVarAzure, both already built on shared.ResolveValue.
+func TestInferCloudRunServicesGcp_AuthoredEnvVarsAreSubstituted(t *testing.T) {
+	t.Parallel()
+	dbName := "db"
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{
+				Name:       "web",
+				Capability: models.CapabilityContainer,
+				Env:        map[string]string{"DB_HOST": "db", "BUCKET_NAME": "blobs"},
+			},
+			{Name: "db", Image: "postgres:16", Capability: models.CapabilityDatabase, DatabaseName: &dbName},
+			{Name: "blobs", Capability: models.CapabilityObjectStorage},
+		},
+		Relationships: []models.Relationship{
+			{Client: "web", Server: "db"},
+			{Client: "web", Server: "blobs"},
+		},
+	}
+	env := gcpTestEnv()
+	resources := InferGcp(app, &env)
+
+	dbHost := gcpEnvValue(t, resources, "web", "DB_HOST")
+	if dbHost != "${google_sql_database_instance.main.public_ip_address}" {
+		t.Errorf("DB_HOST = %q, want the real Cloud SQL address, not the literal compose value", dbHost)
+	}
+
+	bucketName := gcpEnvValue(t, resources, "web", "BUCKET_NAME")
+	if bucketName != "${google_storage_bucket.blobs_bucket.name}" {
+		t.Errorf("BUCKET_NAME = %q, want the real bucket name, not the literal compose value", bucketName)
+	}
+}
+
+// TestInferCloudRunServicesGcp_DatabaseConnectionInjectsUsernameAndPassword
+// mirrors AWS's grantDatabasePermissions and Azure's containerSpecAzure:
+// a service that references a database connection gets DB_USERNAME/
+// DB_PASSWORD injected alongside the synthesized <SERVER>_URL, since an
+// app authoring DB_HOST itself still needs credentials to connect.
+func TestInferCloudRunServicesGcp_DatabaseConnectionInjectsUsernameAndPassword(t *testing.T) {
+	t.Parallel()
+	dbName := "db"
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer, Env: map[string]string{"DB_HOST": "db"}},
+			{Name: "db", Image: "postgres:16", Capability: models.CapabilityDatabase, DatabaseName: &dbName},
+		},
+		Relationships: []models.Relationship{{Client: "web", Server: "db"}},
+	}
+	env := gcpTestEnv()
+	resources := InferGcp(app, &env)
+
+	username := gcpEnvValue(t, resources, "web", "DB_USERNAME")
+	if username != shared.DatabaseDefaultUsername {
+		t.Errorf("DB_USERNAME = %q, want %q", username, shared.DatabaseDefaultUsername)
+	}
+	password := gcpEnvValue(t, resources, "web", "DB_PASSWORD")
+	if password != "${random_password.db_root.result}" {
+		t.Errorf("DB_PASSWORD = %q, want the generated root password reference", password)
+	}
+}
+
+// TestInferCloudRunServicesGcp_CacheConnectionDoesNotInjectDBCredentials
+// checks the capability gate: a cache/object-storage connection must not
+// also get DB_USERNAME/DB_PASSWORD -- only a database-capability target
+// carries a username/password pair.
+func TestInferCloudRunServicesGcp_CacheConnectionDoesNotInjectDBCredentials(t *testing.T) {
+	t.Parallel()
+	app := &models.Application{
+		Name: "app",
+		Services: []models.Service{
+			{Name: "web", Capability: models.CapabilityContainer},
+			{Name: "cache", Capability: models.CapabilityCache},
+		},
+		Relationships: []models.Relationship{{Client: "web", Server: "cache"}},
+	}
+	env := gcpTestEnv()
+	resources := InferGcp(app, &env)
+
+	cr := resources.CloudRunService["web"]
+	for _, e := range cr.Template.Spec.Containers[0].Env {
+		if e.Name == "DB_USERNAME" || e.Name == "DB_PASSWORD" {
+			t.Errorf("did not expect %s for a cache-only connection, got %+v", e.Name, cr.Template.Spec.Containers[0].Env)
+		}
+	}
+}
+
 // TestCpuLimitGcp_SizeMapping and TestMemoryLimitGcp_SizeMapping pin the
 // size-to-limit conversion, now derived from shared.SizeMappings (the
 // same table AWS/Azure use) rather than a separately hardcoded table --

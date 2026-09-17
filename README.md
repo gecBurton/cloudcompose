@@ -13,7 +13,7 @@ docker compose up
 cloud-compose up -f docker-compose.yml -e environment.yaml
 ```
 
-No `--flags` describing your infrastructure, no new config format to learn, it infers what it can (`image: postgres` → a managed database) and lets you override the rest with a small `x-cloud:` block when you need to. `-f`/`--file` is optional — every command auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass it, the same way `docker compose` itself does.
+No `--flags` describing your infrastructure, no new config format to learn, it infers what it can (`image: postgres` -> a managed database) and lets you override the rest with a small `x-cloud:` block when you need to. `-f`/`--file` is optional ,  every command auto-discovers `compose.yaml`/`compose.yml`/`docker-compose.yaml`/`docker-compose.yml` in the current directory if you don't pass it, the same way `docker compose` itself does.
 
 ---
 
@@ -24,7 +24,7 @@ Download a prebuilt binary from the
 archives are published for Linux, macOS, and Windows (amd64 and arm64):
 
 ```bash
-curl -LO https://github.com/gecBurton/cloudcompose/releases/download/v0.3.0/cloud-compose_0.3.0_darwin_arm64.tar.gz
+curl -LO https://github.com/gecBurton/cloudcompose/releases/download/v0.3.1/cloud-compose_0.3.0_darwin_arm64.tar.gz
 tar -xzf cloud-compose_0.3.0_darwin_arm64.tar.gz
 chmod +x cloud-compose
 ```
@@ -37,7 +37,7 @@ cd cloudcompose
 make build
 ```
 
-You'll also need the **Terraform CLI**, **Docker** (only if a service has a `build:` section), and credentials for whichever cloud you're deploying to.
+You'll also need the **Terraform CLI**, **Docker** and credentials for whichever cloud you're deploying to.
 
 ---
 
@@ -48,7 +48,7 @@ The `environment.yaml` describes the essential features of your environment such
 * what region it is in
 * where the terraform state is stored
 
-The environment also contains all the most expensive parts of the deployment — VPC, ALB/Container Apps Environment, ECS cluster, etc — and as such many applications can be deployed to the same environment, saving money and deployment time.
+The environment also contains all the most expensive parts of the deployment ,  VPC, ALB/Container Apps Environment, ECS cluster, etc ,  and as such many applications can be deployed to the same environment, saving money and deployment time.
 
 The environment must be set up before any application can be deployed to it:
 
@@ -85,7 +85,7 @@ backend:
 
 ## How it works
 
-`--explain` reports every inference the compiler makes and writes nothing — no cloud account or `environment.yaml` needed:
+`--explain` reports every inference the compiler makes and writes nothing ,  no cloud account or `environment.yaml` needed:
 
 ```bash
 cloud-compose compile -f docker-compose.yml --explain
@@ -106,7 +106,7 @@ db
 7 decision(s)
 ```
 
-`--env`/`-e` always means the authored `environment.yaml`, on every command (`env init`, `env up`, `compile`, `up`, `down`, `ps`, `logs`, `env down`). It resolves the environment from `environment.yaml` alone — it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-model.md` for the full reasoning.
+`--env`/`-e` always means the authored `environment.yaml`, on every command (`env init`, `env up`, `compile`, `up`, `down`, `ps`, `logs`, `env down`). It resolves the environment from `environment.yaml` alone ,  it never creates or modifies the environment itself; if it hasn't been applied yet (`env init`/`env up` never ran), `up`/`compile` fail clearly rather than applying it on your behalf. Environment changes are always a deliberate act, never a side effect of deploying an app. See `docs/deployment-model.md` for the full reasoning.
 
 Once the environment is applied, deploy an app into it:
 
@@ -114,7 +114,7 @@ Once the environment is applied, deploy an app into it:
 cloud-compose up --env environment.yaml
 ```
 
-`up` runs `compile` → `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand. That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
+`up` runs `compile` -> `terraform apply` on the app. Every `apply` still shows its plan and prompts for confirmation, exactly as if you'd run the steps by hand. That's it, your app is live behind the shared load balancer / Container App ingress / Cloud Run URL.
 
 If you'd rather review each stage yourself instead of `env up`'s one-step apply:
 
@@ -183,7 +183,7 @@ services:
 
 The same declaration becomes ECS target-tracking on AWS, KEDA scale rules on Azure, or Cloud Run autoscaling on GCP, whichever is idiomatic for that cloud. Unknown keys under `x-cloud` are a hard compile-time error rather than silently ignored, so a typo fails immediately instead of surfacing later at deploy time.
 
-On Azure, an app also needs a top-level (not per-service) `x-cloud.azure.subnet_index` — each app gets its own Container Apps Environment for isolation, carved out of the shared environment's address space, so this picks which slice:
+On Azure, an app also needs a top-level (not per-service) `x-cloud.azure.subnet_index` ,  each app gets its own Container Apps Environment for isolation, carved out of the shared environment's address space, so this picks which slice:
 
 ```yaml
 name: myapp
@@ -207,15 +207,15 @@ See `docs/deployment-model.md` for why.
 | **Azure** | ✅ Verified against real deployments, full feature parity with AWS | Container Apps | Flexible Server | Cache for Redis | Blob Storage | ✅ Container Apps Jobs | ✅ Front Door (no WAF) |
 | **GCP** | ⚠️ Compiles and passes structural tests; not yet verified against a real deployment or covered by golden-file regression tests | Cloud Run | Cloud SQL | Memorystore | Cloud Storage | ❌ not implemented | ❌ not implemented |
 
-GCP is intentionally less mature than AWS/Azure — see [`docs/compiler-design.md`](docs/compiler-design.md) for what's still open, and `AGENTS.md`'s "GCP has no committed golden files" note for the testing gap specifically.
+GCP is intentionally less mature than AWS/Azure ,  see [`docs/compiler-design.md`](docs/compiler-design.md) for what's still open, and `AGENTS.md`'s "GCP has no committed golden files" note for the testing gap specifically.
 
 ---
 
 ## Documentation
 
-- [Environment configuration and state](docs/environment-and-state.md) — `environment.yaml` schema, remote backends, and safe teardown
-- [Deployment model](docs/deployment-model.md) — how environments and apps are identified/located, Azure per-app isolation, CLI shape
-- [Compiler design](docs/compiler-design.md) — intent-based abstractions and known GCP gaps
+- [Environment configuration and state](docs/environment-and-state.md) ,  `environment.yaml` schema, remote backends, and safe teardown
+- [Deployment model](docs/deployment-model.md) ,  how environments and apps are identified/located, Azure per-app isolation, CLI shape
+- [Compiler design](docs/compiler-design.md) ,  intent-based abstractions and known GCP gaps
 - [Design spikes (historical)](docs/spikes/)
 - [Examples](examples/)
 

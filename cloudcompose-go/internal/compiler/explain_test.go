@@ -478,3 +478,53 @@ func TestExplain_MissingIngressNamesTheCandidatesAndMentionsXCloud(t *testing.T)
 		t.Errorf("Because = %q, want it to mention x-cloud: ingress", warning.Because)
 	}
 }
+
+// TestExplain_DroppedStartupSemanticsWarning is #146: healthcheck: and
+// non-default depends_on: conditions are not deployed, so they must be
+// reported rather than dropped silently. A condition on a managed
+// service (db) is not reported, nor is the default service_started.
+func TestExplain_DroppedStartupSemanticsWarning(t *testing.T) {
+	t.Parallel()
+	composePath := writeComposeFixture(t, `name: startup
+services:
+  migrate:
+    image: oryd/hydra
+  sidecar:
+    image: busybox
+  web:
+    image: oryd/hydra
+    healthcheck:
+      test: ["CMD", "true"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      sidecar:
+        condition: service_started
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:17
+`)
+	composeApp, err := ParseCompose(composePath)
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := Normalize(composeApp, "startup")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+
+	var got []string
+	for _, d := range Explain(composeApp, app) {
+		if d.Subject == "web" && d.Source == SourceWarning && strings.Contains(d.Decision, "ignored") {
+			got = append(got, d.Decision)
+		}
+	}
+	want := []string{
+		"healthcheck: ignored",
+		"depends_on migrate: service_completed_successfully ignored",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("warnings = %q, want %q", got, want)
+	}
+}

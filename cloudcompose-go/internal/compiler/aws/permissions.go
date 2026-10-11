@@ -53,6 +53,11 @@ func InferPermissionsAndWiring(
 			name, _ := entry["name"].(string)
 			value, _ := entry["value"].(string)
 
+			if public, ok := shared.ResolveLocalhostURL(value, app, func(s *models.Service) string { return PublicURL(s, env) }); ok {
+				environment = append(environment, map[string]any{"name": name, "value": public})
+				continue
+			}
+
 			resolved := shared.ResolveValue(value, connections, connectionOrder)
 			if resolved.Service != nil {
 				referenced[*resolved.Service] = struct{}{}

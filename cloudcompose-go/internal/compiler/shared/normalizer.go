@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gecburton/cloudcompose/internal/models"
@@ -283,6 +284,11 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 		if len(dockerService.Ports) > 0 {
 			port := int(dockerService.Ports[0].Target)
 			primaryPort = &port
+			if ingress != nil {
+				if published, err := strconv.Atoi(dockerService.Ports[0].Published); err == nil {
+					ingress.PublishedPort = &published
+				}
+			}
 		}
 
 		secretNames := make([]string, 0)

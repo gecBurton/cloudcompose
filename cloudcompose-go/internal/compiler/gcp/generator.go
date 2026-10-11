@@ -1,6 +1,8 @@
 package gcp
 
 import (
+	"strings"
+
 	"github.com/gecburton/cloudcompose/internal/compiler/shared"
 	"github.com/gecburton/cloudcompose/internal/models"
 )
@@ -41,6 +43,25 @@ func GenerateGcp(resources *models.GcpResources, env *models.GcpEnvironment, pro
 	if backendBlock := shared.AppBackendBlock(env.Name, projectName, env.Backend); backendBlock != nil {
 		manifest.Terraform["backend"] = backendBlock
 	}
+	if referencesProjectNumber(resources) {
+		manifest.Data = map[string]any{"google_project": map[string]any{"current": map[string]any{"project_id": env.ProjectID}}}
+	}
 
 	return shared.MarshalIndentedJSON(manifest)
+}
+
+func referencesProjectNumber(resources *models.GcpResources) bool {
+	for _, cr := range resources.CloudRunService {
+		if cr.Template == nil {
+			continue
+		}
+		for _, c := range cr.Template.Spec.Containers {
+			for _, e := range c.Env {
+				if strings.Contains(e.Value, ProjectNumberRef) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

@@ -87,9 +87,10 @@ func GenerateAWS(resources *models.AWSResources, env *models.AwsEnvironment, pro
 		}
 	}
 
-	// CloudFront origins reference the shared ALB by DNS name, which the
-	// environment only supplies as an ARN. Look it up at apply time.
-	if len(resources.CloudfrontDistribution) > 0 && env.AlbArn != nil {
+	// CloudFront origins and public URLs (#149) reference the shared ALB
+	// by DNS name, which the environment only supplies as an ARN. Look it
+	// up at apply time.
+	if (len(resources.CloudfrontDistribution) > 0 || referencesALB(resources)) && env.AlbArn != nil {
 		dataSources["aws_lb"] = map[string]any{
 			shared.ALBDataSourceKey: map[string]any{"arn": *env.AlbArn},
 		}

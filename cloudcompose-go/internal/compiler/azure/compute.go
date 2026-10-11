@@ -268,6 +268,10 @@ func resolveEnvVarAzure(
 	tags map[string]string,
 	managedServiceIdentityID string,
 ) (models.ContainerAppEnvVar, *models.ContainerAppSecret, error) {
+	if public, ok := shared.ResolveLocalhostURL(value, app, func(s *models.Service) string { return publicURLAzure(s, getName) }); ok {
+		return models.ContainerAppEnvVar{Name: varName, Value: public}, nil, nil
+	}
+
 	resolved := shared.ResolveValue(value, connections, connectionOrder)
 	if resolved.Service == nil {
 		peers, peerOrder := peerConnectionsAzure(app, getName)
@@ -324,6 +328,19 @@ func resolveEnvVarAzure(
 // one -- so it fails compilation rather than leaking (#147).
 func plaintextCredentialError(serviceName, varName, server string) error {
 	return fmt.Errorf("service %q: refusing to write %s (a credential for %q) as a plaintext env var: no Key Vault secret or managed identity was created for it", serviceName, varName, server)
+}
+
+// publicURLAzure is the address a browser reaches a public service at
+// (#149): its Front Door endpoint when cdn: true, otherwise its Container
+// App's external FQDN. That FQDN is built from the app name and the
+// Container Apps Environment's default_domain rather than read from the
+// app's own ingress[0].fqdn, so services can reference each other's URLs
+// (and their own) without a Terraform dependency cycle.
+func publicURLAzure(service *models.Service, getName func(string) string) string {
+	if service.CDNEnabled {
+		return fmt.Sprintf("https://${azurerm_cdn_frontdoor_endpoint.%s.host_name}", service.Name)
+	}
+	return fmt.Sprintf("https://%s.${azurerm_container_app_environment.main.default_domain}", getName(service.Name))
 }
 
 // isPeerAzure reports whether other containers can call this service: an

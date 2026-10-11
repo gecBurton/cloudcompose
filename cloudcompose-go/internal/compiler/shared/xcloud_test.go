@@ -204,19 +204,20 @@ func TestTwoServicesMayBothBePublicOnDistinctPaths(t *testing.T) {
 	}
 }
 
-func TestTwoServicesOnTheSamePathAreRejected(t *testing.T) {
+func TestRejectOverlappingPaths(t *testing.T) {
 	t.Parallel()
-	_, err := Normalize(
+	result, err := Normalize(
 		publicTestApp(
 			map[string]interface{}{"ingress": map[string]interface{}{}},
 			map[string]interface{}{"ingress": map[string]interface{}{}},
 		),
 		"p",
 	)
-	if err == nil {
-		t.Fatal("expected an error, got nil")
+	if err != nil {
+		t.Fatalf("Normalize must accept two services at / (only AWS shares a host, #161): %v", err)
 	}
-	if !strings.Contains(err.Error(), "both serve") {
-		t.Errorf("error = %q, want it to mention 'both serve'", err.Error())
+	err = RejectOverlappingPaths(result.Services)
+	if err == nil || !strings.Contains(err.Error(), "both serve") {
+		t.Errorf("RejectOverlappingPaths error = %v, want one mentioning 'both serve'", err)
 	}
 }

@@ -11,6 +11,11 @@ func InferAWS(app *models.Application, env *models.AwsEnvironment) (*models.AWSR
 	resources := models.NewAWSResources()
 
 	getName := shared.ResourceNamer(env.Name, app.Name)
+
+	// Every public service shares one ALB listener, routed by path.
+	if err := shared.RejectOverlappingPaths(app.Services); err != nil {
+		return nil, err
+	}
 	tags := env.Tags
 
 	// Whether tearing the stack down preserves what it holds.

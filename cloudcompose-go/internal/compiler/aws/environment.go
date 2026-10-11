@@ -50,6 +50,7 @@ func LoadAwsEnvironment(dir string) (*models.AwsEnvironment, error) {
 	env.AlbArn = shared.ToStringPtr(raw["alb_arn"])
 	env.AlbListenerArn = shared.ToStringPtr(raw["alb_listener_arn"])
 	env.AlbSecurityGroupID = shared.ToStringPtr(raw["alb_security_group_id"])
+	env.AlbHTTPS, _ = raw["alb_https"].(bool)
 	env.AwsEndpoint = shared.ToStringPtr(raw["aws_endpoint"])
 
 	backendRaw, err := shared.OptionalTerraformOutputs(dir, "backend")

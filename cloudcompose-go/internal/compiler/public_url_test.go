@@ -76,6 +76,17 @@ func TestPublicURL_AWS(t *testing.T) {
 		t.Errorf("URLS_LOGIN = %q, want %q", got["URLS_LOGIN"], alb_+"/o/login/")
 	}
 
+	// #152: an HTTPS listener makes the derived URLs https://.
+	httpsEnv := env
+	httpsEnv.AlbHTTPS = true
+	httpsResources, err := aws.InferAWS(publicURLApp(t), &httpsEnv)
+	if err != nil {
+		t.Fatalf("InferAWS failed: %v", err)
+	}
+	if !strings.Contains(httpsResources.EcsTaskDefinition["hydra_td"].ContainerDefinitions, `"https://${data.aws_lb.shared_alb.dns_name}/o/login/"`) {
+		t.Errorf("expected an https:// public URL when the ALB serves HTTPS, got %s", httpsResources.EcsTaskDefinition["hydra_td"].ContainerDefinitions)
+	}
+
 	out, err := aws.GenerateAWS(resources, &env, "oidc")
 	if err != nil {
 		t.Fatalf("GenerateAWS failed: %v", err)

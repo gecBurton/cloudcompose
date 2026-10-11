@@ -59,6 +59,8 @@ aws:
   vpc_cidr: 10.0.0.0/16
   az_count: 2
   create_alb: true
+  # ACM certificate for the shared ALB. Set it, and the ALB serves HTTPS on
+  # 443 and redirects plain HTTP on 80; leave it null for HTTP-only on 80.
   certificate_arn: null
 ```
 

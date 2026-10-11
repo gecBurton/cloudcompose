@@ -20,7 +20,11 @@ type AwsEnvironment struct {
 	AlbArn             *string  `json:"alb_arn,omitempty"`
 	AlbListenerArn     *string  `json:"alb_listener_arn,omitempty"`
 	AlbSecurityGroupID *string  `json:"alb_security_group_id,omitempty"`
-	AwsEndpoint        *string  `json:"aws_endpoint,omitempty"`
+	// AlbHTTPS is whether the shared ALB's listener serves HTTPS (the
+	// environment set certificate_arn), which decides the scheme of every
+	// public URL an app derives from it.
+	AlbHTTPS    bool    `json:"alb_https,omitempty"`
+	AwsEndpoint *string `json:"aws_endpoint,omitempty"`
 
 	// Backend is this environment's own backend config, read back from
 	// its own `output "backend"` block; nil if generated without

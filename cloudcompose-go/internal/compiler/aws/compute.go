@@ -85,6 +85,7 @@ func InferComputeResources(
 			Name:         service.Name,
 			Image:        containerImage,
 			Essential:    true,
+			EntryPoint:   service.Entrypoint,
 			Command:      service.Command,
 			PortMappings: portMappings,
 			Environment:  environment,

@@ -232,7 +232,8 @@ func inferCloudRunServicesGcp(
 
 		container := models.CloudRunContainer{
 			Image:   service.Image,
-			Command: service.Command,
+			Command: service.Entrypoint,
+			Args:    service.Command,
 			Resources: models.CloudRunContainerLimits{
 				Limits: models.CloudRunResourceLimits{
 					CPU:    cpuLimitGcp(service),

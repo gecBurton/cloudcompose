@@ -46,6 +46,7 @@ type ComposeService struct {
 	Volumes             []VolumeDefinition     `json:"volumes,omitempty"`
 	Secrets             []interface{}          `json:"secrets,omitempty"`
 	Command             interface{}            `json:"command,omitempty"`
+	Entrypoint          []string               `json:"entrypoint,omitempty"`
 	XCloud              interface{}            `json:"x-cloud,omitempty"`
 	PlatformEnv         []string               `json:"platform_env,omitempty"`
 }

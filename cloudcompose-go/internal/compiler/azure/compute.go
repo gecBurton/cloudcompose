@@ -121,11 +121,12 @@ func containerSpecAzure(
 	}
 
 	container := models.ContainerAppContainer{
-		Name:   service.Name,
-		Image:  getContainerImageAzure(service, app, env),
-		CPU:    cpu,
-		Memory: memory,
-		Args:   service.Command,
+		Name:    service.Name,
+		Image:   getContainerImageAzure(service, app, env),
+		CPU:     cpu,
+		Memory:  memory,
+		Command: service.Entrypoint,
+		Args:    service.Command,
 	}
 
 	if service.Ingress != nil {

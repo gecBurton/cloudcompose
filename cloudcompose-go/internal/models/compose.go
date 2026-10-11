@@ -34,13 +34,20 @@ type ComposeService struct {
 	// DependsOn only records which services this one depends on; only
 	// the map's keys are read. cloudcompose does not model startup
 	// ordering -- connectivity comes from `networks:`, not depends_on.
-	DependsOn   map[string]struct{}    `json:"depends_on,omitempty"`
-	Networks    map[string]interface{} `json:"networks,omitempty"`
-	Volumes     []VolumeDefinition     `json:"volumes,omitempty"`
-	Secrets     []interface{}          `json:"secrets,omitempty"`
-	Command     interface{}            `json:"command,omitempty"`
-	XCloud      interface{}            `json:"x-cloud,omitempty"`
-	PlatformEnv []string               `json:"platform_env,omitempty"`
+	DependsOn map[string]struct{} `json:"depends_on,omitempty"`
+	// DependsOnConditions records each depends_on: condition other than
+	// the default service_started, and Healthcheck whether an enabled
+	// healthcheck: was declared. Neither is deployed; both exist only so
+	// Explain can warn that they were dropped rather than drop them
+	// silently.
+	DependsOnConditions map[string]string      `json:"depends_on_conditions,omitempty"`
+	Healthcheck         bool                   `json:"healthcheck,omitempty"`
+	Networks            map[string]interface{} `json:"networks,omitempty"`
+	Volumes             []VolumeDefinition     `json:"volumes,omitempty"`
+	Secrets             []interface{}          `json:"secrets,omitempty"`
+	Command             interface{}            `json:"command,omitempty"`
+	XCloud              interface{}            `json:"x-cloud,omitempty"`
+	PlatformEnv         []string               `json:"platform_env,omitempty"`
 }
 
 func (s *ComposeService) GetNetworks() []string {

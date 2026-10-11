@@ -113,6 +113,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 
 		if composeService != nil {
 			decisions = append(decisions, volumeDecisions(name, composeService)...)
+			decisions = append(decisions, startupDecisions(name, composeService, semantic)...)
 		}
 		decisions = append(decisions, wiringDecisions(name, semantic, service)...)
 
@@ -251,6 +252,43 @@ func volumeDecisions(name string, composeService *models.ComposeService) []Decis
 		Because: "bind mounts and anonymous volumes have no deployed meaning",
 		Source:  SourceWarning,
 	}}
+}
+
+// startupDecisions reports healthcheck: and depends_on: conditions,
+// neither of which is deployed. A condition on a managed service is not
+// reported: Terraform already creates the managed service before the
+// container that references it.
+func startupDecisions(name string, composeService *models.ComposeService, semantic *models.Application) []Decision {
+	var decisions []Decision
+	if composeService.Healthcheck {
+		decisions = append(decisions, Decision{
+			Subject: name, Decision: "healthcheck: ignored",
+			Because: "deployed health checks come only from x-cloud: ingress: health_check",
+			Source:  SourceWarning,
+		})
+	}
+	for _, dep := range shared.SortedKeys(composeService.DependsOnConditions) {
+		if server := findService(semantic, dep); server == nil || server.Capability != models.CapabilityContainer {
+			continue
+		}
+		decisions = append(decisions, Decision{
+			Subject:  name,
+			Decision: fmt.Sprintf("depends_on %s: %s ignored", dep, composeService.DependsOnConditions[dep]),
+			Because: "startup order is not modelled: both start together, and a container that exits " +
+				"is restarted like any long-running service rather than run once",
+			Source: SourceWarning,
+		})
+	}
+	return decisions
+}
+
+func findService(semantic *models.Application, name string) *models.Service {
+	for i := range semantic.Services {
+		if semantic.Services[i].Name == name {
+			return &semantic.Services[i]
+		}
+	}
+	return nil
 }
 
 // wiringDecisions reports whether this service's references to its

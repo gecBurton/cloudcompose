@@ -77,9 +77,13 @@ type HealthCheck struct {
 }
 
 type Ingress struct {
-	Path        string      `json:"path"`
-	Port        *int        `json:"port,omitempty"`
-	HealthCheck HealthCheck `json:"health_check"`
+	Path string `json:"path"`
+	Port *int   `json:"port,omitempty"`
+	// PublishedPort is the host port the compose file publishes this
+	// service on locally -- what a localhost URL elsewhere in the file
+	// names when it means "this service's public address" (#149).
+	PublishedPort *int        `json:"published_port,omitempty"`
+	HealthCheck   HealthCheck `json:"health_check"`
 }
 
 type ServiceSize string

@@ -129,9 +129,10 @@ func InferComputeResources(
 
 		if IsDiscoverable(service) {
 			connections[service.Name] = models.Connection{
-				Host:        fmt.Sprintf("%s.%s", service.Name, namespace),
-				Port:        service.Port,
-				AddressedBy: "host",
+				Host:                 fmt.Sprintf("%s.%s", service.Name, namespace),
+				Port:                 service.Port,
+				AddressedBy:          "host",
+				PreserveAuthoredPort: true,
 			}
 		}
 	}

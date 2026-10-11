@@ -30,6 +30,7 @@ type ContainerDefinition struct {
 	Name             string              `json:"name"`
 	Image            string              `json:"image"`
 	Essential        bool                `json:"essential"`
+	EntryPoint       []string            `json:"entryPoint,omitempty"`
 	Command          []string            `json:"command,omitempty"`
 	PortMappings     []map[string]any    `json:"portMappings"`
 	Environment      []map[string]string `json:"environment"`

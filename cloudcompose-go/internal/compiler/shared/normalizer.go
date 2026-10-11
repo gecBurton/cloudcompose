@@ -383,6 +383,7 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 			BuildContext:             buildContext,
 			Dockerfile:               dockerfile,
 			Command:                  command,
+			Entrypoint:               dockerService.Entrypoint,
 			StartupGracePeriod:       settings.GetGracePeriod(),
 			MinScale:                 settings.MinScale,
 			MaxScale:                 settings.MaxScale,

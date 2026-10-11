@@ -41,6 +41,7 @@ type CloudRunSpec struct {
 type CloudRunContainer struct {
 	Image     string                  `json:"image"`
 	Command   []string                `json:"command,omitempty"`
+	Args      []string                `json:"args,omitempty"`
 	Env       []CloudRunEnvVar        `json:"env,omitempty"`
 	Resources CloudRunContainerLimits `json:"resources"`
 }

@@ -27,6 +27,8 @@ var versionCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.Version = rootVersion
+	rootCmd.SetVersionTemplate("cloud-compose {{.Version}} (Go)\n")
 
 	// Persistent so it works before or after the subcommand (e.g. both
 	// `cloud-compose -f x.yml compile` and `cloud-compose compile -f

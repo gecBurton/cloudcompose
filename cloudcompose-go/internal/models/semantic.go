@@ -102,6 +102,7 @@ type Service struct {
 	BuildContext             *string            `json:"build_context,omitempty"`
 	Dockerfile               *string            `json:"dockerfile,omitempty"`
 	Command                  []string           `json:"command,omitempty"`
+	Entrypoint               []string           `json:"entrypoint,omitempty"`
 	StartupGracePeriod       *int               `json:"startup_grace_period,omitempty"`
 	MinScale                 int                `json:"min_scale"`
 	MaxScale                 int                `json:"max_scale"`

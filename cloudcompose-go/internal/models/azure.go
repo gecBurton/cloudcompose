@@ -38,6 +38,7 @@ type ContainerAppContainer struct {
 	Image          string               `json:"image"`
 	CPU            float64              `json:"cpu"`
 	Memory         string               `json:"memory"`
+	Command        []string             `json:"command,omitempty"`
 	Args           []string             `json:"args,omitempty"`
 	Env            []ContainerAppEnvVar `json:"env"`
 	LivenessProbe  []ContainerAppProbe  `json:"liveness_probe,omitempty"`

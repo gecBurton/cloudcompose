@@ -121,11 +121,12 @@ func containerSpecAzure(
 	}
 
 	container := models.ContainerAppContainer{
-		Name:   service.Name,
-		Image:  getContainerImageAzure(service, app, env),
-		CPU:    cpu,
-		Memory: memory,
-		Args:   service.Command,
+		Name:    service.Name,
+		Image:   getContainerImageAzure(service, app, env),
+		CPU:     cpu,
+		Memory:  memory,
+		Command: service.Entrypoint,
+		Args:    service.Command,
 	}
 
 	if service.Ingress != nil {
@@ -144,7 +145,10 @@ func containerSpecAzure(
 	envVars := make([]models.ContainerAppEnvVar, 0, len(service.Env))
 	var secrets []models.ContainerAppSecret
 	for _, k := range shared.SortedKeys(service.Env) {
-		envVar, secret := resolveEnvVarAzure(resources, app, service.Name, k, service.Env[k], connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		envVar, secret, err := resolveEnvVarAzure(resources, app, service.Name, k, service.Env[k], connections, connectionOrder, getName, tags, managedServiceIdentityID)
+		if err != nil {
+			return models.ContainerAppContainer{}, nil, err
+		}
 		envVars = append(envVars, envVar)
 		if secret != nil {
 			secrets = append(secrets, *secret)
@@ -156,9 +160,13 @@ func containerSpecAzure(
 		if !ok {
 			continue
 		}
+		// Injected only for servers an authored env var actually
+		// resolves against, matching AWS and referencedServersAzure: a
+		// depends_on:-only link never gets an identity or Key Vault
+		// grant, so injecting here leaked credentials as plaintext (#147).
 		referenced := false
-		for _, r := range app.Relationships {
-			if r.Client == service.Name && r.Server == dbName {
+		for _, value := range service.Env {
+			if resolved := shared.ResolveValue(value, connections, connectionOrder); resolved.Service != nil && *resolved.Service == dbName {
 				referenced = true
 				break
 			}
@@ -187,6 +195,8 @@ func containerSpecAzure(
 				Identity:         managedServiceIdentityRef(resources),
 			})
 			envVars = append(envVars, models.ContainerAppEnvVar{Name: envVarName, SecretName: secretName})
+		} else if conn.Password != nil {
+			return models.ContainerAppContainer{}, nil, plaintextCredentialError(service.Name, envVarName, dbName)
 		} else {
 			envVars = append(envVars, models.ContainerAppEnvVar{
 				Name:  envVarName,
@@ -215,7 +225,7 @@ func containerSpecAzure(
 					})
 					envVars = append(envVars, models.ContainerAppEnvVar{Name: "DB_PASSWORD", SecretName: secretName})
 				} else {
-					envVars = append(envVars, models.ContainerAppEnvVar{Name: "DB_PASSWORD", Value: *conn.Password})
+					return models.ContainerAppContainer{}, nil, plaintextCredentialError(service.Name, "DB_PASSWORD", dbName)
 				}
 			}
 		}
@@ -257,7 +267,7 @@ func resolveEnvVarAzure(
 	getName func(string) string,
 	tags map[string]string,
 	managedServiceIdentityID string,
-) (models.ContainerAppEnvVar, *models.ContainerAppSecret) {
+) (models.ContainerAppEnvVar, *models.ContainerAppSecret, error) {
 	resolved := shared.ResolveValue(value, connections, connectionOrder)
 	if resolved.Service == nil {
 		peers, peerOrder := peerConnectionsAzure(app, getName)
@@ -267,7 +277,7 @@ func resolveEnvVarAzure(
 	}
 	resolved.Value = redisTLSSchemeAzure(resolved.Value, app, resolved.Service)
 	if !resolved.Confidential {
-		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
+		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil, nil
 	}
 
 	// A confidential value with no identity to grant Key Vault access is
@@ -275,7 +285,7 @@ func resolveEnvVarAzure(
 	// to a plaintext env var here would silently leak a credential into
 	// Terraform state, worse than failing loudly.
 	if managedServiceIdentityID == "" {
-		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
+		return models.ContainerAppEnvVar{}, nil, plaintextCredentialError(serviceName, varName, *resolved.Service)
 	}
 
 	// azurerm_key_vault_secret's name may only contain alphanumeric
@@ -304,7 +314,16 @@ func resolveEnvVarAzure(
 			Name:             secretName,
 			KeyVaultSecretID: fmt.Sprintf("${azurerm_key_vault_secret.%s.versionless_id}", secretKey),
 			Identity:         managedServiceIdentityID,
-		}
+		}, nil
+}
+
+// plaintextCredentialError reports a credential that would otherwise
+// have been written as a plaintext env var (and so into Terraform
+// state) because no Key Vault secret/identity exists for it. Reaching
+// this is a compiler bug -- referencedServersAzure should have ensured
+// one -- so it fails compilation rather than leaking (#147).
+func plaintextCredentialError(serviceName, varName, server string) error {
+	return fmt.Errorf("service %q: refusing to write %s (a credential for %q) as a plaintext env var: no Key Vault secret or managed identity was created for it", serviceName, varName, server)
 }
 
 // isPeerAzure reports whether other containers can call this service: an

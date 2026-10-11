@@ -34,7 +34,7 @@ backend:
 ## What this does not do
 
 - Does not create IAM policies granting access to the bucket/table --
-  every identity that runs `cloud-compose init`/`up`/`compile`/`down`/
+  every identity that runs `cloud-compose env init`/`up`/`compile`/`down`/
   `env-destroy` against a backend-configured environment needs
   `s3:GetObject`/`PutObject`/`DeleteObject` on the bucket and
   `dynamodb:GetItem`/`PutItem`/`DeleteItem` on the table (Terraform's

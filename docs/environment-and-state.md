@@ -219,7 +219,7 @@ func backendKeyForEnvironment(envName string) string {
 	return fmt.Sprintf("cloudcompose/%s/environment.tfstate", envName)
 }
 func backendKeyForApp(envName, projectName string) string {
-	return fmt.Sprintf("cloudcompose/%s/%s.tfstate", envName, projectName)
+	return fmt.Sprintf("cloudcompose/%s/apps/%s.tfstate", envName, projectName)
 }
 ```
 
@@ -360,11 +360,11 @@ See `docs/compiler-design.md` for the rest of GCP's known gaps.
 
 ## Non-goals
 
-- `cloud-compose init`/`compile` themselves still never run `terraform
+- `cloud-compose env init`/`compile` themselves still never run `terraform
   apply`/`destroy` or manage Terraform state — they only ever write
   `main.tf.json`. `cloud-compose up`/`down`/`env down` are the
-  exceptions: `up` orchestrates `init` + `terraform apply` + `compile` +
-  `terraform apply` for the common one-app-one-environment case, `down`
+  exceptions: `up` orchestrates `compile` + `terraform apply` on the app
+  (`env up` does `env init` + `terraform apply` on the environment) for the common one-app-one-environment case, `down`
   runs `terraform destroy` against a single already-compiled app's own
   directory (never the shared environment), and `env down` runs
   `terraform destroy` against the shared environment itself. Every
@@ -404,7 +404,7 @@ See `docs/compiler-design.md` for the rest of GCP's known gaps.
 - `internal/compiler/initconfig` — `Load` (reads `environment.yaml`,
   returns `(nil, nil)` if missing), `Validate` (strict/discriminated
   checks, including `backend:`), and `BackendWarnings` (the non-fatal
-  "no lock table" warning `cloud-compose init` prints).
+  "no lock table" warning `cloud-compose env init` prints).
 - `cmd/cloudcompose/env_init.go` — `-e`/`--env` (default
   `environment.yaml`); no decision flags, no output-location flag.
 - `cmd/cloudcompose/environment_resolve.go` — `resolveEnvironmentByDefinition`/
@@ -446,7 +446,7 @@ See `docs/compiler-design.md` for the rest of GCP's known gaps.
 - CI note: `scripts/ci-environment.{aws,azure}.yaml` are shared,
   committed environment configs; `scripts/smoke-test.sh` substitutes a
   per-run `name:`/`region:` into a generated copy under `build/` before
-  passing it to `cloud-compose init -e`, since a single committed file
+  passing it to `cloud-compose env init -e`, since a single committed file
   can't express a unique name per CI run.
 
 ## Related but out of scope

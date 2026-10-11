@@ -164,6 +164,7 @@ cloud-compose env down --env environment.yaml
 | `image: minio` | Object storage (S3, GCS, Blob Storage) |
 | `ports:` | A public HTTPS endpoint with load balancing and a certificate |
 | `depends_on:` | Private service discovery between containers |
+| `http://localhost:8000/callback` in `environment:` | The public URL of whichever `x-cloud: ingress` service publishes port 8000, so OAuth redirect URIs, issuers and similar keep working once deployed. A bare `localhost` (e.g. in `ALLOWED_HOSTS`) is left as-is and flagged by `--explain`; on AWS the URL is `http://` until the load balancer has a certificate |
 | No `ports:` | An internal-only service |
 
 Most apps need nothing beyond this. When you do need to override a decision, instance size, autoscaling, a specific database engine, add a small `x-cloud:` hint:

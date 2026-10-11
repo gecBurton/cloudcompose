@@ -252,6 +252,10 @@ func inferCloudRunServicesGcp(
 			// (rather than consuming the synthesized <SERVER>_URL below)
 			// otherwise ships that literal, locally-scoped value verbatim,
 			// unreachable once the service becomes managed.
+			if public, ok := shared.ResolveLocalhostURL(service.Env[k], app, func(s *models.Service) string { return publicURLGcp(s, env, getName) }); ok {
+				envVars = append(envVars, models.CloudRunEnvVar{Name: k, Value: public})
+				continue
+			}
 			resolved := shared.ResolveValue(service.Env[k], connections, connectionOrder)
 			envVars = append(envVars, models.CloudRunEnvVar{Name: k, Value: resolved.Value})
 		}
@@ -341,6 +345,25 @@ func inferCloudRunServicesGcp(
 		resources.CloudRunService[service.Name] = cr
 	}
 }
+
+// publicURLGcp is the address a browser reaches a public service at
+// (#149): Cloud Run's deterministic URL, built from the service name and
+// project number rather than read from the service's own status[0].url,
+// so services can reference each other's URLs without a dependency
+// cycle. "" when the deterministic form doesn't exist (its DNS label is
+// capped at 63 characters).
+func publicURLGcp(service *models.Service, env *models.GcpEnvironment, getName func(string) string) string {
+	name := getName(service.Name)
+	// "<name>-<project number>": project numbers are at most 12 digits.
+	if len(name)+1+12 > 63 {
+		return ""
+	}
+	return fmt.Sprintf("https://%s-${%s}.%s.run.app", name, ProjectNumberRef, env.Region)
+}
+
+// ProjectNumberRef is the data source PublicURL uses for the project
+// number, which environment.yaml doesn't carry (only project_id).
+const ProjectNumberRef = "data.google_project.current.number"
 
 // findServiceByNameGcp finds a service by name.
 func findServiceByNameGcp(app *models.Application, name string) *models.Service {

@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -116,6 +117,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 			decisions = append(decisions, startupDecisions(name, composeService, semantic)...)
 		}
 		decisions = append(decisions, wiringDecisions(name, semantic, service)...)
+		decisions = append(decisions, localhostDecisions(name, semantic, service)...)
 
 		if len(service.Config) > 0 {
 			shown := service.Config
@@ -347,6 +349,43 @@ func wiringDecisions(name string, semantic *models.Application, service *models.
 			decisions = append(decisions, Decision{
 				Subject: name, Decision: fmt.Sprintf("nothing wired to %s", serverName),
 				Because: fmt.Sprintf("no environment variable references %s; the service will not be able to find it", pyRepr(serverName)),
+				Source:  SourceWarning,
+			})
+		}
+	}
+	return decisions
+}
+
+// bareLocalhost matches localhost as a host rather than a URL, e.g. in a
+// comma-separated ALLOWED_HOSTS list.
+var bareLocalhost = regexp.MustCompile(`(^|[,\s])(localhost|127\.0\.0\.1)(:\d+)?($|[,\s])`)
+
+// localhostDecisions reports localhost values (#149): a URL naming a
+// public service's published port becomes that service's public URL; any
+// other localhost value is shipped as-is and would point at the
+// container itself once deployed.
+func localhostDecisions(name string, semantic *models.Application, service *models.Service) []Decision {
+	var decisions []Decision
+	for _, key := range shared.SortedKeys(service.Env) {
+		value := service.Env[key]
+		target, _, matched := shared.LocalhostTarget(value, semantic)
+		switch {
+		case target != nil:
+			decisions = append(decisions, Decision{
+				Subject: name, Decision: fmt.Sprintf("%s → public URL of %s", key, target.Name),
+				Because: fmt.Sprintf("%s names %s's published port", pyRepr(value), target.Name),
+				Source:  SourceInferred,
+			})
+		case matched:
+			decisions = append(decisions, Decision{
+				Subject: name, Decision: fmt.Sprintf("%s points at localhost", key),
+				Because: fmt.Sprintf("%s names no public service's published port, so once deployed it reaches this container itself", pyRepr(value)),
+				Source:  SourceWarning,
+			})
+		case bareLocalhost.MatchString(value):
+			decisions = append(decisions, Decision{
+				Subject: name, Decision: fmt.Sprintf("%s contains localhost", key),
+				Because: "only full URLs (http://localhost:PORT/...) are rewritten to a public URL; a bare host is shipped as-is",
 				Source:  SourceWarning,
 			})
 		}

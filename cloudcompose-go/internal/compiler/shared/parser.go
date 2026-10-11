@@ -213,14 +213,22 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		s.Environment, s.PlatformEnv = splitEnvironment(resolvedEnv, declared[service.Name])
 
 		// Convert depends_on. Only the keys ever matter to Normalize (see
-		// ComposeService.DependsOn's doc comment), so condition/required
-		// are not converted.
+		// ComposeService.DependsOn's doc comment); non-default conditions
+		// are kept only so Explain can warn they are not honoured.
 		if len(service.DependsOn) > 0 {
 			s.DependsOn = make(map[string]struct{}, len(service.DependsOn))
-			for depName := range service.DependsOn {
+			for depName, dep := range service.DependsOn {
 				s.DependsOn[depName] = struct{}{}
+				if dep.Condition != "" && dep.Condition != types.ServiceConditionStarted {
+					if s.DependsOnConditions == nil {
+						s.DependsOnConditions = map[string]string{}
+					}
+					s.DependsOnConditions[depName] = dep.Condition
+				}
 			}
 		}
+
+		s.Healthcheck = service.HealthCheck != nil && !service.HealthCheck.Disable
 
 		if len(service.Networks) > 0 {
 			s.Networks = make(map[string]interface{})

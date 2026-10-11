@@ -272,7 +272,7 @@ func resolveEnvVarAzure(
 	if resolved.Service == nil {
 		peers, peerOrder := peerConnectionsAzure(app, getName)
 		if peer := shared.ResolveValue(value, peers, peerOrder); peer.Service != nil {
-			return models.ContainerAppEnvVar{Name: varName, Value: peer.Value}, nil
+			return models.ContainerAppEnvVar{Name: varName, Value: peer.Value}, nil, nil
 		}
 	}
 	resolved.Value = redisTLSSchemeAzure(resolved.Value, app, resolved.Service)

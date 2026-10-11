@@ -27,7 +27,7 @@ terraform apply -var="name=myorg" -var="resource_group_name=myorg-tfstate-rg"
 ```
 
 Then grant **Storage Blob Data Contributor** on the storage account to
-every identity that will run `cloud-compose init`/`up`/`compile`/`down`/
+every identity that will run `cloud-compose env init`/`up`/`compile`/`down`/
 `env-destroy` against a backend-configured environment -- shared-key
 access is disabled below (`allow_shared_key_access = false`), so
 Terraform's own `azurerm` backend authenticates via Entra ID

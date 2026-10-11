@@ -106,3 +106,26 @@ func TestParseCompose_ReadsTopLevelXCloud(t *testing.T) {
 		t.Errorf("expected Azure.SubnetIndex = 2, got %+v", settings.Azure)
 	}
 }
+
+// TestParseCompose_CarriesEntrypoint confirms entrypoint: reaches the
+// semantic model alongside command:, rather than being dropped (#145).
+func TestParseCompose_CarriesEntrypoint(t *testing.T) {
+	t.Parallel()
+	path := writeComposeFile(t, t.TempDir(), "name: app\nservices:\n  web:\n    image: oryd/hydra\n    entrypoint: [hydra, serve]\n    command: [all, --dev]\n")
+
+	composeApp, err := ParseCompose(path)
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := Normalize(composeApp, composeApp.Name)
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	web := app.Services[0]
+	if !slicesEqual(web.Entrypoint, []string{"hydra", "serve"}) {
+		t.Errorf("Entrypoint = %v, want [hydra serve]", web.Entrypoint)
+	}
+	if !slicesEqual(web.Command, []string{"all", "--dev"}) {
+		t.Errorf("Command = %v, want [all --dev]", web.Command)
+	}
+}

@@ -259,6 +259,10 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 			s.Command = command
 		}
 
+		if len(service.Entrypoint) > 0 {
+			s.Entrypoint = append([]string{}, service.Entrypoint...)
+		}
+
 		if service.Extensions != nil {
 			if xCloud, ok := service.Extensions["x-cloud"]; ok {
 				s.XCloud = xCloud

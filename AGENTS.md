@@ -30,7 +30,7 @@ cd cloudcompose-go
 go build -o cloud-compose ./cmd/cloudcompose
 
 # Run the compiler
-./cloud-compose compile -f ../examples/hello/compose.yml -e ../examples/prod-env.yaml
+./cloud-compose compile -f ../examples/hello/compose.yml -e ../examples/hello/environment.yaml
 
 # Run tests
 go test ./...

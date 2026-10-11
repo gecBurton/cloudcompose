@@ -22,7 +22,7 @@ terraform apply -var="project_id=my-gcp-project-id" -var="name=my-org"
 ```
 
 Then grant **Storage Object Admin** (`roles/storage.objectAdmin`) on the
-bucket to every identity that will run `cloud-compose init`/`up`/
+bucket to every identity that will run `cloud-compose env init`/`up`/
 `compile`/`down`/`env-destroy` against a backend-configured environment:
 
 ```bash

@@ -415,20 +415,17 @@ func TestContainerSpecAzure_DatabaseConnectionInjectsUsernameAndPassword(t *test
 	}
 }
 
-// TestInferAzure_RealServiceDiscoveryExample_PeerContainerReferenceStaysLiteral
-// exercises the full pipeline against the real service-discovery example: unlike
-// AWS (which rewrites web's API_URL: http://api to api's ECS Cloud Map
-// FQDN, since ECS tasks get no DNS name of their own -- see
-// aws/permissions_test.go's TestInferPermissionsAndWiring_RealServiceDiscoveryExample),
-// Azure Container Apps already resolve a bare service name natively
-// within their own environment, so no rewrite happens here: connections
-// is only ever populated for managed-service substitutions
-// (managed.go), never for one plain container referencing another.
-// Pinning this literal-pass-through explicitly, not just via the golden
-// byte-diff, since a future change that started populating connections
-// for container peers would otherwise pass unnoticed until the golden
-// file was regenerated to match it.
-func TestInferAzure_RealServiceDiscoveryExample_PeerContainerReferenceStaysLiteral(t *testing.T) {
+// TestInferAzure_RealServiceDiscoveryExample_PeerContainerIsReachable
+// exercises the full pipeline against the real service-discovery example
+// (#157). Two things must hold for web to reach api on Azure:
+//   - API_URL is rewritten to api's Container App name, which is what the
+//     environment's DNS resolves -- not the compose service name "api".
+//   - api gets ingress, internal only: a Container App with no ingress is
+//     unreachable even from inside its own environment.
+//
+// Pinned explicitly, not just via the golden byte-diff, since the previous
+// literal pass-through was itself pinned as correct here.
+func TestInferAzure_RealServiceDiscoveryExample_PeerContainerIsReachable(t *testing.T) {
 	t.Parallel()
 	composeApp, err := shared.ParseCompose("../../../../examples/service-discovery/compose.yml")
 	if err != nil {
@@ -464,8 +461,12 @@ func TestInferAzure_RealServiceDiscoveryExample_PeerContainerReferenceStaysLiter
 	if !found {
 		t.Fatalf("expected an API_URL env var on web, got %+v", webApp.Template.Container[0].Env)
 	}
-	if apiURL != "http://api" {
-		t.Errorf("API_URL = %q, want it to stay exactly as authored (Azure resolves bare service names natively)", apiURL)
+	if apiURL != "http://prod-service-discovery-api" {
+		t.Errorf("API_URL = %q, want api's Container App name (what the environment's DNS resolves)", apiURL)
+	}
+	api := resources.ContainerApp["api"]
+	if api.Ingress == nil || api.Ingress.ExternalEnabled || api.Ingress.TargetPort != 80 {
+		t.Errorf("api ingress = %+v, want internal-only ingress on port 80", api.Ingress)
 	}
 
 	if _, ok := resources.ContainerApp["api"]; !ok {

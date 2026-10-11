@@ -259,6 +259,12 @@ func resolveEnvVarAzure(
 	managedServiceIdentityID string,
 ) (models.ContainerAppEnvVar, *models.ContainerAppSecret) {
 	resolved := shared.ResolveValue(value, connections, connectionOrder)
+	if resolved.Service == nil {
+		peers, peerOrder := peerConnectionsAzure(app, getName)
+		if peer := shared.ResolveValue(value, peers, peerOrder); peer.Service != nil {
+			return models.ContainerAppEnvVar{Name: varName, Value: peer.Value}, nil
+		}
+	}
 	resolved.Value = redisTLSSchemeAzure(resolved.Value, app, resolved.Service)
 	if !resolved.Confidential {
 		return models.ContainerAppEnvVar{Name: varName, Value: resolved.Value}, nil
@@ -299,6 +305,36 @@ func resolveEnvVarAzure(
 			KeyVaultSecretID: fmt.Sprintf("${azurerm_key_vault_secret.%s.versionless_id}", secretKey),
 			Identity:         managedServiceIdentityID,
 		}
+}
+
+// isPeerAzure reports whether other containers can call this service: an
+// always-on container that publishes a port.
+func isPeerAzure(service *models.Service) bool {
+	return service.Capability == models.CapabilityContainer &&
+		service.Port != nil &&
+		service.Schedule == nil
+}
+
+// peerConnectionsAzure addresses every peer container by its Container
+// App name, which is what the environment's DNS resolves -- not the
+// compose service name (#157). Port is left nil so an authored port is
+// dropped: the environment's proxy serves HTTP ingress only on 80/443
+// and forwards to target_port itself.
+//
+// Kept apart from the managed-service connections map deliberately:
+// those drive identity/Key Vault grants, which a peer never needs.
+func peerConnectionsAzure(app *models.Application, getName func(string) string) (map[string]models.Connection, []string) {
+	peers := map[string]models.Connection{}
+	var order []string
+	for i := range app.Services {
+		service := &app.Services[i]
+		if !isPeerAzure(service) {
+			continue
+		}
+		peers[service.Name] = models.Connection{Host: getName(service.Name), AddressedBy: "host"}
+		order = append(order, service.Name)
+	}
+	return peers, order
 }
 
 // redisTLSSchemeAzure rewrites an authored URL's scheme to "rediss" when
@@ -774,6 +810,21 @@ func inferContainerApps(
 				TargetPort:      port,
 				Transport:       "auto",
 				TrafficWeight:   []models.ContainerAppTrafficWeight{{LatestRevision: true, Percentage: 100}},
+			}
+		} else if isPeerAzure(service) {
+			// A Container App with no ingress is unreachable even from
+			// its own environment, so a port-publishing service other
+			// containers call needs one -- internal only (#157).
+			// AllowInsecureConnections: peers are called by bare app name
+			// over http://, and the environment's TLS certificate only
+			// covers the FQDN, so the default HTTP->HTTPS redirect would
+			// break every such call. Traffic never leaves the environment.
+			ingressConfig = &models.ContainerAppIngress{
+				AllowInsecureConnections: true,
+				ExternalEnabled:          false,
+				TargetPort:               *service.Port,
+				Transport:                "auto",
+				TrafficWeight:            []models.ContainerAppTrafficWeight{{LatestRevision: true, Percentage: 100}},
 			}
 		}
 

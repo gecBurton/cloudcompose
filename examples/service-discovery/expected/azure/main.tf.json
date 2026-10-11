@@ -27,6 +27,18 @@
         "identity": {
           "type": "SystemAssigned"
         },
+        "ingress": {
+          "allow_insecure_connections": true,
+          "external_enabled": false,
+          "target_port": 80,
+          "traffic_weight": [
+            {
+              "latest_revision": true,
+              "percentage": 100
+            }
+          ],
+          "transport": "auto"
+        },
         "name": "prod-service-discovery-api",
         "resource_group_name": "prod",
         "revision_mode": "Single",
@@ -70,7 +82,7 @@
               "env": [
                 {
                   "name": "API_URL",
-                  "value": "http://api"
+                  "value": "http://prod-service-discovery-api"
                 }
               ],
               "image": "nginxdemos/hello:plain-text",

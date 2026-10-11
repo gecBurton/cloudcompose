@@ -10,7 +10,7 @@ import (
 func azureIngressFQDN(resources *models.AzureResources) *string {
 	for _, key := range sortedStringKeysAzureApp(resources.ContainerApp) {
 		app := resources.ContainerApp[key]
-		if app.Ingress != nil {
+		if app.Ingress != nil && app.Ingress.ExternalEnabled {
 			fqdn := "${azurerm_container_app." + key + ".ingress[0].fqdn}"
 			return &fqdn
 		}

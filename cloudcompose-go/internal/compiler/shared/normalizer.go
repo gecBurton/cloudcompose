@@ -194,6 +194,10 @@ func RejectUnsupportedNetworks(app *models.ComposeApplication) error {
 	return fmt.Errorf("networks %s are declared external. Cloud Compose Compiler cannot map a network it does not create to a security group", strings.Join(external, ", "))
 }
 
+// RejectOverlappingPaths fails when two public services share an ingress
+// path. Only meaningful where public services share one host and are
+// routed by path (AWS's shared ALB); Azure and GCP give every public
+// service its own hostname, so they don't call this (#161).
 func RejectOverlappingPaths(services []models.Service) error {
 	seen := make(map[string]string)
 	for _, service := range services {
@@ -430,10 +434,6 @@ func Normalize(composeApp *models.ComposeApplication, projectName string) (*mode
 			}
 			semanticServices[i].Ingress.Port = &port
 		}
-	}
-
-	if err := RejectOverlappingPaths(semanticServices); err != nil {
-		return nil, err
 	}
 
 	return &models.Application{

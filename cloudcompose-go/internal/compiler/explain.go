@@ -390,6 +390,15 @@ func ingressDecisions(composeApp *models.ComposeApplication, semantic *models.Ap
 	public := semantic.PublicServices()
 	if len(public) > 0 {
 		var decisions []Decision
+		// --explain runs before a cloud is chosen, so this is a warning
+		// here and an error only in AWS inference (#161).
+		if err := shared.RejectOverlappingPaths(semantic.Services); err != nil {
+			decisions = append(decisions, Decision{
+				Subject: "application", Decision: "ingress paths overlap",
+				Because: err.Error() + " on AWS, where public services share one load balancer. Azure and GCP give each its own hostname",
+				Source:  SourceWarning,
+			})
+		}
 		for _, service := range public {
 			port := 0
 			if service.Ingress.Port != nil {

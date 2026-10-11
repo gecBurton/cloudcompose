@@ -242,7 +242,7 @@ func GenerateAwsEnvironment(
 			},
 		}
 
-		resource["aws_security_group_rule"] = map[string]any{
+		sgRules := map[string]any{
 			tfn + "_alb_ingress": map[string]any{
 				"type": "ingress", "from_port": listenerPort, "to_port": listenerPort,
 				"protocol": "tcp", "cidr_blocks": []string{"0.0.0.0/0"},
@@ -256,6 +256,15 @@ func GenerateAwsEnvironment(
 				"description":       "Allow all outbound",
 			},
 		}
+		if certificateARN != nil {
+			sgRules[tfn+"_alb_http_redirect"] = map[string]any{
+				"type": "ingress", "from_port": 80, "to_port": 80,
+				"protocol": "tcp", "cidr_blocks": []string{"0.0.0.0/0"},
+				"security_group_id": fmt.Sprintf("${aws_security_group.%s_alb.id}", tfn),
+				"description":       "Allow plain HTTP to the ALB, redirected to HTTPS",
+			}
+		}
+		resource["aws_security_group_rule"] = sgRules
 
 		publicSubnetIDs := make([]string, azCount)
 		for i := 0; i < azCount; i++ {
@@ -289,7 +298,26 @@ func GenerateAwsEnvironment(
 			listenerConfig["ssl_policy"] = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 			listenerConfig["certificate_arn"] = *certificateARN
 		}
-		resource["aws_lb_listener"] = map[string]any{tfn: listenerConfig}
+		listeners := map[string]any{tfn: listenerConfig}
+		if certificateARN != nil {
+			// Without this, http:// requests (a typed-in URL, an old link)
+			// time out against a closed port rather than reaching the app.
+			listeners[tfn+"_http_redirect"] = map[string]any{
+				"load_balancer_arn": fmt.Sprintf("${aws_lb.%s.arn}", tfn),
+				"port":              80,
+				"protocol":          "HTTP",
+				"default_action": []any{map[string]any{
+					"type": "redirect",
+					"redirect": map[string]any{
+						"port":        "443",
+						"protocol":    "HTTPS",
+						"status_code": "HTTP_301",
+					},
+				}},
+				"tags": shared.MergedTags(tags, envTag),
+			}
+		}
+		resource["aws_lb_listener"] = listeners
 	}
 
 	publicSubnetRefs := make([]string, azCount)
@@ -316,6 +344,7 @@ func GenerateAwsEnvironment(
 		environmentConfig["alb_arn"] = fmt.Sprintf("${aws_lb.%s.arn}", tfn)
 		environmentConfig["alb_listener_arn"] = fmt.Sprintf("${aws_lb_listener.%s.arn}", tfn)
 		environmentConfig["alb_security_group_id"] = fmt.Sprintf("${aws_security_group.%s_alb.id}", tfn)
+		environmentConfig["alb_https"] = certificateARN != nil
 	}
 	if len(tags) > 0 {
 		environmentConfig["tags"] = tags

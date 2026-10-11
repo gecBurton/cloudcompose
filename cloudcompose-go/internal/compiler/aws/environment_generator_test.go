@@ -124,6 +124,24 @@ func TestGenerateAwsEnvironment_CertificateEnablesHTTPS(t *testing.T) {
 	if listener["certificate_arn"] != cert {
 		t.Errorf("listener certificate_arn = %v, want %s", listener["certificate_arn"], cert)
 	}
+
+	// #152: plain HTTP must redirect rather than hit a closed port.
+	resources := parsed["resource"].(map[string]any)
+	redirect, ok := resources["aws_lb_listener"].(map[string]any)["prod_http_redirect"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected an HTTP->HTTPS redirect listener, got %v", resources["aws_lb_listener"])
+	}
+	action := redirect["default_action"].([]any)[0].(map[string]any)
+	if redirect["port"] != float64(80) || action["type"] != "redirect" {
+		t.Errorf("redirect listener = %v, want port 80 with a redirect action", redirect)
+	}
+	if _, ok := resources["aws_security_group_rule"].(map[string]any)["prod_alb_http_redirect"]; !ok {
+		t.Error("expected port 80 to be opened on the ALB security group for the redirect")
+	}
+	env := parsed["output"].(map[string]any)["environment"].(map[string]any)["value"].(map[string]any)
+	if env["alb_https"] != true {
+		t.Errorf("alb_https = %v, want true so apps derive https:// public URLs", env["alb_https"])
+	}
 }
 
 // TestEnvironmentGenerators_WriteReadableFile is a smoke check that the
@@ -429,6 +447,9 @@ func TestGenerateAwsEnvironment_HttpListenerWhenNoCertificate(t *testing.T) {
 	}
 	if _, ok := listener["ssl_policy"]; ok {
 		t.Errorf("did not expect ssl_policy without a certificate")
+	}
+	if _, ok := parsed["resource"].(map[string]any)["aws_lb_listener"].(map[string]any)["prod_http_redirect"]; ok {
+		t.Error("did not expect a redirect listener without a certificate: it would conflict with the port-80 listener")
 	}
 }
 

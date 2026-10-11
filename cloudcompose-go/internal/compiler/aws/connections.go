@@ -16,15 +16,15 @@ import (
 // The ingress path is deliberately not appended: the ALB routes on it but
 // doesn't strip it, so a localhost URL's own path already is the path the
 // service sees (http://localhost:4444/oauth2/auth -> <alb>/oauth2/auth).
-//
-// ponytail: always http:// for the ALB -- the environment doesn't tell an
-// app whether its listener is HTTPS (certificate_arn); fix with #152.
 func PublicURL(service *models.Service, env *models.AwsEnvironment) string {
 	if service.CDNEnabled {
 		return fmt.Sprintf("https://${aws_cloudfront_distribution.%s_cdn.domain_name}", service.Name)
 	}
 	if env.AlbArn == nil {
 		return ""
+	}
+	if env.AlbHTTPS {
+		return "https://" + albDNSReference
 	}
 	return "http://" + albDNSReference
 }

@@ -25,7 +25,7 @@ archives are published for Linux, macOS, and Windows (amd64 and arm64):
 
 ```bash
 curl -LO https://github.com/gecBurton/cloudcompose/releases/download/v0.3.1/cloud-compose_0.3.0_darwin_arm64.tar.gz
-tar -xzf cloud-compose_0.3.0_darwin_arm64.tar.gz
+tar -xzf cloud-compose_0.3.1_darwin_arm64.tar.gz
 chmod +x cloud-compose
 ```
 

@@ -219,3 +219,24 @@ func TestResolveValue_ServiceReferencedIsReported(t *testing.T) {
 		t.Errorf("got %v, want nil", got)
 	}
 }
+
+// TestResolveValue_PeerContainerKeepsAuthoredPort is #156: a managed
+// service's port is authoritative, but a peer container listens exactly
+// where the URL says, so an authored port must survive. With no authored
+// port, the connection's own port is still filled in.
+func TestResolveValue_PeerContainerKeepsAuthoredPort(t *testing.T) {
+	t.Parallel()
+	connections := map[string]models.Connection{
+		"hydra": {Host: "hydra.prod-mp.internal", Port: intPtr(4444), AddressedBy: "host", PreserveAuthoredPort: true},
+	}
+	order := []string{"hydra"}
+	for value, want := range map[string]string{
+		"http://hydra:4445/admin": "http://hydra.prod-mp.internal:4445/admin",
+		"http://hydra:4444":       "http://hydra.prod-mp.internal:4444",
+		"http://hydra":            "http://hydra.prod-mp.internal:4444",
+	} {
+		if got := ResolveValue(value, connections, order).Value; got != want {
+			t.Errorf("ResolveValue(%q) = %q, want %q", value, got, want)
+		}
+	}
+}

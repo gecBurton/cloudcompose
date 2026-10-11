@@ -94,7 +94,7 @@ func TestGenerateAzure_CdnFqdnOutputCoexistsWithIngressFqdn(t *testing.T) {
 	resources := models.NewAzureResources()
 	app := models.NewContainerApp()
 	app.Name = "prod-app-web"
-	app.Ingress = &models.ContainerAppIngress{}
+	app.Ingress = &models.ContainerAppIngress{ExternalEnabled: true}
 	resources.ContainerApp["web"] = app
 	resources.CdnFrontdoorEndpoint["web"] = models.FrontDoorEndpoint{Name: "prod-app-web-fd"}
 	env := testAppEnv(0)

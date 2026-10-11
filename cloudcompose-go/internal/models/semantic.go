@@ -131,6 +131,11 @@ type Connection struct {
 	Password    *string `json:"password,omitempty"`
 	Database    *string `json:"database,omitempty"`
 	AddressedBy string  `json:"addressed_by"`
+	// PreserveAuthoredPort keeps a URL's own port instead of replacing it
+	// with Port. Set for peer containers, which listen exactly where the
+	// compose file says, unlike a managed service substituted for a local
+	// container (#156).
+	PreserveAuthoredPort bool `json:"preserve_authored_port,omitempty"`
 }
 
 func (c *Connection) BareReference() string {

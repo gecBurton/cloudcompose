@@ -55,9 +55,12 @@ func rebuildURL(match []string, names map[string]int, connection *models.Connect
 	}
 
 	// The connection is authoritative about the port: a managed service
-	// rarely listens where the local container did.
+	// rarely listens where the local container did. A peer container is
+	// the exception -- it listens on whichever of its ports the URL names.
 	port := ""
-	if connection.Port != nil {
+	if connection.PreserveAuthoredPort && group("port") != "" {
+		port = ":" + group("port")
+	} else if connection.Port != nil {
 		port = fmt.Sprintf(":%d", *connection.Port)
 	}
 

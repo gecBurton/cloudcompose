@@ -85,10 +85,11 @@ type ContainerAppCustomScaleRule struct {
 }
 
 type ContainerAppIngress struct {
-	ExternalEnabled bool                        `json:"external_enabled"`
-	TargetPort      int                         `json:"target_port"`
-	Transport       string                      `json:"transport"`
-	TrafficWeight   []ContainerAppTrafficWeight `json:"traffic_weight"`
+	AllowInsecureConnections bool                        `json:"allow_insecure_connections,omitempty"`
+	ExternalEnabled          bool                        `json:"external_enabled"`
+	TargetPort               int                         `json:"target_port"`
+	Transport                string                      `json:"transport"`
+	TrafficWeight            []ContainerAppTrafficWeight `json:"traffic_weight"`
 }
 
 // ContainerAppTrafficWeight is one entry in `ingress.traffic_weight`.

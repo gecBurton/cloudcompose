@@ -21,8 +21,16 @@ type Resolution struct {
 // has replaced the container. The connection is authoritative: the
 // username a compose file wrote belonged to a container the platform
 // threw away, and the managed service generated its own.
+//
+// A password with no username (Azure Managed Redis's access key) is
+// rendered ":password@", the userinfo form Redis URLs use for
+// password-only AUTH. Without it the URL carried no credentials at all and
+// every connection was refused.
 func userinfo(stated string, connection *models.Connection) string {
 	if connection.Username == nil {
+		if connection.Password != nil {
+			return ":" + *connection.Password + "@"
+		}
 		return stated
 	}
 	if connection.Password == nil {

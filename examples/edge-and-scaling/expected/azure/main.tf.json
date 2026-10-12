@@ -354,7 +354,7 @@
           ]
         },
         "name": "prod-edge-and-scaling-web-redis-url",
-        "value": "rediss://${azurerm_managed_redis.cache_redis.hostname}:10000"
+        "value": "rediss://:${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}@${azurerm_managed_redis.cache_redis.hostname}:10000"
       }
     },
     "azurerm_managed_redis": {

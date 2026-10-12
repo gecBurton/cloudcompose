@@ -96,6 +96,24 @@ func TestResolveValue_UserinfoPreservedWhenNoCredentials(t *testing.T) {
 	}
 }
 
+// TestResolveValue_PasswordOnlyConnectionCarriesPassword: a managed
+// service authenticated by password alone (Azure Managed Redis's access
+// key) must still put it in the URL, or the client connects without AUTH.
+func TestResolveValue_PasswordOnlyConnectionCarriesPassword(t *testing.T) {
+	t.Parallel()
+	key := "${azurerm_managed_redis.cache_redis.default_database[0].primary_access_key}"
+	connections := map[string]models.Connection{
+		"cache": {Host: "cache.example", Port: intPtr(10000), Password: &key},
+	}
+	got := ResolveValue("redis://cache:6379", connections, []string{"cache"})
+	if want := "redis://:" + key + "@cache.example:10000"; got.Value != want {
+		t.Errorf("got %q, want %q", got.Value, want)
+	}
+	if !got.Confidential {
+		t.Error("expected a URL carrying a password to be confidential")
+	}
+}
+
 func TestResolveValue_ValuesReferencingNothingAreUntouched(t *testing.T) {
 	t.Parallel()
 	values := []string{

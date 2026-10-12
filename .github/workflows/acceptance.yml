@@ -107,8 +107,12 @@ jobs:
               export COMPOSE=examples/doctor/compose.yml PROJECT=doctor \
                      HTTP_PATH=/health EXPECT='"status": "ok"' POLL_TIMEOUT=480 ;;
             service-discovery)
+              # "web reached api" only appears once web has fetched api
+              # over the platform's private service discovery, so this
+              # proves the container-to-container hop, not just that web
+              # is up (#157).
               export COMPOSE=examples/service-discovery/compose.yml PROJECT=svcdiscovery \
-                     EXPECT="Server name" ;;
+                     EXPECT="web reached api" ;;
             edge-and-scaling)
               export COMPOSE=examples/edge-and-scaling/compose.yml PROJECT=edgescale \
                      EXPECT="Welcome to nginx" POLL_TIMEOUT=600 ;;

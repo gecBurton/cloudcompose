@@ -212,6 +212,10 @@
                 {
                   "name": "CACHE_URL",
                   "secret_name": "cache-url"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "${azurerm_user_assigned_identity.main.client_id}"
                 }
               ],
               "image": "nginx:latest",

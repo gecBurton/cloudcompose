@@ -49,6 +49,7 @@ EXPECT="${EXPECT:-Server name}"                          # string expected in HT
 POLL_TIMEOUT="${POLL_TIMEOUT:-300}"                      # seconds to wait for a healthy app
                                                          # (AWS: ALB default health check needs
                                                          # 5×30s + Fargate cold start)
+POLL_REQUEST_TIMEOUT="${POLL_REQUEST_TIMEOUT:-30}"       # seconds per poll request (see poll_until_served)
 FRONTDOOR_POLL_TIMEOUT="${FRONTDOOR_POLL_TIMEOUT:-900}"  # seconds to wait for Front Door's own
                                                          # edge/DNS propagation (Azure only, only
                                                          # when a service has cdn:true) -- kept
@@ -514,8 +515,10 @@ poll_until_served() {
   body=""
   while (( SECONDS < deadline )); do
     # No -f: capture non-2xx bodies (e.g. a 503 /health) for the EXPECT
-    # match and for diagnostics on timeout.
-    body="$(curl -sS --max-time 5 "$poll_url" 2>/dev/null || true)"
+    # match and for diagnostics on timeout. POLL_REQUEST_TIMEOUT is per
+    # request: doctor's /health runs four connectivity checks in series,
+    # which can outlast 5s, and a curl timeout leaves no body to diagnose.
+    body="$(curl -sS --max-time "$POLL_REQUEST_TIMEOUT" "$poll_url" 2>/dev/null || true)"
     if [[ "$body" == *"$EXPECT"* ]]; then
       served=1
       break

@@ -273,12 +273,19 @@ func startupDecisions(name string, composeService *models.ComposeService, semant
 		if server := findService(semantic, dep); server == nil || server.Capability != models.CapabilityContainer {
 			continue
 		}
+		condition := composeService.DependsOnConditions[dep]
+		because := "startup order is not modelled: both start together, and a container that exits " +
+			"is restarted like any long-running service rather than run once"
+		if condition == "service_completed_successfully" {
+			// The run-once case (e.g. migrations): there's deliberately no
+			// run-once mechanism (#151), so point at the pattern that works.
+			because += fmt.Sprintf("; run %s's step in %s's own command instead, e.g. `sh -c \"migrate && serve\"`", dep, name)
+		}
 		decisions = append(decisions, Decision{
 			Subject:  name,
-			Decision: fmt.Sprintf("depends_on %s: %s ignored", dep, composeService.DependsOnConditions[dep]),
-			Because: "startup order is not modelled: both start together, and a container that exits " +
-				"is restarted like any long-running service rather than run once",
-			Source: SourceWarning,
+			Decision: fmt.Sprintf("depends_on %s: %s ignored", dep, condition),
+			Because:  because,
+			Source:   SourceWarning,
 		})
 	}
 	return decisions

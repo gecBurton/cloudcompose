@@ -78,6 +78,11 @@
         "template": {
           "container": [
             {
+              "args": [
+                "python",
+                "-c",
+                "import os, urllib.request\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        url = os.environ[\"API_URL\"]\n        try:\n            with urllib.request.urlopen(url, timeout=5) as r:\n                body = \"web reached api at %s:\\n%s\" % (url, r.read().decode())\n        except Exception as e:\n            body = \"web could not reach api at %s: %r\\n\" % (url, e)\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"text/plain\")\n        self.end_headers()\n        self.wfile.write(body.encode())\n\nHTTPServer((\"\", 80), Handler).serve_forever()\n"
+              ],
               "cpu": 0.25,
               "env": [
                 {
@@ -85,7 +90,7 @@
                   "value": "http://prod-service-discovery-api"
                 }
               ],
-              "image": "nginxdemos/hello:plain-text",
+              "image": "python:3.12-alpine",
               "liveness_probe": [
                 {
                   "path": "/",

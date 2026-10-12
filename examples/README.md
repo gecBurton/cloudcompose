@@ -142,7 +142,7 @@ any other example directory and the sibling `environment.<cloud>.yaml`
 | `scaling` | `x-cloud.size`/`min_scale`/`max_scale` sizing hints |
 | `compute-tuning` | Explicit `cpu:`/`memory:` overrides instead of a named `size:` |
 | `platform-config` | Platform-supplied configuration (`x-cloud`-inferred, valued outside the compose file) |
-| `service-discovery` | A second, independent public service in the same app, reached by its compose service name over cloudcompose's own private DNS |
+| `service-discovery` | A private service (`api`) reached by its compose service name from a public one (`web`). `web` fetches `api` on every request and reports whether it got through, so the acceptance run proves the hop itself |
 
 This set replaces a larger one that used to test the same managed-service
 substitutions (database, cache, object storage) in isolation across

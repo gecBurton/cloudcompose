@@ -518,6 +518,12 @@ services:
 	for _, d := range Explain(composeApp, app) {
 		if d.Subject == "web" && d.Source == SourceWarning && strings.Contains(d.Decision, "ignored") {
 			got = append(got, d.Decision)
+			// #151: no run-once mechanism, so the warning points at the
+			// pattern that works instead.
+			if strings.Contains(d.Decision, "service_completed_successfully") &&
+				!strings.Contains(d.Because, "run migrate's step in web's own command") {
+				t.Errorf("expected a hint to fold migrate into web's command, got %q", d.Because)
+			}
 		}
 	}
 	want := []string{

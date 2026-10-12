@@ -747,6 +747,31 @@ func identityForService(
 	return identityID
 }
 
+// injectIdentityClientIDAzure sets AZURE_CLIENT_ID when a container runs
+// as the app's own user-assigned identity. Azure SDKs'
+// DefaultAzureCredential/ManagedIdentityCredential only use a
+// user-assigned identity when told its client ID; without it they fall
+// back to a system-assigned identity the app doesn't have, so every
+// RBAC-granted call (e.g. Blob storage) fails or hangs.
+//
+// Only for the identity cloudcompose creates (managedServiceIdentityID):
+// an environment-supplied user_assigned_identity_id is a resource ID,
+// not a client ID, so there is nothing to inject for it here.
+func injectIdentityClientIDAzure(container *models.ContainerAppContainer, assigned, managedServiceIdentityID string) {
+	if managedServiceIdentityID == "" || assigned != managedServiceIdentityID {
+		return
+	}
+	for _, e := range container.Env {
+		if e.Name == "AZURE_CLIENT_ID" {
+			return // authored in the compose file; leave it alone
+		}
+	}
+	container.Env = append(container.Env, models.ContainerAppEnvVar{
+		Name:  "AZURE_CLIENT_ID",
+		Value: "${azurerm_user_assigned_identity.main.client_id}",
+	})
+}
+
 func inferScheduledJobs(
 	resources *models.AzureResources,
 	app *models.Application,
@@ -774,6 +799,7 @@ func inferScheduledJobs(
 		if err != nil {
 			return err
 		}
+		injectIdentityClientIDAzure(&containerSpec, identityForService(service, identityID, managedServiceIdentityID, referenced), managedServiceIdentityID)
 		secretConfig = append(secretConfig, connSecrets...)
 
 		job := models.NewContainerAppJob()
@@ -832,6 +858,7 @@ func inferContainerApps(
 		if err != nil {
 			return err
 		}
+		injectIdentityClientIDAzure(&containerSpec, identityForService(service, identityID, managedServiceIdentityID, referenced), managedServiceIdentityID)
 
 		var ingressConfig *models.ContainerAppIngress
 		if service.Ingress != nil {

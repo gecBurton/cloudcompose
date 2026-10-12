@@ -141,6 +141,10 @@
                 {
                   "name": "NOTIFY_TOKEN",
                   "secret_name": "doctor-notify-token"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "${azurerm_user_assigned_identity.main.client_id}"
                 }
               ],
               "image": "${azurerm_container_registry.main.login_server}/doctor@${docker_registry_image.doctor_push.sha256_digest}",

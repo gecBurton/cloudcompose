@@ -60,10 +60,22 @@ def check_s3():
         # inferStorageAzure gives the azurerm_storage_container it creates
         # for that service, deterministically, not something this app
         # discovers at runtime.
-        client = BlobServiceClient(account_url=blobs_url, credential=DefaultAzureCredential())
+        # Bounded so a credential or network problem shows up as a FAIL
+        # in /health instead of hanging the whole request past the
+        # caller's own timeout (which hid the cause: "no response").
+        # AZURE_CLIENT_ID (injected by cloudcompose) selects the app's
+        # user-assigned identity; without it the SDK would look for a
+        # system-assigned one.
+        client = BlobServiceClient(
+            account_url=blobs_url,
+            credential=DefaultAzureCredential(exclude_developer_cli_credential=True, exclude_cli_credential=True, exclude_powershell_credential=True),
+            connection_timeout=5,
+            read_timeout=10,
+            retry_total=1,
+        )
         blob_client = client.get_blob_client(container="blobs", blob=key)
-        blob_client.upload_blob(payload, overwrite=True)
-        got = blob_client.download_blob().readall()
+        blob_client.upload_blob(payload, overwrite=True, timeout=10)
+        got = blob_client.download_blob(timeout=10).readall()
         if got != payload:
             raise RuntimeError("Azure Blob round-trip mismatch")
         return f"ok: put+get on Azure Blob container 'blobs' (account {bucket})"
@@ -116,7 +128,7 @@ def check_redis():
         return "skipped: REDIS_URL not set"
     import redis
 
-    r = redis.from_url(url, socket_connect_timeout=5)
+    r = redis.from_url(url, socket_connect_timeout=5, socket_timeout=5)
     r.set("cloudcompose-doctor", "ok")
     got = r.get("cloudcompose-doctor")
     if got != b"ok":

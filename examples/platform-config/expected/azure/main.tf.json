@@ -73,6 +73,10 @@
                 {
                   "name": "SENTRY_DSN",
                   "secret_name": "web-config-sentry-dsn"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "${azurerm_user_assigned_identity.main.client_id}"
                 }
               ],
               "image": "nginxdemos/hello:plain-text",

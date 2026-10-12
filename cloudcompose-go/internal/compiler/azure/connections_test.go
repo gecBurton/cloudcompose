@@ -497,3 +497,71 @@ func TestInferAzure_RealServiceDiscoveryExample_PeerContainerIsReachable(t *test
 		t.Errorf("expected a container app for api too, got keys %v", keysOf(resources.ContainerApp))
 	}
 }
+
+// TestInferAzure_RealDoctorExample_InjectsIdentityClientID: the doctor
+// talks to Blob storage via DefaultAzureCredential, which only uses a
+// user-assigned identity when AZURE_CLIENT_ID names it. Without it the
+// SDK falls back to a system-assigned identity the app doesn't have.
+func TestInferAzure_RealDoctorExample_InjectsIdentityClientID(t *testing.T) {
+	t.Parallel()
+	composeApp, err := shared.ParseCompose("../../../../examples/doctor/compose.yml")
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	app, err := shared.Normalize(composeApp, "doctor")
+	if err != nil {
+		t.Fatalf("Normalize failed: %v", err)
+	}
+	env := mockAzureProdEnv()
+	resources, err := InferAzure(app, &env)
+	if err != nil {
+		t.Fatalf("InferAzure failed: %v", err)
+	}
+	doctor := resources.ContainerApp["doctor"]
+	if doctor.Identity == nil || doctor.Identity.Type != "UserAssigned" {
+		t.Fatalf("doctor identity = %+v, want UserAssigned", doctor.Identity)
+	}
+	var got string
+	for _, e := range doctor.Template.Container[0].Env {
+		if e.Name == "AZURE_CLIENT_ID" {
+			got = e.Value
+		}
+	}
+	if want := "${azurerm_user_assigned_identity.main.client_id}"; got != want {
+		t.Errorf("AZURE_CLIENT_ID = %q, want %q", got, want)
+	}
+}
+
+// TestInjectIdentityClientIDAzure_OnlyForTheAppsOwnIdentity: no client
+// ID for a service running as a system-assigned or environment-supplied
+// identity, and an authored AZURE_CLIENT_ID is never overwritten.
+func TestInjectIdentityClientIDAzure_OnlyForTheAppsOwnIdentity(t *testing.T) {
+	t.Parallel()
+	own := "${azurerm_user_assigned_identity.main.id}"
+	for name, tc := range map[string]struct {
+		assigned, managed string
+		authored          bool
+		want              string
+	}{
+		"own identity":         {own, own, false, "${azurerm_user_assigned_identity.main.client_id}"},
+		"system-assigned":      {"", own, false, ""},
+		"environment identity": {"/subscriptions/0/x", own, false, ""},
+		"no app identity":      {"", "", false, ""},
+		"authored stays":       {own, own, true, "mine"},
+	} {
+		c := models.ContainerAppContainer{}
+		if tc.authored {
+			c.Env = []models.ContainerAppEnvVar{{Name: "AZURE_CLIENT_ID", Value: "mine"}}
+		}
+		injectIdentityClientIDAzure(&c, tc.assigned, tc.managed)
+		got, count := "", 0
+		for _, e := range c.Env {
+			if e.Name == "AZURE_CLIENT_ID" {
+				got, count = e.Value, count+1
+			}
+		}
+		if got != tc.want || count > 1 {
+			t.Errorf("%s: AZURE_CLIENT_ID = %q (x%d), want %q", name, got, count, tc.want)
+		}
+	}
+}

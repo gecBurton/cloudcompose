@@ -1,9 +1,13 @@
 package shared
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 // writeComposeFile writes content to <dir>/compose.yml and returns its
@@ -127,5 +131,31 @@ func TestParseCompose_CarriesEntrypoint(t *testing.T) {
 	}
 	if !slicesEqual(web.Command, []string{"all", "--dev"}) {
 		t.Errorf("Command = %v, want [all --dev]", web.Command)
+	}
+}
+
+// TestParseCompose_UnsetVariablesDontWarn is #169: an unset ${VAR} is the
+// expected case (it becomes a platform secret), so compose-go must not log
+// "variable is not set" for it. Defaults still apply.
+func TestParseCompose_UnsetVariablesDontWarn(t *testing.T) {
+	var logged bytes.Buffer
+	previous := logrus.StandardLogger().Out
+	logrus.SetOutput(&logged)
+	defer logrus.SetOutput(previous)
+
+	path := writeComposeFile(t, t.TempDir(), "name: app\nservices:\n  web:\n    image: nginx:${CLOUDCOMPOSE_TEST_TAG:-1.27}\n    environment:\n      API_TOKEN: ${CLOUDCOMPOSE_TEST_UNSET}\n")
+
+	app, err := ParseCompose(path)
+	if err != nil {
+		t.Fatalf("ParseCompose failed: %v", err)
+	}
+	if strings.Contains(logged.String(), "is not set") {
+		t.Errorf("expected no 'variable is not set' warning, got:\n%s", logged.String())
+	}
+	if got := app.Services["web"].Image; got != "nginx:1.27" {
+		t.Errorf("image = %q, want the ${VAR:-default} default still applied", got)
+	}
+	if !slicesEqual(app.Services["web"].PlatformEnv, []string{"API_TOKEN"}) {
+		t.Errorf("PlatformEnv = %v, want API_TOKEN named as platform config", app.Services["web"].PlatformEnv)
 	}
 }

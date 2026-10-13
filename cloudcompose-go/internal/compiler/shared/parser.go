@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/gecburton/cloudcompose/internal/models"
 	yaml "go.yaml.in/yaml/v4"
@@ -139,6 +140,12 @@ func ParseCompose(filePath string) (*models.ComposeApplication, error) {
 		},
 	}, func(o *loader.Options) {
 		o.SetProjectName(name, true)
+		// An unset ${VAR} is expected here, not a mistake: it becomes a
+		// platform secret (splitEnvironment) that --explain reports itself.
+		// compose-go would otherwise log a warning per occurrence (#169).
+		o.Interpolate.Substitute = func(value string, mapping template.Mapping) (string, error) {
+			return template.SubstituteWithOptions(value, mapping, template.WithoutLogging)
+		}
 	})
 	if err != nil {
 		return nil, fmt.Errorf("parse compose file: %w", err)

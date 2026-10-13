@@ -288,6 +288,11 @@ func grantServiceSecretPermissions(
 // letting the service's identity read them. Stores one Key Vault secret
 // per key, since azurerm's key_vault_secret_id has no way to address a
 // single key within a JSON blob.
+//
+// Secrets are keyed by variable name per app, not per service (#168):
+// services naming the same ${VAR} share one secret, so a value they must
+// agree on (e.g. an encryption key) is set once and can't drift. Writing
+// the same map entry again from a second service is idempotent.
 func grantPlatformConfigPermissions(
 	resources *models.AzureResources,
 	service *models.Service,
@@ -305,15 +310,16 @@ func grantPlatformConfigPermissions(
 	principalIDRef := principalIDRefForIdentity()
 
 	for _, key := range service.Config {
-		secretKey := fmt.Sprintf("%s_config_%s_secret", service.Name, strings.ToLower(key))
+		secretKey := fmt.Sprintf("config_%s_secret", strings.ToLower(key))
+		slug := strings.ToLower(strings.ReplaceAll(key, "_", "-"))
 
 		secret := models.NewKeyVaultSecret()
-		secret.Name = getName(fmt.Sprintf("%s-config-%s", service.Name, strings.ToLower(strings.ReplaceAll(key, "_", "-"))))
+		secret.Name = getName("config-" + slug)
 		secret.KeyVaultID = "${azurerm_key_vault.main.id}"
 		secret.Value = secretsPlaceholderValueAzure
 		resources.KeyVaultSecret[secretKey] = secret
 
-		containerSecretName := strings.ToLower(strings.ReplaceAll(service.Name+"-config-"+key, "_", "-"))
+		containerSecretName := "config-" + slug
 		containerSecrets = append(containerSecrets, models.ContainerAppSecret{
 			Name:             containerSecretName,
 			KeyVaultSecretID: fmt.Sprintf("${azurerm_key_vault_secret.%s.versionless_id}", secretKey),

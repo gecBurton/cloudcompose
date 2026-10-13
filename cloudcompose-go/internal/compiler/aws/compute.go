@@ -317,6 +317,12 @@ func handleSecrets(
 
 // handlePlatformConfig creates Secrets Manager resources for
 // platform-supplied configuration (env vars not valued in compose.yml).
+//
+// One secret per variable name per app, not per service (#168): services
+// naming the same ${VAR} share it, so a value they must agree on is set
+// once and can't drift. Each service's policy grants only the variables it
+// names. Re-creating the same map entry from a second service is
+// idempotent.
 func handlePlatformConfig(
 	resources *models.AWSResources,
 	service *models.Service,
@@ -329,37 +335,30 @@ func handlePlatformConfig(
 		return containerSecrets
 	}
 
-	configKey := service.Name + "_config"
-	desc := fmt.Sprintf("Platform-supplied configuration for %s", service.Name)
-	resources.SecretsmanagerSecret[configKey] = models.SecretsManagerSecret{
-		Name:        getName(service.Name + "-config"),
-		Description: &desc,
-		Tags:        tags,
-	}
-
-	placeholders := make(map[string]string, len(service.Config))
+	arns := make([]string, 0, len(service.Config))
 	for _, key := range service.Config {
-		placeholders[key] = shared.SecretsPlaceholderValue
-	}
-	secretString := marshalJSONString(placeholders)
+		configKey := "config_" + strings.ToLower(key)
+		desc := fmt.Sprintf("Platform-supplied %s", key)
+		resources.SecretsmanagerSecret[configKey] = models.SecretsManagerSecret{
+			Name:        getName("config-" + strings.ToLower(strings.ReplaceAll(key, "_", "-"))),
+			Description: &desc,
+			Tags:        tags,
+		}
+		resources.SecretsmanagerSecretVersion[configKey+"_v1"] = models.SecretsManagerSecretVersion{
+			SecretID:     fmt.Sprintf("${aws_secretsmanager_secret.%s.id}", configKey),
+			SecretString: shared.SecretsPlaceholderValue,
+			Lifecycle:    &models.TerraformLifecycle{IgnoreChanges: []string{"secret_string"}},
+		}
 
-	resources.SecretsmanagerSecretVersion[configKey+"_v1"] = models.SecretsManagerSecretVersion{
-		SecretID:     fmt.Sprintf("${aws_secretsmanager_secret.%s.id}", configKey),
-		SecretString: secretString,
-		Lifecycle:    &models.TerraformLifecycle{IgnoreChanges: []string{"secret_string"}},
-	}
-
-	for _, key := range service.Config {
-		containerSecrets = append(containerSecrets, map[string]string{
-			"name":      key,
-			"valueFrom": fmt.Sprintf("${aws_secretsmanager_secret.%s.arn}:%s::", configKey, key),
-		})
+		arn := fmt.Sprintf("${aws_secretsmanager_secret.%s.arn}", configKey)
+		arns = append(arns, arn)
+		containerSecrets = append(containerSecrets, map[string]string{"name": key, "valueFrom": arn})
 	}
 
 	policy := marshalJSONString(newIAMPolicyDocument(IAMPolicyStatement{
 		Effect:   "Allow",
 		Action:   []string{"secretsmanager:GetSecretValue"},
-		Resource: []string{fmt.Sprintf("${aws_secretsmanager_secret.%s.arn}", configKey)},
+		Resource: arns,
 	}))
 	resources.IamRolePolicy[service.Name+"_config_policy"] = models.IamRolePolicy{
 		Name:   getName(service.Name + "-config-policy"),

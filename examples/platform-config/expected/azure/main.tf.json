@@ -48,13 +48,13 @@
         "secret": [
           {
             "identity": "${azurerm_user_assigned_identity.main.id}",
-            "key_vault_secret_id": "${azurerm_key_vault_secret.web_config_api_token_secret.versionless_id}",
-            "name": "web-config-api-token"
+            "key_vault_secret_id": "${azurerm_key_vault_secret.config_api_token_secret.versionless_id}",
+            "name": "config-api-token"
           },
           {
             "identity": "${azurerm_user_assigned_identity.main.id}",
-            "key_vault_secret_id": "${azurerm_key_vault_secret.web_config_sentry_dsn_secret.versionless_id}",
-            "name": "web-config-sentry-dsn"
+            "key_vault_secret_id": "${azurerm_key_vault_secret.config_sentry_dsn_secret.versionless_id}",
+            "name": "config-sentry-dsn"
           }
         ],
         "template": {
@@ -68,11 +68,11 @@
                 },
                 {
                   "name": "API_TOKEN",
-                  "secret_name": "web-config-api-token"
+                  "secret_name": "config-api-token"
                 },
                 {
                   "name": "SENTRY_DSN",
-                  "secret_name": "web-config-sentry-dsn"
+                  "secret_name": "config-sentry-dsn"
                 },
                 {
                   "name": "AZURE_CLIENT_ID",
@@ -125,7 +125,7 @@
       }
     },
     "azurerm_key_vault_secret": {
-      "web_config_api_token_secret": {
+      "config_api_token_secret": {
         "depends_on": [
           "time_sleep.kv_role_propagation"
         ],
@@ -135,10 +135,10 @@
             "value"
           ]
         },
-        "name": "prod-platform-config-web-config-api-token",
+        "name": "prod-platform-config-config-api-token",
         "value": "PLACEHOLDER_VALUE_CHANGE_IN_AZURE_PORTAL"
       },
-      "web_config_sentry_dsn_secret": {
+      "config_sentry_dsn_secret": {
         "depends_on": [
           "time_sleep.kv_role_propagation"
         ],
@@ -148,7 +148,7 @@
             "value"
           ]
         },
-        "name": "prod-platform-config-web-config-sentry-dsn",
+        "name": "prod-platform-config-config-sentry-dsn",
         "value": "PLACEHOLDER_VALUE_CHANGE_IN_AZURE_PORTAL"
       }
     },

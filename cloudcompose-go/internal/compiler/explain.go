@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -135,6 +136,7 @@ func Explain(composeApp *models.ComposeApplication, semantic *models.Application
 					"before the service will work",
 				Source: SourceWarning,
 			})
+			decisions = append(decisions, sharedConfigDecisions(name, semantic, service)...)
 		}
 
 		for _, secret := range service.Secrets {
@@ -357,6 +359,30 @@ func wiringDecisions(name string, semantic *models.Application, service *models.
 				Subject: name, Decision: fmt.Sprintf("nothing wired to %s", serverName),
 				Because: fmt.Sprintf("no environment variable references %s; the service will not be able to find it", pyRepr(serverName)),
 				Source:  SourceWarning,
+			})
+		}
+	}
+	return decisions
+}
+
+// sharedConfigDecisions reports platform-config variables this service
+// shares with others: they're one secret per app (#168), so they're set
+// once for every service that names them.
+func sharedConfigDecisions(name string, semantic *models.Application, service *models.Service) []Decision {
+	var decisions []Decision
+	for _, key := range service.Config {
+		var others []string
+		for i := range semantic.Services {
+			other := &semantic.Services[i]
+			if other.Name != name && slices.Contains(other.Config, key) {
+				others = append(others, other.Name)
+			}
+		}
+		if len(others) > 0 {
+			decisions = append(decisions, Decision{
+				Subject: name, Decision: fmt.Sprintf("%s shared with %s", key, strings.Join(others, ", ")),
+				Because: "one secret per variable per app, so it's set once for every service that names it",
+				Source:  SourceInferred,
 			})
 		}
 	}

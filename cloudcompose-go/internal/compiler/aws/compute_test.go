@@ -229,8 +229,10 @@ func TestInferComputeResources_RealPlatformConfigExample(t *testing.T) {
 	namespace := InferServiceDiscovery(resources, app, &env, getName, nil)
 	InferComputeResources(resources, app, &env, getName, nil, false, priorities, namespace)
 
-	if _, ok := resources.SecretsmanagerSecret["web_config"]; !ok {
-		t.Fatalf("expected a config secret for platform-supplied values, got keys %v", keysOf(resources.SecretsmanagerSecret))
+	for _, key := range []string{"config_api_token", "config_sentry_dsn"} {
+		if _, ok := resources.SecretsmanagerSecret[key]; !ok {
+			t.Fatalf("expected a %s secret for platform-supplied values, got keys %v", key, keysOf(resources.SecretsmanagerSecret))
+		}
 	}
 
 	taskDef := resources.EcsTaskDefinition["web_td"]
